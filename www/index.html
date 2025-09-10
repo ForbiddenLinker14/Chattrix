@@ -44,7 +44,7 @@
       /* lock app to viewport */
       overflow: auto;
       /* page itself never scrolls on desktop */
-      background: #031716;
+      background: #100e09;
       color: #eaeaea;
       /* Hide scrollbar (cross-browser) */
       scrollbar-width: none;
@@ -64,14 +64,15 @@
     /* Sidebar */
     #sidebar {
       width: 260px;
-      background: #032F30;
+      background: #1a1812;
       padding: 15px;
-      border-right: 1px solid #274D60;
+      border-right: 1px solid #333;
       box-sizing: border-box;
       transition: transform .4s ease-in-out;
       position: relative;
       z-index: 2;
       color: #eaeaea;
+
       display: flex;
       flex-direction: column;
       height: 100vh;
@@ -94,25 +95,23 @@
       border-radius: 8px;
       font-size: 14px;
       color: #fff;
-      background: linear-gradient(145deg, #032F30, #0A7075);
-      box-shadow: inset 2px 2px 5px rgba(0, 0, 0, .6),
-        inset -2px -2px 5px rgba(50, 50, 50, .6);
+      background: linear-gradient(145deg, #0d0d0d, #1a1a1a);
+      box-shadow: inset 2px 2px 5px rgba(0, 0, 0, .6), inset -2px -2px 5px rgba(50, 50, 50, .6);
       transition: all .3s;
     }
 
     #sidebar input[type="text"]::placeholder {
-      color: #6BA3BE;
+      color: #888
     }
 
     #sidebar input[type="text"]:hover {
-      background: linear-gradient(145deg, #0A7075, #0C969C);
+      background: linear-gradient(145deg, #1c1c1c, #2a2a2a)
     }
 
     #sidebar input[type="text"]:focus {
       outline: none;
-      background: linear-gradient(145deg, #0C969C, #6BA3BE);
-      box-shadow: 0 0 6px #0C969C,
-        inset 2px 2px 6px rgba(0, 0, 0, .7);
+      background: linear-gradient(145deg, #222, #333);
+      box-shadow: 0 0 6px #25d366, inset 2px 2px 6px rgba(0, 0, 0, .7)
     }
 
     /* Chat container */
@@ -120,8 +119,10 @@
       flex: 1 1 0;
       display: flex;
       flex-direction: column;
-      background: #031716;
+      background: #100e09;
       min-height: 0;
+      /* overflow: hidden; */
+      /* allow internal scrollers */
     }
 
     /* Arrows */
@@ -129,7 +130,7 @@
     #toggle-arrow {
       font-size: 18px;
       cursor: pointer;
-      background: #0A7075;
+      background: #256e4c;
       color: #eaeaea;
       padding: 4px 10px;
       border-radius: 4px;
@@ -154,7 +155,7 @@
 
     #toggle-arrow:hover,
     #show-arrow:hover {
-      background: #0C969C;
+      background: #25d366;
     }
 
     /* Messages */
@@ -162,13 +163,14 @@
       flex: 1 1 0;
       padding: 15px;
       overflow-y: auto;
-      background: #031716;
+      background: #100e09;
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
       -ms-overflow-style: none;
       min-height: 0;
       overscroll-behavior: contain;
+      /* wheel doesn’t bubble to page */
     }
 
     #messages::-webkit-scrollbar {
@@ -212,8 +214,8 @@
     /* Input area */
     #input-area {
       display: flex;
-      border-top: 1px solid #274D60;
-      background: #032F30;
+      border-top: 1px solid #333;
+      background: #1a1812;
     }
 
     #input {
@@ -221,38 +223,38 @@
       padding: 10px;
       border: none;
       font-size: 16px;
-      background: #031716;
+      background: #100e09;
       color: #eaeaea;
     }
 
     #input::placeholder {
-      color: #daedf7;
+      color: #777;
     }
 
     #attach {
       padding: 10px 15px;
       border: none;
-      background: #0A7075;
+      background: #2c3e50;
       color: white;
       cursor: pointer;
       font-size: 18px;
     }
 
     #attach:hover {
-      background: #20a082;
+      background: #34495e;
     }
 
     #send {
       padding: 10px 20px;
       border: none;
-      background: #0C969C;
+      background: #27ae60;
       color: white;
       cursor: pointer;
       font-size: 16px;
     }
 
     #send:hover {
-      background: #1aaf6c;
+      background: #2ecc71;
     }
 
     /* Sidebar buttons */
@@ -328,7 +330,7 @@
       color: #f3f4f6;
       margin: 15px 0 10px;
       padding-bottom: 6px;
-      border-bottom: 1px solid #274D60;
+      border-bottom: 1px solid #333;
     }
 
     #users-panel {
@@ -351,7 +353,7 @@
       list-style: none;
       padding: 0;
       margin: 0;
-      background: #031716;
+      background: #100e09;
       border: 1px solid #333;
       border-radius: 12px;
       box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
@@ -383,7 +385,7 @@
     }
 
     #user-list li:hover {
-      background: #043a3d;
+      background: #1a1813;
       cursor: default;
     }
 
@@ -470,7 +472,7 @@
       font-size: 1.2em;
       cursor: pointer;
       display: inline-block;
-      color: #2eacb5;
+      color: #43e97b;
       /* initial solid green */
       transition: color 0.3s ease;
     }
