@@ -12,3 +12,4 @@ my.txt
 .env
 package-lock.json
 package.json
+git_push.ps1
