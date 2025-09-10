@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://realtime-chat-1mv3.onrender.com/sitemap.xml

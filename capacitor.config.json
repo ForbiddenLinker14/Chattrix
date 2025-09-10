@@ -1,0 +1,22 @@
+{
+  "appId": "com.realtimechat.chat",
+  "appName": "Realtime Chat",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 0
+    },
+    "StatusBar": {
+      "backgroundColor": "#000000",
+      "style": "DARK",
+      "overlaysWebView": true
+    }
+  },
+  "android": {
+    "allowMixedContent": true,
+    "fullscreen": true
+  }
+}

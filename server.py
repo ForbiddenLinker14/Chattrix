@@ -1,0 +1,1052 @@
+# ---------------- server.py ----------------
+import os
+import json, base64, re
+import socket
+import sqlite3
+import asyncio
+import hashlib
+from collections import deque
+from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
+
+import socketio
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+import aiohttp
+from pywebpush import webpush, WebPushException
+from dotenv import load_dotenv
+
+import firebase_admin
+from firebase_admin import credentials, messaging
+
+# ---------------- Globals ----------------
+DB_PATH = "chat.db"
+DESTROYED_ROOMS = set()
+ROOM_USERS = {}  # { room: { username: sid } }
+LAST_MESSAGE = {}  # {(room, username): (text, ts)}
+# subscriptions = {}  # username -> [subscription objects]
+USER_STATUS = {}  # sid -> {"user": username, "active": bool}
+FCM_TOKENS = {"<username>": {"<room_id>": ["<token1>", "<token2>", ...]}}
+
+# Push de-duplication: per-endpoint recent payload IDs sent
+PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
+PUSH_RECENT_MAX = 100
+PUSH_RECENT_WINDOW = timedelta(seconds=30)
+
+# ---------------- Push subscriptions ----------------
+# { room: { user: [subscription objects] } }
+subscriptions: dict[str, dict[str, list[dict]]] = {}
+
+
+def normalize_endpoint(endpoint: str) -> str:
+    return endpoint.split("?")[0] if endpoint else ""
+
+
+# ---------------- Env / VAPID ----------------
+load_dotenv()
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")  # required on client to subscribe
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")  # required on server to send push
+if not (VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY):
+    print("⚠️  Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in your .env")
+
+# ✅ Load .env locally (Render will inject env vars automatically)
+load_dotenv()
+
+firebase_creds_b64 = os.getenv("FIREBASE_CREDENTIALS_BASE64")
+if not firebase_creds_b64:
+    raise RuntimeError("❌ FIREBASE_CREDENTIALS_BASE64 missing in environment!")
+
+# 🔹 Decode Base64 → JSON
+firebase_creds = json.loads(base64.b64decode(firebase_creds_b64))
+
+# 🔹 Initialize Firebase Admin SDK
+cred = credentials.Certificate(firebase_creds)
+
+if not firebase_admin._apps:  # <-- check before init
+    firebase_admin.initialize_app(cred)
+
+
+# ---------------- DB ----------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Messages table
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            text TEXT,
+            filename TEXT,
+            mimetype TEXT,
+            filedata TEXT,
+            ts TEXT NOT NULL
+        )
+        """
+    )
+
+    # FCM tokens table (with UNIQUE user)
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fcm_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user TEXT NOT NULL,
+    room TEXT NOT NULL,
+    token TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    UNIQUE(user, room, token)
+);
+  """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# ---------------- Helpers for FCM tokens ----------------
+# ---------------- Helpers for FCM tokens ----------------
+def load_fcm_tokens():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT user, room, token FROM fcm_tokens")
+    rows = c.fetchall()
+    conn.close()
+
+    fcm_tokens: dict[str, dict[str, list[str]]] = {}
+    for user, room, token in rows:
+        fcm_tokens.setdefault(user, {}).setdefault(room, []).append(token)
+    return fcm_tokens
+
+
+def save_fcm_token(user: str, room: str, token: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO fcm_tokens (user, room, token, ts)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user, room, token) DO UPDATE SET ts=excluded.ts
+        """,
+        (user, room, token, datetime.now(timezone.utc).isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+# ✅ Add this
+def register_fcm_token(user: str, room: str, token: str):
+    if user not in FCM_TOKENS:
+        FCM_TOKENS[user] = {}
+    if room not in FCM_TOKENS[user]:
+        FCM_TOKENS[user][room] = []
+    if token not in FCM_TOKENS[user][room]:
+        FCM_TOKENS[user][room].append(token)
+        print(f"🔑 Registered FCM token for {user} in room {room}")
+
+
+def delete_fcm_tokens_for_room(room: str):
+    conn = sqlite3.connect("chat.db")
+    cur = conn.cursor()
+    cur.execute("DELETE FROM fcm_tokens WHERE room = ?", (room,))
+    conn.commit()
+    conn.close()
+    print(f"🗑️ Deleted all FCM tokens from DB for room {room}")
+
+
+# ---------------- Migration: add UNIQUE(user) if missing ----------------
+# def migrate_fcm_tokens():
+#     conn = sqlite3.connect(DB_PATH)
+#     c = conn.cursor()
+
+#     # Check if UNIQUE constraint exists
+#     c.execute("PRAGMA index_list(fcm_tokens)")
+#     indexes = c.fetchall()
+#     has_unique = any("user" in row[1] for row in indexes)
+
+#     if not has_unique:
+#         print("⚡ Migrating fcm_tokens table to add UNIQUE(user)...")
+#         c.execute("ALTER TABLE fcm_tokens RENAME TO fcm_tokens_old")
+#         c.execute(
+#             """
+#             CREATE TABLE fcm_tokens (
+#                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+#                 user TEXT NOT NULL UNIQUE,
+#                 token TEXT NOT NULL,
+#                 ts TEXT NOT NULL
+#             )
+#             """
+#         )
+#         c.execute(
+#             "INSERT OR IGNORE INTO fcm_tokens (user, token, ts) "
+#             "SELECT user, token, ts FROM fcm_tokens_old"
+#         )
+#         c.execute("DROP TABLE fcm_tokens_old")
+#         conn.commit()
+
+#     conn.close()
+
+
+# def migrate_db():
+#     conn = sqlite3.connect(DB_PATH)
+#     c = conn.cursor()
+#     c.execute("PRAGMA table_info(messages)")
+#     existing = [r[1] for r in c.fetchall()]
+#     for col in ("filename", "mimetype", "filedata"):
+#         if col not in existing:
+#             c.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT")
+#     conn.commit()
+#     conn.close()
+
+
+def count_messages():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM messages")
+    n = c.fetchone()[0]
+    conn.close()
+    return n
+
+
+def cleanup_old_messages():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    before = count_messages()
+    c.execute("DELETE FROM messages WHERE ts < datetime('now', '-48 hours')")
+    conn.commit()
+    after = count_messages()
+    conn.close()
+    return before - after
+
+
+def save_message(room, sender, text=None, filename=None, mimetype=None, filedata=None):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, ts) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (
+            room,
+            sender,
+            text,
+            filename,
+            mimetype,
+            filedata,
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def load_messages(room):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT sender, text, filename, mimetype, filedata, ts "
+        "FROM messages WHERE room=? ORDER BY id ASC",
+        (room,),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def clear_room(room):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM messages WHERE room=?", (room,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------- FastAPI + Socket.IO ----------------
+app = FastAPI()
+
+# 🔧 CORS fix (important for Android Capacitor apps)
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or your domain
+    allow_credentials=True,
+    allow_methods=["*"],  # important: includes DELETE
+    allow_headers=["*"],
+)
+
+sio = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins="*",
+    max_http_buffer_size=10 * 1024 * 1024,
+    ping_interval=3,
+    ping_timeout=5,
+)
+
+# Important: use socketio_path="socket.io"
+sio_app = socketio.ASGIApp(sio, socketio_path="socket.io")
+app.mount("/socket.io", sio_app)
+
+# Serve static files (your web app from "www" folder)
+BASE_DIR = os.path.join(os.path.dirname(__file__), "www")
+
+
+# ---------------- Helpers ----------------
+async def broadcast_users(room):
+    users = [
+        {"name": username, "status": "online"} for username in ROOM_USERS.get(room, {})
+    ]
+    await sio.emit("users_update", {"room": room, "users": users}, room=room)
+
+
+def normalize_endpoint(endpoint: str) -> str | None:
+    if not endpoint:
+        return None
+    try:
+        p = urlparse(endpoint)
+        return f"{p.scheme}://{p.netloc}{p.path}"
+    except Exception:
+        return endpoint.split("?")[0] if endpoint else endpoint
+
+
+def make_push_id(room: str, sender: str, text: str, timestamp_iso: str) -> str:
+    basis = f"{room}|{sender}|{text}|{timestamp_iso}"
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+
+def should_send_push(endpoint: str, push_id: str, now: datetime) -> bool:
+    dq = PUSH_RECENT.setdefault(endpoint, deque())
+    for pid, t in dq:
+        if pid == push_id and (now - t) <= PUSH_RECENT_WINDOW:
+            return False
+    dq.append((push_id, now))
+    while len(dq) > PUSH_RECENT_MAX:
+        dq.popleft()
+    while dq and (now - dq[0][1]) > PUSH_RECENT_WINDOW:
+        dq.popleft()
+    return True
+
+
+def user_active_foreground(username: str) -> bool:
+    for users in ROOM_USERS.values():
+        for uname, usid in users.items():
+            if uname == username and USER_STATUS.get(usid, {}).get("active") is True:
+                return True
+    return False
+
+
+def extract_favicon_from_text(text: str) -> str | None:
+    url_regex = r"(https?://[^\s]+)"
+    match = re.search(url_regex, text)
+    if not match:
+        return None
+    url = match.group(0)
+    parsed = urlparse(url)
+    if not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}/favicon.ico"
+
+
+# ---------------- REST: admin-ish ----------------
+@app.delete("/clear/{room}")
+async def clear_messages(room: str):
+    """
+    Clear chat history for a specific room.
+    """
+    clear_room(room)  # delete all messages from DB
+
+    # Notify everyone in the room
+    await sio.emit(
+        "clear", {"room": room, "message": "Room history cleared."}, room=room
+    )
+
+    print(f"🧹 Room {room} history cleared.")
+    return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
+
+
+@app.delete("/destroy/{room}")
+async def destroy_room(room: str):
+    # 0. Clear webpush subscriptions
+    if room in subscriptions:
+        del subscriptions[room]
+        print(f"🛑 All webpush subscriptions cleared for room {room}")
+
+    # 0b. Clear in-memory FCM tokens for this room
+    for user in list(FCM_TOKENS.keys()):
+        if room in FCM_TOKENS[user]:
+            del FCM_TOKENS[user][room]
+            print(f"🧹 Removed FCM tokens for {user} in room {room}")
+        if not FCM_TOKENS[user]:
+            del FCM_TOKENS[user]
+
+    # 0c. Clear persisted FCM tokens in DB
+    delete_fcm_tokens_for_room(room)
+
+    # 1. Clear DB messages
+    clear_room(room)
+
+    # 2. Mark destroyed
+    DESTROYED_ROOMS.add(room)
+
+    # 3. Remove user mapping
+    ROOM_USERS.pop(room, None)
+
+    # 4. Notify clients + force disconnect
+    await sio.emit(
+        "clear",
+        {"room": room, "message": "Room destroyed. All messages cleared."},
+        room=room,
+    )
+    await sio.emit("room_destroyed", {"room": room}, room=room)
+
+    namespace = "/"
+    if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
+        sids = list(sio.manager.rooms[namespace][room])
+        for sid in sids:
+            await sio.leave_room(sid, room, namespace=namespace)
+
+    print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
+    return {"status": "ok"}
+
+
+# ---------------- Socket.IO Events ----------------
+@sio.event
+async def join(sid, data):
+    room = data["room"]
+    username = data["sender"]
+    last_ts = data.get("lastTs")
+    token = data.get("fcmToken")  # 🔑 client should send token when joining
+
+    # revive destroyed room
+    if room in DESTROYED_ROOMS:
+        DESTROYED_ROOMS.remove(room)
+
+    if room not in ROOM_USERS:
+        ROOM_USERS[room] = {}
+
+    # handle duplicate sessions
+    old_sid = ROOM_USERS[room].get(username)
+    if old_sid == sid:
+        return {"success": True, "message": "Already in room"}
+    if old_sid and old_sid != sid:
+        try:
+            await sio.leave_room(old_sid, room)
+        except Exception:
+            pass
+
+    # map user → sid
+    ROOM_USERS[room][username] = sid
+    await sio.enter_room(sid, room)
+    await broadcast_users(room)
+
+    # 🔑 register token in memory + DB
+    if token:
+        register_fcm_token(username, room, token)
+        save_fcm_token(username, room, token)
+
+    # send missed messages
+    for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
+        if last_ts and ts <= last_ts:
+            continue
+        if filename:
+            await sio.emit(
+                "file",
+                {
+                    "sender": sender_,
+                    "filename": filename,
+                    "mimetype": mimetype,
+                    "data": filedata,
+                    "ts": ts,
+                },
+                to=sid,
+            )
+        else:
+            await sio.emit(
+                "message", {"sender": sender_, "text": text, "ts": ts}, to=sid
+            )
+
+    # broadcast system join
+    if not old_sid:
+        await sio.emit(
+            "message",
+            {
+                "sender": "System",
+                "text": f"{username} joined!",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=room,
+        )
+
+    return {"success": True}
+
+
+@sio.event
+async def status(sid, data):
+    # Client sends: { active: true|false }
+    # Tracks per-connection foreground/visibility status for push suppression
+    user = None
+    for room, members in ROOM_USERS.items():
+        for uname, usid in members.items():
+            if usid == sid:
+                user = uname
+                break
+        if user:
+            break
+    if not user:
+        return
+    is_active = bool((data or {}).get("active"))
+    USER_STATUS[sid] = {"user": user, "active": is_active}
+    print(f"📌 Status update: {user} is now {'ACTIVE' if is_active else 'INACTIVE'}")
+
+
+@sio.event
+async def message(sid, data):
+    room = data.get("room")
+    sender = data.get("sender")
+    text = (data.get("text") or "").strip()
+    now = datetime.now(timezone.utc)
+
+    if not text or not room or not sender:
+        return
+
+    # optional: keep duplicate suppression
+    key = (room, sender)
+    last = LAST_MESSAGE.get(key)
+    if last and last[0] == text and (now - last[1]).total_seconds() < 1.5:
+        return
+    LAST_MESSAGE[key] = (text, now)
+
+    save_message(room, sender, text=text)
+    await sio.emit(
+        "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
+    )
+
+    # Web push
+    await send_push_to_room(room, sender, text)
+
+    # Android push (FCM)
+    await send_fcm_to_room(room, sender, text)
+
+
+@sio.event
+async def file(sid, data):
+    room = data.get("room")
+    if not room or room in DESTROYED_ROOMS:
+        return
+    save_message(
+        room,
+        data["sender"],
+        filename=data["filename"],
+        mimetype=data["mimetype"],
+        filedata=data["data"],
+    )
+    await sio.emit(
+        "file",
+        {
+            "sender": data["sender"],
+            "filename": data["filename"],
+            "mimetype": data["mimetype"],
+            "data": data["data"],
+            "ts": datetime.now(timezone.utc).isoformat(),
+        },
+        room=room,
+    )
+
+
+@sio.event
+async def leave(sid, data):
+    room = data.get("room")
+    username = data.get("sender")
+
+    if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
+        del ROOM_USERS[room][username]
+        if not ROOM_USERS[room]:
+            del ROOM_USERS[room]
+
+    await sio.leave_room(sid, room)
+    await broadcast_users(room)
+    await sio.emit("left_room", {"room": room}, to=sid)
+
+    # 🛑 Also cleanup FCM tokens in memory + DB
+    if username in FCM_TOKENS and room in FCM_TOKENS[username]:
+        tokens = list(FCM_TOKENS[username][room])  # copy
+        for token in tokens:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute(
+                "DELETE FROM fcm_tokens WHERE user=? AND room=? AND token=?",
+                (username, room, token),
+            )
+            conn.commit()
+            conn.close()
+            print(f"🗑️ Deleted FCM token for {username} in {room} [{token[:10]}...]")
+        del FCM_TOKENS[username][room]
+        if not FCM_TOKENS[username]:
+            del FCM_TOKENS[username]
+
+    # 🛑 Also cleanup WebPush subscriptions
+    if room in subscriptions and username in subscriptions[room]:
+        del subscriptions[room][username]
+        if not subscriptions[room]:
+            del subscriptions[room]
+        print(f"🛑 Cleared WebPush subs for {username} in {room}")
+
+    await sio.emit(
+        "message",
+        {
+            "sender": "System",
+            "text": f"{username} left!",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        },
+        room=room,
+    )
+
+
+@sio.event
+async def disconnect(sid):
+    USER_STATUS.pop(sid, None)
+    for room, users in list(ROOM_USERS.items()):
+        for username, user_sid in list(users.items()):
+            if user_sid == sid:
+                if ROOM_USERS[room].get(username) != sid:
+                    continue
+                del users[username]
+                if not users:
+                    del ROOM_USERS[room]
+                await broadcast_users(room)
+                await sio.emit(
+                    "message",
+                    {
+                        "sender": "System",
+                        "text": f"{username} disconnected.",
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    },
+                    room=room,
+                )
+
+
+# ---------------- Startup ----------------
+@app.on_event("startup")
+async def startup_tasks():
+    init_db()
+
+    global FCM_TOKENS
+    FCM_TOKENS = load_fcm_tokens()
+    print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
+
+    async def loop_cleanup():
+        while True:
+            deleted = cleanup_old_messages()
+            if deleted > 0:
+                await sio.emit(
+                    "cleanup",
+                    {"message": f"{deleted} old messages (48h+) were removed."},
+                )
+            await asyncio.sleep(3600)
+
+    async def ping_self():
+        url = "https://realtime-chat-1mv3.onrender.com"
+        while True:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url) as resp:
+                        print(f"[KeepAlive] [Running...] {resp.status}")
+            except Exception as e:
+                print(f"[KeepAlive] Error: {e}")
+            await asyncio.sleep(300)
+
+    asyncio.create_task(loop_cleanup())
+    asyncio.create_task(ping_self())
+
+
+# ---------------- Subscribe / Push test ----------------
+# ---------------- Subscribe ----------------
+@app.post("/api/subscribe")
+async def subscribe(request: Request):
+    body = await request.json()
+    subscription = body.get("subscription")
+    sender = body.get("sender")
+    room = body.get("room")
+
+    if not sender or not subscription or not room:
+        return JSONResponse(
+            {"error": "sender, room, and subscription required"},
+            status_code=400,
+        )
+
+    subs_for_room = subscriptions.setdefault(room, {}).setdefault(sender, [])
+    endpoint = normalize_endpoint(subscription.get("endpoint"))
+    if not endpoint:
+        return JSONResponse({"error": "invalid endpoint"}, status_code=400)
+
+    if all(normalize_endpoint(s.get("endpoint")) != endpoint for s in subs_for_room):
+        subs_for_room.append(subscription)
+
+    print(
+        f"✅ Subscription saved for {sender} in room {room} (total={len(subs_for_room)})"
+    )
+    return {
+        "message": f"Subscribed {sender} to {room}",
+        "vapidPublicKey": VAPID_PUBLIC_KEY,
+    }
+
+
+# ---------------- Unsubscribe ----------------
+@app.post("/api/unsubscribe")
+async def unsubscribe(request: Request):
+    body = await request.json()
+    sender = body.get("sender")
+    room = body.get("room")
+    subscription = body.get("subscription")
+
+    if not sender or not room or not subscription:
+        return JSONResponse(
+            {"error": "sender, room, and subscription required"},
+            status_code=400,
+        )
+
+    if room not in subscriptions or sender not in subscriptions[room]:
+        return {"message": f"No subscription found for {sender} in {room}"}
+
+    subs_for_room = subscriptions[room][sender]
+    endpoint = normalize_endpoint(subscription.get("endpoint"))
+
+    new_list = [
+        s for s in subs_for_room if normalize_endpoint(s.get("endpoint")) != endpoint
+    ]
+    if new_list:
+        subscriptions[room][sender] = new_list
+    else:
+        del subscriptions[room][sender]
+
+    if not subscriptions[room]:
+        del subscriptions[room]
+
+    print(f"🛑 Unsubscribed {sender} from {room}")
+    return {"message": f"Unsubscribed {sender} from {room}"}
+
+
+# @app.post("/send-push-notification")
+# async def send_push_notification():
+#     now = datetime.now(timezone.utc)
+#     payload = {
+#         "title": "Test Message",
+#         "body": "This is a test notification.",
+#         "timestamp": now.isoformat(),
+#     }
+#     push_id = make_push_id("TEST", "system", payload["body"], payload["timestamp"])
+#     for user, subs in list(subscriptions.items()):
+#         for sub in list(subs):
+#             try:
+#                 endpoint = normalize_endpoint(sub.get("endpoint"))
+#                 if not endpoint:
+#                     continue
+#                 if not should_send_push(endpoint, push_id, now):
+#                     continue
+#                 webpush(
+#                     subscription_info=sub,
+#                     data=json.dumps(payload),
+#                     vapid_private_key=VAPID_PRIVATE_KEY,
+#                     vapid_claims={"sub": "mailto:example@domain.com"},
+#                 )
+#             except WebPushException as e:
+#                 print(f"❌ Push failed for {user}: {e}")
+#     return {"status": "ok"}
+
+
+@app.post("/send-push-notification")
+async def send_push_notification():
+    now = datetime.now(timezone.utc)
+
+    title = "Test Message"
+    body = "This is a test notification."
+
+    payload = {
+        "title": title,
+        "body": body,
+        "timestamp": now.isoformat(),
+    }
+
+    push_id = make_push_id("TEST", "system", payload["body"], payload["timestamp"])
+
+    # 🔹 1. Send Web Push (for browsers)
+    for user, subs in list(subscriptions.items()):
+        for sub in list(subs):
+            try:
+                endpoint = normalize_endpoint(sub.get("endpoint"))
+                if not endpoint:
+                    continue
+                if not should_send_push(endpoint, push_id, now):
+                    continue
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps(payload),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": "mailto:example@domain.com"},
+                )
+                print(f"🌍 Web push sent to {user}")
+            except WebPushException as e:
+                print(f"❌ Web Push failed for {user}: {e}")
+
+    # 🔹 2. Send FCM Push (for Android)
+    tokens = []
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT token FROM fcm_tokens")
+    rows = c.fetchall()
+    conn.close()
+
+    for (token,) in rows:
+        tokens.append(token)
+
+    for token in tokens:
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            data={"sender": "system", "message": body},
+            token=token,
+        )
+        try:
+            response = messaging.send(message)
+            print("📱 FCM push sent:", response)
+        except Exception as e:
+            print("❌ FCM push failed:", e)
+
+    return {"status": "ok"}
+
+
+# ---------------- Web Push only ----------------
+from pywebpush import WebPushException
+
+
+async def send_push_to_room(room: str, sender: str, text: str):
+    if room not in subscriptions:
+        return
+
+    now = datetime.now(timezone.utc)
+    payload = {
+        "title": "Realtime Chat",
+        "sender": sender,
+        "text": text,
+        "room": room,
+        "url": f"/?room={room}",
+        "timestamp": now.isoformat(),
+    }
+    push_id = make_push_id(room, sender, text, payload["timestamp"])
+
+    for user, subs in list(subscriptions[room].items()):
+        # skip sender
+        if user == sender:
+            continue
+
+        # skip if user is active in foreground
+        if user_active_foreground(user):
+            continue
+
+        for sub in list(subs):
+            try:
+                endpoint = normalize_endpoint(sub.get("endpoint"))
+                if not endpoint:
+                    continue
+
+                # suppress duplicates
+                if not should_send_push(endpoint, push_id, now):
+                    continue
+
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps(payload),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": "mailto:anitsaha976@gmail.com"},
+                )
+                print(f"🌍 WebPush sent to {user} in {room}")
+
+            except WebPushException as e:
+                print(f"❌ WebPush failed for {user}: {e}")
+
+                # auto-cleanup expired/invalid subscriptions
+                if "410" in str(e) or "404" in str(e):
+                    subs_for_room = subscriptions.get(room, {}).get(user, [])
+                    subs_for_room = [
+                        s
+                        for s in subs_for_room
+                        if normalize_endpoint(s.get("endpoint"))
+                        != normalize_endpoint(sub.get("endpoint"))
+                    ]
+                    if subs_for_room:
+                        subscriptions[room][user] = subs_for_room
+                    else:
+                        del subscriptions[room][user]
+                        if not subscriptions[room]:
+                            del subscriptions[room]
+                    print(
+                        f"🗑️ Removed expired WebPush subscription for {user} in {room}"
+                    )
+
+
+async def send_fcm_to_room(room: str, sender: str, text: str):
+    if room in DESTROYED_ROOMS:
+        print(f"⛔ Skipping FCM: Room {room} is destroyed.")
+        return
+
+    now = datetime.now(timezone.utc)
+
+    # ✅ Try to extract favicon from the first link in the text
+    favicon_url = extract_favicon_from_text(text)
+
+    for user, rooms in list(FCM_TOKENS.items()):
+        if user == sender:
+            continue
+        if room not in rooms:
+            continue
+
+        # skip if user is active in foreground
+        if user_active_foreground(user):
+            continue
+
+        for token in list(rooms[room]):
+            try:
+                msg = messaging.Message(
+                    notification=messaging.Notification(
+                        title=f"Room {room}",
+                        body=f"{sender}: {text}",
+                        image=(
+                            favicon_url if favicon_url else None
+                        ),  # ✅ favicon as notification image
+                    ),
+                    token=token,
+                    data={
+                        "room": room,
+                        "sender": sender,
+                        "message": text,
+                        "timestamp": now.isoformat(),
+                        "favicon": favicon_url
+                        or "",  # ✅ pass along favicon in data too
+                    },
+                    android=messaging.AndroidConfig(
+                        priority="high",
+                        notification=messaging.AndroidNotification(
+                            channel_id="chat_messages",  # 👈 must exist on device
+                            sound="default",
+                            priority="high",
+                            icon="chat_icon",  # fallback if favicon not shown
+                        ),
+                    ),
+                )
+                response = messaging.send(msg)
+                print(f"📲 FCM sent to {user}: {response} (favicon={favicon_url})")
+            except Exception as e:
+                print(f"❌ FCM push failed for {user}: {e}")
+
+
+@app.post("/send-fcm")
+async def send_fcm(request: Request):
+    body = await request.json()
+    user = body.get("user")
+    title = body.get("title", "Chat Message")
+    message = body.get("message", "")
+    room = body.get("room", "")
+
+    if not user or user not in FCM_TOKENS:
+        return JSONResponse({"error": "invalid user"}, status_code=400)
+
+    # 🔑 Collect all tokens across rooms for this user
+    tokens = []
+    for room_tokens in FCM_TOKENS[user].values():
+        tokens.extend(room_tokens)
+
+    results = []
+    for token in tokens:
+        msg = messaging.Message(
+            notification=messaging.Notification(title=title, body=message),
+            token=token,
+            data={"url": f"/?room={room}", "sender": user, "message": message},
+        )
+        try:
+            response = messaging.send(msg)
+            print(f"✅ FCM sent to {user} [{token[:10]}...]: {response}")
+            results.append({"token": token, "id": response, "status": "ok"})
+        except Exception as e:
+            print(f"❌ Failed to send FCM to {user} [{token[:10]}...]: {e}")
+            results.append({"token": token, "error": str(e)})
+
+    return {"status": "done", "results": results}
+
+
+@app.post("/api/unregister-fcm")
+async def unregister_fcm(request: Request):
+    body = await request.json()
+    token = body.get("token")
+    user = body.get("user")
+    room = body.get("room")
+
+    if not token or not user or not room:
+        return JSONResponse({"error": "user + token + room required"}, status_code=400)
+
+    if user in FCM_TOKENS and room in FCM_TOKENS[user]:
+        if token in FCM_TOKENS[user][room]:
+            FCM_TOKENS[user][room].remove(token)
+            print(f"🛑 Token removed for {user} in room {room}")
+
+        # cleanup
+        if not FCM_TOKENS[user][room]:
+            del FCM_TOKENS[user][room]
+        if not FCM_TOKENS[user]:
+            del FCM_TOKENS[user]
+
+    return {"status": "ok"}
+
+
+# ---------------- Static / PWA assets ----------------
+
+# serve /icons/*
+app.mount(
+    "/icons", StaticFiles(directory=os.path.join(BASE_DIR, "icons")), name="icons"
+)
+
+
+# serve manifest.json
+@app.get("/manifest.json")
+async def manifest():
+    return FileResponse(os.path.join(BASE_DIR, "manifest.json"))
+
+
+# serve service worker
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse(os.path.join(BASE_DIR, "sw.js"))
+
+
+# sitemap
+@app.get("/sitemap.xml")
+def sitemap():
+    base_url = "http://127.0.0.1:8000"  # replace with your domain in production
+    static_pages = ["index.html"]
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    for page in static_pages:
+        url = page.replace("index.html", "")
+        loc = f"{base_url}/" if url == "" else f"{base_url}/{url}"
+        xml += f"  <url><loc>{loc}</loc></url>\n"
+    xml += "</urlset>"
+    return Response(content=xml, media_type="application/xml")
+
+
+# robots.txt
+@app.get("/robots.txt")
+def robots():
+    return Response("User-agent: *\nAllow: /\n", media_type="text/plain")
+
+
+# serve everything inside www (index.html as root)
+app.mount("/", StaticFiles(directory=BASE_DIR, html=True), name="static")
+
+# ---------------- Run ----------------
+if __name__ == "__main__":
+    import uvicorn
+
+    local_ip = socket.gethostbyname(socket.gethostname())
+    print("🚀 Server running at:")
+    print("   ➤ Local:   http://127.0.0.1:8000")
+    print(f"   ➤ Network: http://{local_ip}:8000")
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,0 +1,25 @@
+# --- Core Web Framework ---
+fastapi
+uvicorn[standard]
+
+# --- Realtime Communication ---
+python-socketio[asyncio]
+
+# --- Async + File Handling ---
+aiofiles
+aiohttp
+httpx
+watchfiles
+
+# --- Push Notifications (Web + FCM) ---
+pywebpush
+cryptography
+
+# --- Firebase Admin SDK (for FCM) ---
+firebase-admin
+
+# --- Utilities ---
+python-dotenv
+pydantic
+python-dateutil
+jinja2

@@ -1,0 +1,14 @@
+# Ignore folders
+__pycache__/
+.vscode/
+node_modules/
+android/
+resources/
+
+# Ignore files
+key.py
+chat.db
+my.txt
+.env
+package-lock.json
+package.json
