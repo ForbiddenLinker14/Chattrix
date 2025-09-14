@@ -1,6 +1,6 @@
 {
   "appId": "com.realtimechat.chat",
-  "appName": "Realtime Chat",
+  "appName": "Chattrix",
   "webDir": "www",
   "server": {
     "androidScheme": "https"

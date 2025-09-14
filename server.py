@@ -825,7 +825,7 @@ async def send_push_to_room(room: str, sender: str, text: str):
 
     now = datetime.now(timezone.utc)
     payload = {
-        "title": "Realtime Chat",
+        "title": "Chattrix",
         "sender": sender,
         "text": text,
         "room": room,

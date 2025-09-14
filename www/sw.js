@@ -57,7 +57,7 @@ self.addEventListener("push", (event) => {
       const allClients = await clients.matchAll({ includeUncontrolled: true });
       const isClientFocused = allClients.some((c) => c.focused);
 
-      const title = data.title || "Realtime Chat";
+      const title = data.title || "Chattrix";
       const roomLine = data.room ? `Room: ${data.room}` : "";
       const msgLine =
         data.sender && data.text ? `${data.sender}: ${data.text}` : "New message";
