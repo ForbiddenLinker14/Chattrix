@@ -1174,11 +1174,13 @@
         const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
         console.log("DEBUG_DOWNLOAD", "Base64 cleaned length:", cleaned.length);
 
-        const { Filesystem } = window.Capacitor.Plugins;
+        const { Filesystem, Toast } = window.Capacitor.Plugins;
 
         if (!Filesystem) {
           console.error("DEBUG_DOWNLOAD", "❌ Filesystem plugin not available!");
-          alert("Filesystem plugin missing – check Capacitor setup.");
+          if (Toast) {
+            await Toast.show({ text: "❌ Filesystem plugin missing!", duration: "short", position: "bottom" });
+          }
           return;
         }
 
@@ -1191,11 +1193,26 @@
         });
 
         console.log("DEBUG_DOWNLOAD", "✅ File write result:", result);
-        alert(`✅ File saved: ${result.uri}`);
+
+        if (Toast) {
+          await Toast.show({
+            text: `✅ Downloaded: ${filename}`,
+            duration: "short", // ~2s auto-disappear
+            position: "bottom",
+          });
+        }
+
         return result.uri;
       } catch (e) {
         console.error("DEBUG_DOWNLOAD", "❌ Save failed error object:", e);
-        alert("Save failed: " + e.message);
+        const { Toast } = window.Capacitor.Plugins;
+        if (Toast) {
+          await Toast.show({
+            text: `❌ Save failed: ${e.message}`,
+            duration: "short",
+            position: "bottom",
+          });
+        }
       }
     }
 
@@ -1215,6 +1232,14 @@
         }
       } catch (err) {
         console.error("DEBUG_DOWNLOAD", "❌ Download error:", err);
+        const { Toast } = window.Capacitor.Plugins;
+        if (Toast) {
+          await Toast.show({
+            text: `❌ Download error: ${err.message}`,
+            duration: "short",
+            position: "bottom",
+          });
+        }
       }
     };
 
