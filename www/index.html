@@ -1169,38 +1169,52 @@
     // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
     async function saveFileToDevice(base64Data, filename, mimeType) {
       try {
+        console.log("DEBUG_DOWNLOAD", "Preparing to save file:", filename, "type:", mimeType);
+
         const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+        console.log("DEBUG_DOWNLOAD", "Base64 cleaned length:", cleaned.length);
 
         const { Filesystem } = window.Capacitor.Plugins;
+
+        if (!Filesystem) {
+          console.error("DEBUG_DOWNLOAD", "❌ Filesystem plugin not available!");
+          alert("Filesystem plugin missing – check Capacitor setup.");
+          return;
+        }
+
+        console.log("DEBUG_DOWNLOAD", "Calling Filesystem.writeFile...");
 
         const result = await Filesystem.writeFile({
           path: filename,
           data: cleaned,
-          directory: FilesystemDirectory.Documents, // 👈 FIXED
+          directory: "DOCUMENTS", // ✅ safe folder
         });
 
+        console.log("DEBUG_DOWNLOAD", "✅ File write result:", result);
         alert(`✅ File saved: ${result.uri}`);
         return result.uri;
       } catch (e) {
-        console.error("❌ Save failed:", e);
+        console.error("DEBUG_DOWNLOAD", "❌ Save failed error object:", e);
         alert("Save failed: " + e.message);
       }
     }
 
     window.downloadFile = async (base64, filename, mimetype) => {
       try {
+        console.log("DEBUG_DOWNLOAD", "Download clicked. Platform:", window.Capacitor?.getPlatform?.());
+
         if (window.Capacitor?.isNativePlatform()) {
-          console.log("📂 Running in Capacitor → saving file...");
+          console.log("DEBUG_DOWNLOAD", "📂 Running in Capacitor → will save file...");
           await saveFileToDevice(base64, filename, mimetype);
         } else {
-          console.log("🌍 Running in browser → normal download...");
+          console.log("DEBUG_DOWNLOAD", "🌍 Running in browser → fallback download");
           const a = document.createElement("a");
           a.href = base64;
           a.download = filename;
           a.click();
         }
       } catch (err) {
-        console.error("❌ Download error:", err);
+        console.error("DEBUG_DOWNLOAD", "❌ Download error:", err);
       }
     };
 
