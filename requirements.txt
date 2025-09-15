@@ -1,6 +1,7 @@
 # --- Core Web Framework ---
 fastapi
 uvicorn[standard]
+gunicorn
 
 # --- Realtime Communication ---
 python-socketio[asyncio]
@@ -10,6 +11,7 @@ aiofiles
 aiohttp
 httpx
 watchfiles
+python-multipart   # 👈 for file uploads
 
 # --- Push Notifications (Web + FCM) ---
 pywebpush
@@ -23,3 +25,4 @@ python-dotenv
 pydantic
 python-dateutil
 jinja2
+rich               # 👈 better logging

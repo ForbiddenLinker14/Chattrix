@@ -1166,6 +1166,45 @@
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
     }
 
+    // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
+    async function saveFileToDevice(base64Data, filename, mimeType) {
+      try {
+        const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+
+        const { Filesystem, Directory } = window.Capacitor.Plugins;
+
+        const result = await Filesystem.writeFile({
+          path: filename,
+          data: cleaned,
+          directory: Directory.Documents, // ✅ safe location
+        });
+
+        alert(`✅ File saved: ${result.uri}`);
+        return result.uri;
+      } catch (e) {
+        console.error("❌ Save failed:", e);
+        alert("Save failed: " + e.message);
+      }
+    }
+
+    // Hybrid download (works on Web + Android)
+    window.downloadFile = async (base64, filename, mimetype) => {
+      try {
+        if (window.Capacitor?.isNativePlatform()) {
+          console.log("📂 Running in Capacitor → saving file...");
+          await saveFileToDevice(base64, filename, mimetype);
+        } else {
+          console.log("🌍 Running in browser → normal download...");
+          const a = document.createElement("a");
+          a.href = base64;
+          a.download = filename;
+          a.click();
+        }
+      } catch (err) {
+        console.error("❌ Download error:", err);
+      }
+    };
+
     // ==================================================
     // 🔽 UPDATED addFileMessage FUNCTION
     // ==================================================
@@ -1618,45 +1657,6 @@
       });
     }
   </script>
-
-  <script type="module">
-    import { Filesystem, Directory } from '@capacitor/filesystem';
-
-    // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
-    async function saveFileToDevice(base64Data, filename, mimeType) {
-      try {
-        // Strip "data:...;base64," prefix if present
-        const cleaned = base64Data.split(',')[1] || base64Data;
-
-        const result = await Filesystem.writeFile({
-          path: filename,
-          data: cleaned,
-          directory: Directory.Documents, // ✅ Play Store–safe location
-        });
-
-        alert(`✅ File saved: ${result.uri}`);
-        return result.uri;
-      } catch (e) {
-        console.error('❌ Save failed:', e);
-        alert('Save failed: ' + e.message);
-      }
-    }
-
-    // Hybrid download (works on Web + Android)
-    window.downloadFile = (base64, filename, mimetype) => {
-      if (window.Capacitor?.isNativePlatform()) {
-        // Native app → save with Capacitor
-        saveFileToDevice(base64, filename, mimetype);
-      } else {
-        // Browser → fallback to <a download>
-        const a = document.createElement('a');
-        a.href = base64;
-        a.download = filename;
-        a.click();
-      }
-    };
-  </script>
-
 
 
 </body>
