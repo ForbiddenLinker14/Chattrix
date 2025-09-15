@@ -1166,7 +1166,10 @@
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
     }
 
-    function addFileMessage(data) {
+    // ==================================================
+    // 🔽 UPDATED addFileMessage FUNCTION
+    // ==================================================
+    window.addFileMessage = function addFileMessage(data) {
       bumpTs(data.ts);
       const div = document.createElement("div");
       const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
@@ -1177,8 +1180,9 @@
         div.innerHTML = `
         <div class="username"><strong>${data.sender}</strong></div>
         <div class="image-wrapper">
-          <a href="${data.data}" download="${data.filename
-          }" class="download-icon" title="Download">
+          <a href="javascript:void(0)" 
+             onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')"
+             class="download-icon" title="Download">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
               <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
             </svg>
@@ -1189,18 +1193,16 @@
       } else {
         div.innerHTML = `
         <div class="username"><strong>${data.sender}</strong></div>
-        <a href="${data.data}" download="${escapeAttr(
-          data.filename
-        )}" class="download-link">📎 ${escapeHtml(
-          data.filename || "file"
-        )}</a><br>
+        <a href="javascript:void(0)" 
+           onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')"
+           class="download-link">📎 ${escapeHtml(data.filename || "file")}</a><br>
         <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
       }
 
       const messages = document.getElementById("messages");
       messages.appendChild(div);
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    }
+    };
 
     function handleFileUpload() {
       const file = document.getElementById("fileInput").files[0];
@@ -1615,6 +1617,44 @@
         fcmToken   // ✅ include token here too
       });
     }
+  </script>
+
+  <script type="module">
+    import { Filesystem, Directory } from '@capacitor/filesystem';
+
+    // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
+    async function saveFileToDevice(base64Data, filename, mimeType) {
+      try {
+        // Strip "data:...;base64," prefix if present
+        const cleaned = base64Data.split(',')[1] || base64Data;
+
+        const result = await Filesystem.writeFile({
+          path: filename,
+          data: cleaned,
+          directory: Directory.Documents, // ✅ Play Store–safe location
+        });
+
+        alert(`✅ File saved: ${result.uri}`);
+        return result.uri;
+      } catch (e) {
+        console.error('❌ Save failed:', e);
+        alert('Save failed: ' + e.message);
+      }
+    }
+
+    // Hybrid download (works on Web + Android)
+    window.downloadFile = (base64, filename, mimetype) => {
+      if (window.Capacitor?.isNativePlatform()) {
+        // Native app → save with Capacitor
+        saveFileToDevice(base64, filename, mimetype);
+      } else {
+        // Browser → fallback to <a download>
+        const a = document.createElement('a');
+        a.href = base64;
+        a.download = filename;
+        a.click();
+      }
+    };
   </script>
 
 
