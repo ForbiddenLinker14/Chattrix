@@ -1171,12 +1171,12 @@
       try {
         const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
 
-        const { Filesystem, Directory } = window.Capacitor.Plugins;
+        const { Filesystem } = window.Capacitor.Plugins;
 
         const result = await Filesystem.writeFile({
           path: filename,
           data: cleaned,
-          directory: Directory.Documents, // ✅ safe location
+          directory: FilesystemDirectory.Documents, // 👈 FIXED
         });
 
         alert(`✅ File saved: ${result.uri}`);
@@ -1187,7 +1187,6 @@
       }
     }
 
-    // Hybrid download (works on Web + Android)
     window.downloadFile = async (base64, filename, mimetype) => {
       try {
         if (window.Capacitor?.isNativePlatform()) {
