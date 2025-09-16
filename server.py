@@ -529,29 +529,60 @@ async def message(sid, data):
     await send_fcm_to_room(room, sender, text)
 
 
+# @sio.event
+# async def file(sid, data):
+#     room = data.get("room")
+#     if not room or room in DESTROYED_ROOMS:
+#         return
+#     save_message(
+#         room,
+#         data["sender"],
+#         filename=data["filename"],
+#         mimetype=data["mimetype"],
+#         filedata=data["data"],
+#     )
+#     await sio.emit(
+#         "file",
+#         {
+#             "sender": data["sender"],
+#             "filename": data["filename"],
+#             "mimetype": data["mimetype"],
+#             "data": data["data"],
+#             "ts": datetime.now(timezone.utc).isoformat(),
+#         },
+#         room=room,
+#     )
+
+
 @sio.event
 async def file(sid, data):
     room = data.get("room")
+    sender = data.get("sender")
+    filename = data.get("filename")
+    mimetype = data.get("mimetype")
+    filedata = data.get("data")
+
     if not room or room in DESTROYED_ROOMS:
         return
-    save_message(
-        room,
-        data["sender"],
-        filename=data["filename"],
-        mimetype=data["mimetype"],
-        filedata=data["data"],
-    )
+
+    save_message(room, sender, filename=filename, mimetype=mimetype, filedata=filedata)
+
     await sio.emit(
         "file",
         {
-            "sender": data["sender"],
-            "filename": data["filename"],
-            "mimetype": data["mimetype"],
-            "data": data["data"],
+            "sender": sender,
+            "filename": filename,
+            "mimetype": mimetype,
+            "data": filedata,
             "ts": datetime.now(timezone.utc).isoformat(),
         },
         room=room,
     )
+
+    # ✅ Send push notifications for file uploads
+    message = f"{sender} sent a file: {filename}"
+    await send_push_to_room(room, sender, message)
+    await send_fcm_to_room(room, sender, message)
 
 
 @sio.event
