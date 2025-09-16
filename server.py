@@ -445,15 +445,10 @@ async def join(sid, data):
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # send missed messages (skip messages authored by this connecting user)
+    # send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
-
-        # don't resend messages originally sent by the same username
-        if sender_ == username:
-            continue
-
         if filename:
             await sio.emit(
                 "file",
@@ -470,6 +465,7 @@ async def join(sid, data):
             await sio.emit(
                 "message", {"sender": sender_, "text": text, "ts": ts}, to=sid
             )
+
     # broadcast system join
     if not old_sid:
         await sio.emit(
