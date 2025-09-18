@@ -2321,44 +2321,41 @@
       }
 
 function handleRoomDestroyed(data) {
-  // 🔹 Remove from joinedRooms set
-  joinedRooms.delete(data.room);
+  const destroyed = data.room;
 
-  // 🔹 Remove from joinedRoomsByUser (persistent storage)
-  if (currentName && joinedRoomsByUser[currentName]) {
-    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
-      (room) => room !== data.room
-    );
-    localStorage.setItem(
-      "joinedRoomsByUser",
-      JSON.stringify(joinedRoomsByUser)
-    );
+  // Ensure we have currentName and the persisted joinedRooms map loaded
+  if (!currentName) currentName = Storage.get("chat_name") || "";
+  joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+
+  // Remove from runtime set (if present)
+  joinedRooms.delete(destroyed);
+
+  // Remove from persisted per-user list (if present)
+  if (currentName && Array.isArray(joinedRoomsByUser[currentName])) {
+    const idx = joinedRoomsByUser[currentName].indexOf(destroyed);
+    if (idx !== -1) {
+      joinedRoomsByUser[currentName].splice(idx, 1);
+      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+    }
   }
 
-  // 🔹 Refresh sidebar
+  // Re-render sidebar (ensures DOM and storage are in sync)
   renderJoinedRooms();
 
-  // 🔹 If current room was destroyed
-  if (currentRoom === data.room) {
-    document.getElementById("input").disabled = true;
-    document.getElementById("send").disabled = true;
-    document.getElementById("attach").disabled = true;
-
-    addMessage({
-      sender: "System",
-      text: "Room destroyed. You cannot send messages until you join a new room.",
-      ts: new Date().toISOString(),
-    });
-
-    lastPersistedTs = null;
+  // If user is currently inside destroyed room, reset UI
+  if (currentRoom === destroyed) {
     currentRoom = "";
-    Storage.remove("chat_name");
-    Storage.remove("chat_room");
+    document.getElementById("messages").innerHTML = "";
     document.getElementById("user-list").innerHTML = "";
     document.getElementById("chat-container").style.display = "none";
     document.getElementById("input-area").style.display = "none";
     document.getElementById("intro").style.display = "block";
-    document.getElementById("messages").style.display = "none";
+
+    addMessage({
+      sender: "System",
+      text: "Room destroyed. You cannot send messages until you join a new room.",
+      ts: new Date().toISOString()
+    });
   }
 }
 

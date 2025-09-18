@@ -398,8 +398,13 @@ async def destroy_room(room: str):
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
+    # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
+    # --- NEW: also broadcast to all connected clients so clients
+    # who have already left the room (but still have it in localStorage)
+    # can remove it from their sidebar.
+    await sio.emit("room_destroyed", {"room": room})
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
