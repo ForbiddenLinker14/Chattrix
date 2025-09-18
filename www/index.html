@@ -1239,15 +1239,18 @@ function switchRoom(room) {
 
   // Update sidebar highlight safely
   Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
-  li.style.background =
-    li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-});
-
+    li.style.background =
+      li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+  });
 
   // If we were in another room, tell server we left it (keeps server state clean)
   if (previousRoom && socket && socket.connected) {
     try {
-      socket.emit("leave", { room: previousRoom, sender: currentName });
+      socket.emit("leave", {
+        room: previousRoom,
+        sender: currentName,
+        reason: "switch", // ✅ added reason flag
+      });
       console.log("➡️ Left previous room:", previousRoom);
     } catch (e) {
       console.warn("Failed to emit leave for previous room:", e);
@@ -1272,7 +1275,10 @@ function switchRoom(room) {
         joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
         if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
           joinedRoomsByUser[currentName].push(currentRoom);
-          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+          localStorage.setItem(
+            "joinedRoomsByUser",
+            JSON.stringify(joinedRoomsByUser)
+          );
         }
         // refresh UI
         renderJoinedRooms();
@@ -1287,8 +1293,6 @@ function switchRoom(room) {
     }
   );
 }
-
-
 
 
       async function restoreChatState(socket) {
@@ -1460,7 +1464,7 @@ function switchRoom(room) {
       }
 
       function addMessage(data) {
-         console.debug('MSG RECEIVED', data, 'currentRoom=', currentRoom);
+        console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
         const messages = document.getElementById("messages");
 
         if (data.ts) {
@@ -2314,33 +2318,36 @@ function switchRoom(room) {
         });
       }
 
-function handleRoomDestroyed(data) {
-  const destroyed = data.room;
+      function handleRoomDestroyed(data) {
+        const destroyed = data.room;
 
-  // Remove from joinedRooms set & per-user mapping
-  joinedRooms.delete(destroyed);
-  if (joinedRoomsByUser[currentName]) {
-    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== destroyed);
-    localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-  }
+        // Remove from joinedRooms set & per-user mapping
+        joinedRooms.delete(destroyed);
+        if (joinedRoomsByUser[currentName]) {
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[
+            currentName
+          ].filter((r) => r !== destroyed);
+          localStorage.setItem(
+            "joinedRoomsByUser",
+            JSON.stringify(joinedRoomsByUser)
+          );
+        }
 
-  // Re-render sidebar
-  renderJoinedRooms();
+        // Re-render sidebar
+        renderJoinedRooms();
 
-  // If we're currently viewing that room, reset UI to intro
-  if (currentRoom === destroyed) {
-    currentRoom = "";
-    document.getElementById("messages").innerHTML = "";
-    document.getElementById("user-list").innerHTML = "";
-    document.getElementById("chat-container").style.display = "none";
-    document.getElementById("input-area").style.display = "none";
-    document.getElementById("intro").style.display = "block";
-  }
+        // If we're currently viewing that room, reset UI to intro
+        if (currentRoom === destroyed) {
+          currentRoom = "";
+          document.getElementById("messages").innerHTML = "";
+          document.getElementById("user-list").innerHTML = "";
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+        }
 
-  alert(`Room ${destroyed} was destroyed and removed.`);
-}
-
-
+        alert(`Room ${destroyed} was destroyed and removed.`);
+      }
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
@@ -2481,8 +2488,12 @@ async function leaveRoom() {
     console.error("❌ Failed to unsubscribe WebPush:", err);
   }
 
-  // 🔌 Leave socket room
-  socket.emit("leave", { room: currentRoom, sender: currentName });
+  // 🔌 Leave socket room (with reason flag)
+  socket.emit("leave", {
+    room: currentRoom,
+    sender: currentName,
+    reason: "leave", // ✅ added
+  });
   console.log(`🚪 Left room ${currentRoom}`);
 
   // 🖥️ Reset UI
@@ -2519,7 +2530,6 @@ async function leaveRoom() {
   document.getElementById("input-area").style.display = "none";
   document.getElementById("messages").style.display = "block";
 }
-
 
 
       // ======================================================

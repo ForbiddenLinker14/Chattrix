@@ -586,6 +586,55 @@ async def file(sid, data):
     await send_fcm_to_room(room, sender, message)
 
 
+# @sio.event
+# async def leave(sid, data):
+#     room = data.get("room")
+#     username = data.get("sender")
+
+#     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
+#         del ROOM_USERS[room][username]
+#         if not ROOM_USERS[room]:
+#             del ROOM_USERS[room]
+
+#     await sio.leave_room(sid, room)
+#     await broadcast_users(room)
+#     await sio.emit("left_room", {"room": room}, to=sid)
+
+#     # 🛑 Also cleanup FCM tokens in memory + DB
+#     if username in FCM_TOKENS and room in FCM_TOKENS[username]:
+#         tokens = list(FCM_TOKENS[username][room])  # copy
+#         for token in tokens:
+#             conn = sqlite3.connect(DB_PATH)
+#             c = conn.cursor()
+#             c.execute(
+#                 "DELETE FROM fcm_tokens WHERE user=? AND room=? AND token=?",
+#                 (username, room, token),
+#             )
+#             conn.commit()
+#             conn.close()
+#             print(f"🗑️ Deleted FCM token for {username} in {room} [{token[:10]}...]")
+#         del FCM_TOKENS[username][room]
+#         if not FCM_TOKENS[username]:
+#             del FCM_TOKENS[username]
+
+#     # 🛑 Also cleanup WebPush subscriptions
+#     if room in subscriptions and username in subscriptions[room]:
+#         del subscriptions[room][username]
+#         if not subscriptions[room]:
+#             del subscriptions[room]
+#         print(f"🛑 Cleared WebPush subs for {username} in {room}")
+
+#     await sio.emit(
+#         "message",
+#         {
+#             "sender": "System",
+#             "text": f"{username} left!",
+#             "ts": datetime.now(timezone.utc).isoformat(),
+#         },
+#         room=room,
+#     )
+
+
 @sio.event
 async def leave(sid, data):
     room = data.get("room")
