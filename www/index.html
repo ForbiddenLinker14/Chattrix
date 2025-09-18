@@ -1192,6 +1192,42 @@
         renderJoinedRooms();
       }
 
+      // ✅ Add this near your other room management functions
+async function syncDestroyedRooms() {
+  try {
+    const res = await fetch("/destroyed_rooms");
+    const data = await res.json();
+    const destroyed = data.destroyed || [];
+
+    if (destroyed.length && currentName) {
+      joinedRoomsByUser[currentName] =
+        (joinedRoomsByUser[currentName] || []).filter(
+          (room) => !destroyed.includes(room)
+        );
+      localStorage.setItem(
+        "joinedRoomsByUser",
+        JSON.stringify(joinedRoomsByUser)
+      );
+      renderJoinedRooms();
+    }
+  } catch (err) {
+    console.warn("Failed to sync destroyed rooms:", err);
+  }
+}
+
+// ✅ Replace your current DOMContentLoaded block with this
+window.addEventListener("DOMContentLoaded", () => {
+  joinedRoomsByUser = JSON.parse(
+    localStorage.getItem("joinedRoomsByUser") || "{}"
+  );
+  currentName = Storage.get("chat_name") || "";
+  if (currentName) {
+    renderJoinedRooms();
+    syncDestroyedRooms(); // 🔑 fetch and clean destroyed rooms
+  }
+});
+
+
       // ----------------- Render Joined Rooms -----------------
       function renderJoinedRooms() {
         const list = document.getElementById("joined-rooms");

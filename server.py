@@ -1093,6 +1093,10 @@ async def unregister_fcm(request: Request):
 
 
 # ---------------- Static / PWA assets ----------------
+@app.get("/destroyed_rooms")
+async def get_destroyed_rooms():
+    return {"destroyed": list(DESTROYED_ROOMS)}
+
 
 # serve /icons/*
 app.mount(
