@@ -580,7 +580,8 @@ async def file(sid, data):
     )
 
     # ✅ Send push notifications for file uploads
-    message = f"{sender} sent a file: {filename}"
+    # message = f"{sender} sent a file: {filename}"
+    message = f"{filename}"
     await send_push_to_room(room, sender, message)
     await send_fcm_to_room(room, sender, message)
 

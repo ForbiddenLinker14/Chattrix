@@ -4,587 +4,625 @@
 
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
-    crossorigin="anonymous"></script>
-
-  <link href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
-  <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
-
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-
-  <meta name="google-site-verification" content="lvrePtNXjs6Q-t-SX8DeUld6iPEPqAFfLrUTcY_U2o4" />
-  <link rel="icon" href="/icons/favicon.ico" type="image/png" />
-  <meta charset="utf-8" />
-  <link rel="manifest" href="/manifest.json" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, height=device-height" />
-  <title>💬 Chattrix</title>
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="theme-color" content="#000000" />
-
-  <style>
-    html,
-    body {
-      height: 100%;
-      /* Hide scrollbar (cross-browser) */
-      scrollbar-width: none;
-      /* Firefox */
-      -ms-overflow-style: none;
-      /* IE/Edge */
-    }
-
-    html::-webkit-scrollbar {
-      display: none;
-      /* Chrome, Safari, Opera */
-    }
-
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      display: flex;
-      height: 100vh;
-      /* lock app to viewport */
-      overflow: auto;
-      /* page itself never scrolls on desktop */
-      background: #100e09;
-      color: #eaeaea;
-      /* Hide scrollbar (cross-browser) */
-      scrollbar-width: none;
-      /* Firefox */
-      -ms-overflow-style: none;
-      /* IE/Edge */
-    }
-
-    /* Landing page wrapper (intro + footer) */
-    #intro-wrapper {
-      max-width: 1000px;
-      margin: auto;
-      padding: 20px;
-      line-height: 1.6;
-    }
-
-    /* Sidebar */
-    #sidebar {
-      width: 260px;
-      background: #1a1812;
-      padding: 15px;
-      border-right: 1px solid #333;
-      box-sizing: border-box;
-      transition: transform 0.4s ease-in-out;
-      position: relative;
-      z-index: 2;
-      color: #eaeaea;
-
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      /* fixed column height */
-    }
-
-    #sidebar.hidden {
-      position: absolute;
-      left: 0;
-      top: 0;
-      height: 100%;
-      transform: translateX(-100%);
-    }
-
-    #sidebar input[type="text"] {
-      width: 100%;
-      margin-bottom: 12px;
-      padding: 8px 2px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      color: #fff;
-      background: linear-gradient(145deg, #0d0d0d, #1a1a1a);
-      box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.6),
-        inset -2px -2px 5px rgba(50, 50, 50, 0.6);
-      transition: all 0.3s;
-    }
-
-    #sidebar input[type="text"]::placeholder {
-      color: #888;
-    }
-
-    #sidebar input[type="text"]:hover {
-      background: linear-gradient(145deg, #1c1c1c, #2a2a2a);
-    }
-
-    #sidebar input[type="text"]:focus {
-      outline: none;
-      background: linear-gradient(145deg, #222, #333);
-      box-shadow: 0 0 6px #25d366, inset 2px 2px 6px rgba(0, 0, 0, 0.7);
-    }
-
-    /* Chat container */
-    #chat-container {
-      flex: 1 1 0;
-      display: flex;
-      flex-direction: column;
-      background: #100e09;
-      min-height: 0;
-      /* overflow: hidden; */
-      /* allow internal scrollers */
-    }
-
-    /* Arrows */
-    #show-arrow,
-    #toggle-arrow {
-      font-size: 18px;
-      cursor: pointer;
-      background: #256e4c;
-      color: #eaeaea;
-      padding: 4px 10px;
-      border-radius: 4px;
-      user-select: none;
-      transition: background 0.3s;
-    }
-
-    #toggle-arrow {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 3;
-    }
-
-    #show-arrow {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      z-index: 5;
-      display: none;
-    }
-
-    #toggle-arrow:hover,
-    #show-arrow:hover {
-      background: #25d366;
-    }
-
-    /* Messages */
-    #messages {
-      flex: 1 1 0;
-      padding: 15px;
-      overflow-y: auto;
-      background: #100e09;
-      scroll-behavior: smooth;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-      min-height: 0;
-      overscroll-behavior: contain;
-      /* wheel doesn’t bubble to page */
-    }
-
-    #messages::-webkit-scrollbar {
-      display: none;
-    }
-
-    .msg {
-      margin: 5px 0;
-      padding: 10px 14px;
-      border-radius: 12px;
-      max-width: 70%;
-      word-wrap: break-word;
-      font-size: 14px;
-    }
-
-    .msg.me {
-      background: #032f30;
-      color: #f1f1f1;
-      margin-left: auto;
-      text-align: right;
-    }
-
-    .msg.other {
-      background: #0b4561;
-      color: #f1f1f1;
-      margin-right: auto;
-      text-align: left;
-    }
-
-    .msg.system {
-      display: block;
-      width: 100% !important;
-      max-width: 100% !important;
-      text-align: center;
-      color: #daedf7;
-      font-style: italic;
-      margin: 10px 0;
-      box-sizing: border-box;
-    }
-
-    /* Input area */
-    #input-area {
-      display: flex;
-      border-top: 1px solid #333;
-      background: #1a1812;
-    }
-
-    #input {
-      flex: 1;
-      padding: 10px;
-      border: none;
-      font-size: 16px;
-      background: #100e09;
-      color: #eaeaea;
-    }
-
-    #input::placeholder {
-      color: #777;
-    }
-
-    #attach {
-      padding: 10px 15px;
-      border: none;
-      background: #2c3e50;
-      color: white;
-      cursor: pointer;
-      font-size: 18px;
-    }
-
-    #attach:hover {
-      background: #34495e;
-    }
-
-    #send {
-      padding: 10px 20px;
-      border: none;
-      background: #27ae60;
-      color: white;
-      cursor: pointer;
-      font-size: 16px;
-    }
-
-    #send:hover {
-      background: #2ecc71;
-    }
-
-    /* Sidebar buttons */
-    #sidebar button {
-      margin-top: 5px;
-      padding: 8px;
-      border: none;
-      cursor: pointer;
-      border-radius: 6px;
-      font-size: 14px;
-    }
-
-    #sidebar button:hover {
-      opacity: 0.9;
-    }
-
-    #sidebar button:nth-child(3) {
-      background: #e67e22;
-      color: #fff;
-    }
-
-    #sidebar button:nth-child(4) {
-      background: #c0392b;
-      color: #fff;
-    }
-
-    #sidebar button:nth-child(5) {
-      background: #e74c3c;
-      color: #fff;
-    }
-
-    .username {
-      font-weight: bold;
-      margin-bottom: 4px;
-    }
-
-    .image-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-
-    .image-wrapper img {
-      max-width: 220px;
-      border-radius: 8px;
-      display: block;
-    }
-
-    .download-icon {
-      position: absolute;
-      top: 6px;
-      right: 6px;
-      background: rgba(0, 0, 0, 0.5);
-      padding: 4px;
-      border-radius: 4px;
-      text-decoration: none;
-      color: white;
-      z-index: 10;
-    }
-
-    .download-icon:hover {
-      background: rgba(0, 179, 84, 0.7);
-    }
-
-    .timestamp {
-      font-size: 12px;
-      color: #ccc;
-      margin-top: 4px;
-    }
-
-    .image-wrapper video {
-      max-width: 220px;
-      border-radius: 8px;
-      display: block;
-      z-index: 1;
-    }
-
-    /* ===== Users panel & list (critical) ===== */
-    #users-title {
-      font-size: 16px;
-      font-weight: bold;
-      color: #f3f4f6;
-      margin: 15px 0 10px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid #333;
-    }
-
-    #users-panel {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      /* always expand in sidebar */
-      min-height: 0;
-      /* allow user-list to shrink/scroll */
-    }
-
-    #user-list {
-      flex: 1;
-      min-height: 0;
-      /* 👈 critical fix */
-      overflow-y: auto;
-      /* list scrolls, not body */
-      overscroll-behavior: contain;
-
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      background: #100e09;
-      border: 1px solid #333;
-      border-radius: 12px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-
-      scrollbar-width: thin;
-      scrollbar-color: #4b5563 #1a1813;
-
-      /* HIDE scrollbar but keep scroll */
-      scrollbar-width: none;
-      /* Firefox */
-      -ms-overflow-style: none;
-      /* IE/Edge */
-    }
-
-    #user-list::-webkit-scrollbar {
-      display: none;
-      /* Chrome, Safari */
-    }
-
-    #user-list li {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 6px 10px;
-      font-size: 14px;
-      color: #e5e7eb;
-      transition: background 0.2s;
-      border-bottom: 1px solid #222;
-    }
-
-    #user-list li:hover {
-      background: #1a1813;
-      cursor: default;
-    }
-
-    /* Animations */
-    #user-list li.fade-in {
-      animation: fadeIn 0.4s ease forwards;
-    }
-
-    #user-list li.fade-out {
-      animation: fadeOut 0.3s ease forwards;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-        transform: translateY(5px);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes fadeOut {
-      from {
-        opacity: 1;
-        transform: translateY(0);
-      }
-
-      to {
-        opacity: 0;
-        transform: translateY(-3px);
-      }
-    }
-
-    #user-list::-webkit-scrollbar {
-      width: 6px;
-    }
-
-    #user-list::-webkit-scrollbar-track {
-      background: #1a1813;
-      border-radius: 10px;
-    }
-
-    #user-list::-webkit-scrollbar-thumb {
-      background: #4b5563;
-      border-radius: 10px;
-      border: 1px solid #1a1813;
-    }
-
-    #user-list::-webkit-scrollbar-thumb:hover {
-      background: #6b7280;
-    }
-
-    /* Responsive mobile */
-    @media (max-width: 768px) {
+  <head>
+    <script
+      async
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
+      crossorigin="anonymous"
+    ></script>
+
+    <link
+      href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
+
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+
+    <meta
+      name="google-site-verification"
+      content="lvrePtNXjs6Q-t-SX8DeUld6iPEPqAFfLrUTcY_U2o4"
+    />
+    <link rel="icon" href="/icons/favicon.ico" type="image/png" />
+    <meta charset="utf-8" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, height=device-height"
+    />
+    <title>💬 Chattrix</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#000000" />
+
+    <style>
+      html,
       body {
-        flex-direction: column;
+        height: 100%;
+        /* Hide scrollbar (cross-browser) */
+        scrollbar-width: none;
+        /* Firefox */
+        -ms-overflow-style: none;
+        /* IE/Edge */
+      }
+
+      html::-webkit-scrollbar {
+        display: none;
+        /* Chrome, Safari, Opera */
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        display: flex;
+        height: 100vh;
+        /* lock app to viewport */
         overflow: auto;
+        /* page itself never scrolls on desktop */
+        background: #100e09;
+        color: #eaeaea;
+        /* Hide scrollbar (cross-browser) */
+        scrollbar-width: none;
+        /* Firefox */
+        -ms-overflow-style: none;
+        /* IE/Edge */
       }
 
+      /* Landing page wrapper (intro + footer) */
+      #intro-wrapper {
+        max-width: 1000px;
+        margin: auto;
+        padding: 20px;
+        line-height: 1.6;
+      }
+
+      /* Sidebar */
       #sidebar {
-        width: 100%;
-        border-right: none;
-        border-bottom: 1px solid #333;
-        height: auto;
+        width: 260px;
+        background: #1a1812;
+        padding: 15px;
+        border-right: 1px solid #333;
+        box-sizing: border-box;
+        transition: transform 0.4s ease-in-out;
+        position: relative;
+        z-index: 2;
+        color: #eaeaea;
+
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        /* fixed column height */
       }
 
-      /* Force list height cap on mobile */
+      #sidebar.hidden {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        transform: translateX(-100%);
+      }
+
+      #sidebar input[type="text"] {
+        width: 100%;
+        margin-bottom: 12px;
+        padding: 8px 2px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        color: #fff;
+        background: linear-gradient(145deg, #0d0d0d, #1a1a1a);
+        box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.6),
+          inset -2px -2px 5px rgba(50, 50, 50, 0.6);
+        transition: all 0.3s;
+      }
+
+      #sidebar input[type="text"]::placeholder {
+        color: #888;
+      }
+
+      #sidebar input[type="text"]:hover {
+        background: linear-gradient(145deg, #1c1c1c, #2a2a2a);
+      }
+
+      #sidebar input[type="text"]:focus {
+        outline: none;
+        background: linear-gradient(145deg, #222, #333);
+        box-shadow: 0 0 6px #25d366, inset 2px 2px 6px rgba(0, 0, 0, 0.7);
+      }
+
+      /* Chat container */
+      #chat-container {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        background: #100e09;
+        min-height: 0;
+        /* overflow: hidden; */
+        /* allow internal scrollers */
+      }
+
+      /* Arrows */
+      #show-arrow,
+      #toggle-arrow {
+        font-size: 18px;
+        cursor: pointer;
+        background: #256e4c;
+        color: #eaeaea;
+        padding: 4px 10px;
+        border-radius: 4px;
+        user-select: none;
+        transition: background 0.3s;
+      }
+
+      #toggle-arrow {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 3;
+      }
+
+      #show-arrow {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 5;
+        display: none;
+      }
+
+      #toggle-arrow:hover,
+      #show-arrow:hover {
+        background: #25d366;
+      }
+
+      /* Messages */
+      #messages {
+        flex: 1 1 0;
+        padding: 15px;
+        overflow-y: auto;
+        background: #100e09;
+        scroll-behavior: smooth;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        min-height: 0;
+        overscroll-behavior: contain;
+        /* wheel doesn’t bubble to page */
+      }
+
+      #messages::-webkit-scrollbar {
+        display: none;
+      }
+
+      .msg {
+        margin: 5px 0;
+        padding: 10px 14px;
+        border-radius: 12px;
+        max-width: 70%;
+        word-wrap: break-word;
+        font-size: 14px;
+      }
+
+      .msg.me {
+        background: #032f30;
+        color: #f1f1f1;
+        margin-left: auto;
+        text-align: right;
+      }
+
+      .msg.other {
+        background: #0b4561;
+        color: #f1f1f1;
+        margin-right: auto;
+        text-align: left;
+      }
+
+      .msg.system {
+        display: block;
+        width: 100% !important;
+        max-width: 100% !important;
+        text-align: center;
+        color: #daedf7;
+        font-style: italic;
+        margin: 10px 0;
+        box-sizing: border-box;
+      }
+
+      /* Input area */
+      #input-area {
+        display: flex;
+        border-top: 1px solid #333;
+        background: #1a1812;
+      }
+
+      #input {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        font-size: 16px;
+        background: #100e09;
+        color: #eaeaea;
+      }
+
+      #input::placeholder {
+        color: #777;
+      }
+
+      #attach {
+        padding: 10px 15px;
+        border: none;
+        background: #2c3e50;
+        color: white;
+        cursor: pointer;
+        font-size: 18px;
+      }
+
+      #attach:hover {
+        background: #34495e;
+      }
+
+      #send {
+        padding: 10px 20px;
+        border: none;
+        background: #27ae60;
+        color: white;
+        cursor: pointer;
+        font-size: 16px;
+      }
+
+      #send:hover {
+        background: #2ecc71;
+      }
+
+      /* Sidebar buttons */
+      #sidebar button {
+        margin-top: 5px;
+        padding: 8px;
+        border: none;
+        cursor: pointer;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+
+      #sidebar button:hover {
+        opacity: 0.9;
+      }
+
+      #sidebar button:nth-child(3) {
+        background: #e67e22;
+        color: #fff;
+      }
+
+      #sidebar button:nth-child(4) {
+        background: #c0392b;
+        color: #fff;
+      }
+
+      #sidebar button:nth-child(5) {
+        background: #e74c3c;
+        color: #fff;
+      }
+
+      .username {
+        font-weight: bold;
+        margin-bottom: 4px;
+      }
+
+      .image-wrapper {
+        position: relative;
+        display: inline-block;
+      }
+
+      .image-wrapper img {
+        max-width: 220px;
+        border-radius: 8px;
+        display: block;
+      }
+
+      .download-icon {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: rgba(0, 0, 0, 0.5);
+        padding: 4px;
+        border-radius: 4px;
+        text-decoration: none;
+        color: white;
+        z-index: 10;
+      }
+
+      .download-icon:hover {
+        background: rgba(0, 179, 84, 0.7);
+      }
+
+      .timestamp {
+        font-size: 12px;
+        color: #ccc;
+        margin-top: 4px;
+      }
+
+      .image-wrapper video {
+        max-width: 220px;
+        border-radius: 8px;
+        display: block;
+        z-index: 1;
+      }
+
+      /* ===== Users panel & list (critical) ===== */
+      #users-title {
+        font-size: 16px;
+        font-weight: bold;
+        color: #f3f4f6;
+        margin: 15px 0 10px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #333;
+      }
+
       #users-panel {
-        flex: none;
-        max-height: 200px;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        /* always expand in sidebar */
+        min-height: 0;
+        /* allow user-list to shrink/scroll */
       }
 
       #user-list {
-        max-height: 200px;
+        flex: 1;
+        min-height: 0;
+        /* 👈 critical fix */
         overflow-y: auto;
+        /* list scrolls, not body */
+        overscroll-behavior: contain;
+
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background: #100e09;
+        border: 1px solid #333;
+        border-radius: 12px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+
+        scrollbar-width: thin;
+        scrollbar-color: #4b5563 #1a1813;
+
+        /* HIDE scrollbar but keep scroll */
+        scrollbar-width: none;
+        /* Firefox */
+        -ms-overflow-style: none;
+        /* IE/Edge */
       }
-    }
 
-    /* Gradient text title */
-    .chat-title {
-      font-size: 1.2em;
-      cursor: pointer;
-      display: inline-block;
-      color: #43e97b;
-      /* initial solid green */
-      transition: color 0.3s ease;
-    }
+      #user-list::-webkit-scrollbar {
+        display: none;
+        /* Chrome, Safari */
+      }
 
-    /* On hover: switch to gradient shimmer */
-    .chat-title:hover {
-      background: linear-gradient(90deg,
+      #user-list li {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 10px;
+        font-size: 14px;
+        color: #e5e7eb;
+        transition: background 0.2s;
+        border-bottom: 1px solid #222;
+      }
+
+      #user-list li:hover {
+        background: #1a1813;
+        cursor: default;
+      }
+
+      /* Animations */
+      #user-list li.fade-in {
+        animation: fadeIn 0.4s ease forwards;
+      }
+
+      #user-list li.fade-out {
+        animation: fadeOut 0.3s ease forwards;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes fadeOut {
+        from {
+          opacity: 1;
+          transform: translateY(0);
+        }
+
+        to {
+          opacity: 0;
+          transform: translateY(-3px);
+        }
+      }
+
+      #user-list::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      #user-list::-webkit-scrollbar-track {
+        background: #1a1813;
+        border-radius: 10px;
+      }
+
+      #user-list::-webkit-scrollbar-thumb {
+        background: #4b5563;
+        border-radius: 10px;
+        border: 1px solid #1a1813;
+      }
+
+      #user-list::-webkit-scrollbar-thumb:hover {
+        background: #6b7280;
+      }
+
+      /* Responsive mobile */
+      @media (max-width: 768px) {
+        body {
+          flex-direction: column;
+          overflow: auto;
+        }
+
+        #sidebar {
+          width: 100%;
+          border-right: none;
+          border-bottom: 1px solid #333;
+          height: auto;
+        }
+
+        /* Force list height cap on mobile */
+        #users-panel {
+          flex: none;
+          max-height: 200px;
+        }
+
+        #user-list {
+          max-height: 200px;
+          overflow-y: auto;
+        }
+      }
+
+      /* Gradient text title */
+      .chat-title {
+        font-size: 1.2em;
+        cursor: pointer;
+        display: inline-block;
+        color: #43e97b;
+        /* initial solid green */
+        transition: color 0.3s ease;
+      }
+
+      /* On hover: switch to gradient shimmer */
+      .chat-title:hover {
+        background: linear-gradient(
+          90deg,
           #4facfe,
           #00f2fe,
           #43e97b,
           #38f9d7,
-          #4facfe);
-      background-size: 300% auto;
-      background-clip: text;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: gradientMove 3s linear infinite;
-    }
-
-    @keyframes gradientMove {
-      0% {
-        background-position: 0% center;
+          #4facfe
+        );
+        background-size: 300% auto;
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: gradientMove 3s linear infinite;
       }
 
-      100% {
-        background-position: 100% center;
+      @keyframes gradientMove {
+        0% {
+          background-position: 0% center;
+        }
+
+        100% {
+          background-position: 100% center;
+        }
       }
-    }
 
-    /* Add this CSS to hide elements immediately */
-    #chat-container,
-    #input-area,
-    #messages {
-      display: none;
-    }
+      /* Add this CSS to hide elements immediately */
+      #chat-container,
+      #input-area,
+      #messages {
+        display: none;
+      }
 
-    /* Show intro by default */
-    #intro {
-      display: block;
-    }
+      /* Show intro by default */
+      #intro {
+        display: block;
+      }
 
-    /*after join flick fix */
-    #intro,
-    #chat-container,
-    #input-area,
-    #messages {
-      display: none;
-      /* all hidden until JS decides */
-    }
+      /*after join flick fix */
+      #intro,
+      #chat-container,
+      #input-area,
+      #messages {
+        display: none;
+        /* all hidden until JS decides */
+      }
 
-    .cropper-bg {
-      background: transparent !important;
-    }
-  </style>
-</head>
+      .cropper-bg {
+        background: transparent !important;
+      }
+    </style>
+  </head>
 
-<body>
-  <div id="show-arrow" onclick="toggleSidebar()">»</div>
+  <body>
+    <div id="show-arrow" onclick="toggleSidebar()">»</div>
 
-  <div id="sidebar">
-    <div id="toggle-arrow" onclick="toggleSidebar()">«</div>
-    <h2 id="chat-title" class="chat-title" style="font-size: 1.2em; cursor: pointer">
-      💬 Chattrix
-    </h2>
+    <div id="sidebar">
+      <div id="toggle-arrow" onclick="toggleSidebar()">«</div>
+      <h2
+        id="chat-title"
+        class="chat-title"
+        style="font-size: 1.2em; cursor: pointer"
+      >
+        💬 Chattrix
+      </h2>
 
-    <label>Your Name:</label>
-    <input id="name" type="text" placeholder="Your Name" />
-    <label>Room ID:</label>
+      <label>Your Name:</label>
+      <input id="name" type="text" placeholder="Your Name" />
+      <label>Room ID:</label>
 
-    <!-- Ad just above input -->
-    <ins class="adsbygoogle" style="display: block; margin: 15px auto" data-ad-client="ca-pub-7006477250957433"
-      data-ad-slot="7006477250957433" data-ad-format="auto" data-full-width-responsive="true"></ins>
-    <script>
-      (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
+      <!-- Ad just above input -->
+      <ins
+        class="adsbygoogle"
+        style="display: block; margin: 15px auto"
+        data-ad-client="ca-pub-7006477250957433"
+        data-ad-slot="7006477250957433"
+        data-ad-format="auto"
+        data-full-width-responsive="true"
+      ></ins>
+      <script>
+        (adsbygoogle = window.adsbygoogle || []).push({});
+      </script>
 
-    <input id="room" type="text" placeholder="Unique Personal Id" />
-    <button onclick="joinRoom()" style="width: 100%">Enter</button>
-    <button onclick="leaveRoom()" style="width: 100%; background: #ff9800; color: white">
-      Leave Room
-    </button>
-    <button onclick="clearRoom()" style="width: 100%; background: #f44336; color: white">
-      Clear Room
-    </button>
-    <button onclick="destroyRoom()" style="width: 100%; background: #eb3c06; color: white">
-      Destroy Room
-    </button>
+      <input id="room" type="text" placeholder="Unique Personal Id" />
+      <button onclick="joinRoom()" style="width: 100%">Enter</button>
+      <button
+        onclick="leaveRoom()"
+        style="width: 100%; background: #ff9800; color: white"
+      >
+        Leave Room
+      </button>
+      <button
+        onclick="clearRoom()"
+        style="width: 100%; background: #f44336; color: white"
+      >
+        Clear Room
+      </button>
+      <button
+        onclick="destroyRoom()"
+        style="width: 100%; background: #eb3c06; color: white"
+      >
+        Destroy Room
+      </button>
 
-    <div id="users-title">👥 Users</div>
-    <div id="users-panel">
-      <ul id="user-list"></ul>
+      <div id="users-title">👥 Users</div>
+      <div id="users-panel">
+        <ul id="user-list"></ul>
+      </div>
     </div>
-  </div>
 
-  <!-- Intro Section -->
-  <div id="intro" style="
+    <!-- Intro Section -->
+    <div
+      id="intro"
+      style="
         padding: 20px;
         background: #100e09;
         color: #eaeaea;
@@ -592,119 +630,133 @@
         margin: auto;
         line-height: 1.6;
         text-align: center;
-      ">
-    <header style="
+      "
+    >
+      <header
+        style="
           background: #1a1812;
           padding: 20px;
           border-bottom: 1px solid #333;
-        ">
-      <h1 style="color: #25d366; margin: 0; text-align: center">
-        Welcome to Chattrix – Connect Instantly With Friends
-      </h1>
-    </header>
+        "
+      >
+        <h1 style="color: #25d366; margin: 0; text-align: center">
+          Welcome to Chattrix – Connect Instantly With Friends
+        </h1>
+      </header>
 
-    <p>
-      <strong>Chattrix</strong> is a fast, secure, and easy-to-use chat
-      platform where you can connect with your friends, family, or team
-      instantly. Whether you’re on desktop or mobile, our chat app keeps you
-      connected anytime, anywhere.
-    </p>
+      <p>
+        <strong>Chattrix</strong> is a fast, secure, and easy-to-use chat
+        platform where you can connect with your friends, family, or team
+        instantly. Whether you’re on desktop or mobile, our chat app keeps you
+        connected anytime, anywhere.
+      </p>
 
-    <p>
-      Unlike traditional messaging apps, Chattrix runs directly in your
-      browser, with no downloads required. Just enter your name, pick a room,
-      and start chatting instantly!
-    </p>
+      <p>
+        Unlike traditional messaging apps, Chattrix runs directly in your
+        browser, with no downloads required. Just enter your name, pick a room,
+        and start chatting instantly!
+      </p>
 
-    <!-- blog2 -->
-    <ins class="adsbygoogle" style="display: block" data-ad-client="ca-pub-7006477250957433" data-ad-slot="9197511706"
-      data-ad-format="auto" data-full-width-responsive="true"></ins>
-    <script>
-      (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
+      <!-- blog2 -->
+      <ins
+        class="adsbygoogle"
+        style="display: block"
+        data-ad-client="ca-pub-7006477250957433"
+        data-ad-slot="9197511706"
+        data-ad-format="auto"
+        data-full-width-responsive="true"
+      ></ins>
+      <script>
+        (adsbygoogle = window.adsbygoogle || []).push({});
+      </script>
 
-    <p>
-      Our mission is to make communication simple, private, and accessible to
-      everyone. With Chattrix, you don’t need to worry about complicated
-      sign-ups, long installation processes, or heavy apps that slow down your
-      device. Everything works instantly in your browser, making it
-      lightweight and efficient. Whether you’re managing a study group,
-      catching up with family, or collaborating with your team, Chattrix is
-      built to keep conversations flowing smoothly.
-    </p>
+      <p>
+        Our mission is to make communication simple, private, and accessible to
+        everyone. With Chattrix, you don’t need to worry about complicated
+        sign-ups, long installation processes, or heavy apps that slow down your
+        device. Everything works instantly in your browser, making it
+        lightweight and efficient. Whether you’re managing a study group,
+        catching up with family, or collaborating with your team, Chattrix is
+        built to keep conversations flowing smoothly.
+      </p>
 
-    <p>
-      We believe in <strong>privacy-first communication</strong>. Unlike many
-      messaging apps that collect user data, Chattrix respects your privacy.
-      Your chats remain secure and are never shared with third parties. This
-      makes our platform a safe space for casual users, professionals, and
-      communities who value private and distraction-free conversations.
-    </p>
+      <p>
+        We believe in <strong>privacy-first communication</strong>. Unlike many
+        messaging apps that collect user data, Chattrix respects your privacy.
+        Your chats remain secure and are never shared with third parties. This
+        makes our platform a safe space for casual users, professionals, and
+        communities who value private and distraction-free conversations.
+      </p>
 
-    <p>
-      Our platform is also <strong>constantly evolving</strong>. We are
-      working on adding more features such as media sharing, customizable chat
-      themes, and enhanced moderation tools for group conversations. By
-      choosing Chattrix today, you’re joining a growing community that values
-      fast, private, and reliable communication.
-    </p>
+      <p>
+        Our platform is also <strong>constantly evolving</strong>. We are
+        working on adding more features such as media sharing, customizable chat
+        themes, and enhanced moderation tools for group conversations. By
+        choosing Chattrix today, you’re joining a growing community that values
+        fast, private, and reliable communication.
+      </p>
 
-    <!-- Three-column layout -->
-    <div style="
+      <!-- Three-column layout -->
+      <div
+        style="
           display: flex;
           justify-content: space-between;
           gap: 20px;
           margin-top: 20px;
           text-align: left;
           flex-wrap: wrap;
-        ">
-      <!-- Features -->
-      <div style="flex: 1; min-width: 220px">
-        <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.3em">
-          ✨ Features
-        </h2>
-        <ul style="
+        "
+      >
+        <!-- Features -->
+        <div style="flex: 1; min-width: 220px">
+          <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.3em">
+            ✨ Features
+          </h2>
+          <ul
+            style="
               list-style: none;
               padding-left: 0;
               margin: 0;
               font-size: 0.95em;
-            ">
-          <li>✅ Instant real-time messaging</li>
-          <li>✅ Private and group chats</li>
-          <li>✅ Simple and clean interface</li>
-          <li>✅ Free to use</li>
-        </ul>
-      </div>
+            "
+          >
+            <li>✅ Instant real-time messaging</li>
+            <li>✅ Private and group chats</li>
+            <li>✅ Simple and clean interface</li>
+            <li>✅ Free to use</li>
+          </ul>
+        </div>
 
-      <!-- Why Choose Us -->
-      <div style="flex: 1; min-width: 220px">
-        <h2 style="color: #25d366; margin: 0 0 8px 0; font-size: 1.3em">
-          💡 Why Choose Us?
-        </h2>
-        <p style="margin: 0; font-size: 0.95em">
-          Unlike other chat apps, <strong>Chattrix</strong> doesn’t require
-          sign-ups or downloads. It’s lightweight, privacy-friendly, and
-          always available in your browser.
-        </p>
-      </div>
+        <!-- Why Choose Us -->
+        <div style="flex: 1; min-width: 220px">
+          <h2 style="color: #25d366; margin: 0 0 8px 0; font-size: 1.3em">
+            💡 Why Choose Us?
+          </h2>
+          <p style="margin: 0; font-size: 0.95em">
+            Unlike other chat apps, <strong>Chattrix</strong> doesn’t require
+            sign-ups or downloads. It’s lightweight, privacy-friendly, and
+            always available in your browser.
+          </p>
+        </div>
 
-      <!-- FAQ -->
-      <div style="flex: 1; min-width: 200px; font-size: 0.867em">
-        <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.2em">
-          📌 FAQ
-        </h2>
-        <ul style="list-style: disc; padding-left: 18px; margin: 0">
-          <li><strong>Is it free?</strong> Yes, 100% free.</li>
-          <li><strong>Is it safe?</strong> All chats stay private.</li>
-          <li><strong>On mobile?</strong> Yes, works on all devices.</li>
-          <li>
-            <strong>Need download?</strong> No, works directly in browser.
-          </li>
-        </ul>
+        <!-- FAQ -->
+        <div style="flex: 1; min-width: 200px; font-size: 0.867em">
+          <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.2em">
+            📌 FAQ
+          </h2>
+          <ul style="list-style: disc; padding-left: 18px; margin: 0">
+            <li><strong>Is it free?</strong> Yes, 100% free.</li>
+            <li><strong>Is it safe?</strong> All chats stay private.</li>
+            <li><strong>On mobile?</strong> Yes, works on all devices.</li>
+            <li>
+              <strong>Need download?</strong> No, works directly in browser.
+            </li>
+          </ul>
+        </div>
       </div>
-    </div>
-    <!-- Footer Section -->
-    <footer style="
+      <!-- Footer Section -->
+      <footer
+        style="
           margin-top: 30px;
           padding: 15px;
           background: #1a1812;
@@ -714,307 +766,297 @@
           border-top: 1px solid #333;
           width: 100%;
           box-sizing: border-box;
-        ">
-      <div style="max-width: 900px; margin: 0 auto">
-        <p>
-          <a href="/about.html" style="color: #25d366; text-decoration: none; margin: 0 15px">About</a>
-          |
-          <a href="/privacy-policy.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Privacy
-            Policy</a>
-          |
-          <a href="/terms-of-service.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Terms of
-            Service</a>|
-          <a href="/disclaimer.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Disclaimer</a>
-          |
-          <a href="/blog.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Blog</a>
-          |
-          <a href="/contact.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Contact</a>
-        </p>
-        <p style="margin-top: 8px; font-size: 0.8em; color: #777">
-          © 2025 Chattrix. All rights reserved.
-        </p>
-      </div>
-    </footer>
-  </div>
-
-  <div id="chat-container">
-    <div id="messages"></div>
-    <div id="input-area">
-      <input id="input" placeholder="Type your message…" disabled />
-      <input type="file" id="fileInput" style="display: none" />
-      <button id="attach" type="button" disabled>+</button>
-      <button id="send" type="button" disabled>Send</button>
+        "
+      >
+        <div style="max-width: 900px; margin: 0 auto">
+          <p>
+            <a
+              href="/about.html"
+              style="color: #25d366; text-decoration: none; margin: 0 15px"
+              >About</a
+            >
+            |
+            <a
+              href="/privacy-policy.html"
+              style="color: #25d366; text-decoration: none; margin: 0 15px"
+              >Privacy Policy</a
+            >
+            |
+            <a
+              href="/terms-of-service.html"
+              style="color: #25d366; text-decoration: none; margin: 0 15px"
+              >Terms of Service</a
+            >|
+            <a
+              href="/disclaimer.html"
+              style="color: #25d366; text-decoration: none; margin: 0 15px"
+              >Disclaimer</a
+            >
+            |
+            <a
+              href="/blog.html"
+              style="color: #25d366; text-decoration: none; margin: 0 15px"
+              >Blog</a
+            >
+            |
+            <a
+              href="/contact.html"
+              style="color: #25d366; text-decoration: none; margin: 0 15px"
+              >Contact</a
+            >
+          </p>
+          <p style="margin-top: 8px; font-size: 0.8em; color: #777">
+            © 2025 Chattrix. All rights reserved.
+          </p>
+        </div>
+      </footer>
     </div>
-  </div>
 
-  <script>
-    // ======================================================
-    // =============== Storage Utility ======================
-    // ======================================================
-    const Storage = {
-      set(k, v) {
-        try {
-          localStorage.setItem(k, v);
-          return;
-        } catch { }
-        try {
-          sessionStorage.setItem(k, v);
-          return;
-        } catch { }
-        document.cookie = `${k}=${encodeURIComponent(v)}; path=/`;
-      },
+    <div id="chat-container">
+      <div id="messages"></div>
+      <div id="input-area">
+        <input id="input" placeholder="Type your message…" disabled />
+        <input type="file" id="fileInput" style="display: none" />
+        <button id="attach" type="button" disabled>+</button>
+        <button id="send" type="button" disabled>Send</button>
+      </div>
+    </div>
 
-      get(k) {
-        try {
-          return localStorage.getItem(k) || sessionStorage.getItem(k);
-        } catch { }
-        const m = document.cookie.match(new RegExp("(^| )" + k + "=([^;]+)"));
-        return m ? decodeURIComponent(m[2]) : null;
-      },
+    <script>
+      // ======================================================
+      // =============== Storage Utility ======================
+      // ======================================================
+      const Storage = {
+        set(k, v) {
+          try {
+            localStorage.setItem(k, v);
+            return;
+          } catch {}
+          try {
+            sessionStorage.setItem(k, v);
+            return;
+          } catch {}
+          document.cookie = `${k}=${encodeURIComponent(v)}; path=/`;
+        },
 
-      remove(k) {
-        try {
-          localStorage.removeItem(k);
-        } catch { }
-        try {
-          sessionStorage.removeItem(k);
-        } catch { }
-        document.cookie = `${k}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-      },
-    };
+        get(k) {
+          try {
+            return localStorage.getItem(k) || sessionStorage.getItem(k);
+          } catch {}
+          const m = document.cookie.match(new RegExp("(^| )" + k + "=([^;]+)"));
+          return m ? decodeURIComponent(m[2]) : null;
+        },
 
-    // ======================================================
-    // =============== Push Notifications ===================
-    // ======================================================
-    const VAPID_PUBLIC_KEY =
-      "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
-
-    function urlBase64ToUint8Array(base64String) {
-      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-      const base64 = (base64String + padding)
-        .replace(/-/g, "+")
-        .replace(/_/g, "/");
-      const rawData = atob(base64);
-      return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
-    }
-
-    async function subscribeUser(sender, room) {
-      const registration = await navigator.serviceWorker.ready;
-      let subscription = await registration.pushManager.getSubscription();
-
-      if (!subscription) {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        });
-        console.log(
-          "📌 New subscription created:",
-          JSON.stringify(subscription)
-        );
-      } else {
-        console.log(
-          "🔄 Reusing existing subscription:",
-          JSON.stringify(subscription)
-        );
-      }
-
-      localStorage.setItem("pushSub", JSON.stringify(subscription.toJSON()));
-
-      const body = {
-        sender: sender || "anonymous",
-        room: room || null,
-        subscription: subscription.toJSON(),
+        remove(k) {
+          try {
+            localStorage.removeItem(k);
+          } catch {}
+          try {
+            sessionStorage.removeItem(k);
+          } catch {}
+          document.cookie = `${k}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+        },
       };
 
-      const response = await fetch("/api/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // ======================================================
+      // =============== Push Notifications ===================
+      // ======================================================
+      const VAPID_PUBLIC_KEY =
+        "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
 
-      const result = await response.json();
-      if (!response.ok) throw new Error(result?.error || "subscribe failed");
+      function urlBase64ToUint8Array(base64String) {
+        const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding)
+          .replace(/-/g, "+")
+          .replace(/_/g, "/");
+        const rawData = atob(base64);
+        return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+      }
 
-      console.log("✅ Backend response:", result.message);
-      return subscription;
-    }
+      async function subscribeUser(sender, room) {
+        const registration = await navigator.serviceWorker.ready;
+        let subscription = await registration.pushManager.getSubscription();
 
-    async function unsubscribeUser(sender, room) {
-      try {
-        const savedSub = localStorage.getItem("pushSub");
-        if (!savedSub) return;
+        if (!subscription) {
+          subscription = await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+          });
+          console.log(
+            "📌 New subscription created:",
+            JSON.stringify(subscription)
+          );
+        } else {
+          console.log(
+            "🔄 Reusing existing subscription:",
+            JSON.stringify(subscription)
+          );
+        }
 
-        const subscription = JSON.parse(savedSub);
+        localStorage.setItem("pushSub", JSON.stringify(subscription.toJSON()));
 
-        await fetch("/api/unsubscribe", {
+        const body = {
+          sender: sender || "anonymous",
+          room: room || null,
+          subscription: subscription.toJSON(),
+        };
+
+        const response = await fetch("/api/subscribe", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sender, room, subscription }),
+          body: JSON.stringify(body),
         });
 
-        console.log(`🛑 Unsubscribed ${sender} from room ${room}`);
-      } catch (err) {
-        console.error("❌ Failed to unsubscribe:", err);
-      }
-    }
+        const result = await response.json();
+        if (!response.ok) throw new Error(result?.error || "subscribe failed");
 
-    async function requestNotificationPermission() {
-      if (!("Notification" in window) || !("serviceWorker" in navigator))
-        return;
-
-      const permission = await Notification.requestPermission();
-      if (permission === "granted") {
-        console.log("✅ Notification permission granted.");
-        const registration = await navigator.serviceWorker.register("/sw.js");
-        console.log("✅ Service Worker registered.", registration);
-      } else {
-        console.log("❌ Notification permission denied.");
-      }
-    }
-
-    // ======================================================
-    // =============== Chat Application State ===============
-    // ======================================================
-    let socket,
-      currentRoom = "",
-      currentName = "";
-    let joinedRooms = new Set();
-    let lastPersistedTs = null;
-    let alreadyFetchingHistory = false;
-    let sending = false;
-
-    // ======================================================
-    // =============== Utility Functions ====================
-    // ======================================================
-    function escapeHtml(s) {
-      return (s ?? "").replace(
-        /[&<>"']/g,
-        (c) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        }[c])
-      );
-    }
-
-    function escapeAttr(s) {
-      return escapeHtml(s).replace(/"/g, "&quot;");
-    }
-
-    function bumpTs(ts) {
-      if (ts && (!lastPersistedTs || ts > lastPersistedTs)) {
-        lastPersistedTs = ts;
-      }
-    }
-
-    function sendActive(active) {
-      if (socket) socket.emit("status", { active });
-    }
-
-    // ======================================================
-    // =============== UI Functions =========================
-    // ======================================================
-    function toggleSidebar() {
-      const sidebar = document.getElementById("sidebar");
-      const showArrow = document.getElementById("show-arrow");
-
-      if (sidebar.classList.contains("hidden")) {
-        sidebar.classList.remove("hidden");
-        showArrow.style.display = "none";
-      } else {
-        sidebar.classList.add("hidden");
-        showArrow.style.display = "block";
-      }
-    }
-
-    // ======================================================
-    // =============== Room Management ======================
-    // ======================================================
-    function joinRoom() {
-      currentName = document.getElementById("name").value.trim();
-      currentRoom = document.getElementById("room").value.trim();
-
-      if (!currentName || !currentRoom) {
-        alert("Enter name and room first!");
-        return;
+        console.log("✅ Backend response:", result.message);
+        return subscription;
       }
 
-      if (joinedRooms.has(currentRoom)) {
-        alert(`You are already in room "${currentRoom}"!`);
-        return;
+      async function unsubscribeUser(sender, room) {
+        try {
+          const savedSub = localStorage.getItem("pushSub");
+          if (!savedSub) return;
+
+          const subscription = JSON.parse(savedSub);
+
+          await fetch("/api/unsubscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sender, room, subscription }),
+          });
+
+          console.log(`🛑 Unsubscribed ${sender} from room ${room}`);
+        } catch (err) {
+          console.error("❌ Failed to unsubscribe:", err);
+        }
       }
 
-      Storage.set("chat_name", currentName);
-      Storage.set("chat_room", currentRoom);
+      async function requestNotificationPermission() {
+        if (!("Notification" in window) || !("serviceWorker" in navigator))
+          return;
 
-      document.getElementById("chat-container").style.display = "flex";
-      document.getElementById("input-area").style.display = "flex";
-      document.getElementById("intro").style.display = "none";
-      document.getElementById("messages").style.display = "block";
-
-      document.getElementById("messages").innerHTML = "";
-      lastPersistedTs = null;
-      alreadyFetchingHistory = false;
-      document.getElementById("input").disabled = false;
-      document.getElementById("send").disabled = false;
-      document.getElementById("attach").disabled = false;
-      document.getElementById("user-list").innerHTML = "";
-
-      if (socket) {
-        socket.off();
-        socket.disconnect();
+        const permission = await Notification.requestPermission();
+        if (permission === "granted") {
+          console.log("✅ Notification permission granted.");
+          const registration = await navigator.serviceWorker.register("/sw.js");
+          console.log("✅ Service Worker registered.", registration);
+        } else {
+          console.log("❌ Notification permission denied.");
+        }
       }
 
-      socket = io("https://realtime-chat-1mv3.onrender.com", {
-        path: "/socket.io",
-        transports: ["websocket"],
-      });
+      // ======================================================
+      // =============== Chat Application State ===============
+      // ======================================================
+      let socket,
+        currentRoom = "",
+        currentName = "";
+      let joinedRooms = new Set();
+      let lastPersistedTs = null;
+      let alreadyFetchingHistory = false;
+      let sending = false;
 
-      // 👉 Subscribe user when joining room (not when sending message)
-      subscribeUser(currentName, currentRoom).catch((err) =>
-        console.warn("⚠️ Subscription failed in joinRoom:", err)
-      );
-
-      function safeJoinWithRetry(attempt = 1) {
-        if (!socket || !socket.connected) return;
-        if (joinedRooms.has(currentRoom)) return;
-
-        // 🔑 fetch stored FCM token
-        const fcmToken = localStorage.getItem("fcm_token") || null;
-
-        socket.emit(
-          "join",
-          {
-            room: currentRoom,
-            sender: currentName,
-            lastTs: lastPersistedTs || null,
-            fcmToken: fcmToken, // ✅ include token so backend registers
-          },
-          (ack) => {
-            if (ack && ack.success) {
-              console.log("✅ Joined room:", currentRoom);
-              joinedRooms.add(currentRoom);
-              sendActive(!document.hidden);
-            } else {
-              console.log("⚠️ Join failed, retrying...", attempt);
-              setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
-            }
-          }
+      // ======================================================
+      // =============== Utility Functions ====================
+      // ======================================================
+      function escapeHtml(s) {
+        return (s ?? "").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            }[c])
         );
       }
 
-      socket.on("users_update", updateUserList);
-      socket.on("left_room", (data) => {
-        if (data.room === currentRoom)
-          document.getElementById("user-list").innerHTML = "";
-      });
-      socket.on("room_destroyed", handleRoomDestroyed);
-      socket.on("clear", handleRoomCleared);
-      socket.on("connect", () => {
-        if (currentRoom && currentName) {
+      function escapeAttr(s) {
+        return escapeHtml(s).replace(/"/g, "&quot;");
+      }
+
+      function bumpTs(ts) {
+        if (ts && (!lastPersistedTs || ts > lastPersistedTs)) {
+          lastPersistedTs = ts;
+        }
+      }
+
+      function sendActive(active) {
+        if (socket) socket.emit("status", { active });
+      }
+
+      // ======================================================
+      // =============== UI Functions =========================
+      // ======================================================
+      function toggleSidebar() {
+        const sidebar = document.getElementById("sidebar");
+        const showArrow = document.getElementById("show-arrow");
+
+        if (sidebar.classList.contains("hidden")) {
+          sidebar.classList.remove("hidden");
+          showArrow.style.display = "none";
+        } else {
+          sidebar.classList.add("hidden");
+          showArrow.style.display = "block";
+        }
+      }
+
+      // ======================================================
+      // =============== Room Management ======================
+      // ======================================================
+      function joinRoom() {
+        currentName = document.getElementById("name").value.trim();
+        currentRoom = document.getElementById("room").value.trim();
+
+        if (!currentName || !currentRoom) {
+          alert("Enter name and room first!");
+          return;
+        }
+
+        if (joinedRooms.has(currentRoom)) {
+          alert(`You are already in room "${currentRoom}"!`);
+          return;
+        }
+
+        Storage.set("chat_name", currentName);
+        Storage.set("chat_room", currentRoom);
+
+        document.getElementById("chat-container").style.display = "flex";
+        document.getElementById("input-area").style.display = "flex";
+        document.getElementById("intro").style.display = "none";
+        document.getElementById("messages").style.display = "block";
+
+        document.getElementById("messages").innerHTML = "";
+        lastPersistedTs = null;
+        alreadyFetchingHistory = false;
+        document.getElementById("input").disabled = false;
+        document.getElementById("send").disabled = false;
+        document.getElementById("attach").disabled = false;
+        document.getElementById("user-list").innerHTML = "";
+
+        if (socket) {
+          socket.off();
+          socket.disconnect();
+        }
+
+        socket = io("https://realtime-chat-1mv3.onrender.com", {
+          path: "/socket.io",
+          transports: ["websocket"],
+        });
+
+        // 👉 Subscribe user when joining room (not when sending message)
+        subscribeUser(currentName, currentRoom).catch((err) =>
+          console.warn("⚠️ Subscription failed in joinRoom:", err)
+        );
+
+        function safeJoinWithRetry(attempt = 1) {
+          if (!socket || !socket.connected) return;
+          if (joinedRooms.has(currentRoom)) return;
+
           // 🔑 fetch stored FCM token
           const fcmToken = localStorage.getItem("fcm_token") || null;
 
@@ -1028,193 +1070,226 @@
             },
             (ack) => {
               if (ack && ack.success) {
-                console.log("✅ Joined room on reconnect:", currentRoom);
+                console.log("✅ Joined room:", currentRoom);
                 joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
               } else {
-                console.warn("⚠️ Join failed on reconnect, retrying...");
-                setTimeout(() => {
-                  socket.disconnect(); // reset connection to retry cleanly
-                  socket.connect();
-                }, 500);
+                console.log("⚠️ Join failed, retrying...", attempt);
+                setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
               }
             }
           );
-        } else {
-          // 🔄 restore last chat state if available
-          restoreChatState(socket);
         }
-      });
 
-      socket.on("message", addMessage);
-      socket.on("file", addFileMessage);
+        socket.on("users_update", updateUserList);
+        socket.on("left_room", (data) => {
+          if (data.room === currentRoom)
+            document.getElementById("user-list").innerHTML = "";
+        });
+        socket.on("room_destroyed", handleRoomDestroyed);
+        socket.on("clear", handleRoomCleared);
+        socket.on("connect", () => {
+          if (currentRoom && currentName) {
+            // 🔑 fetch stored FCM token
+            const fcmToken = localStorage.getItem("fcm_token") || null;
 
-      document.getElementById("send").onclick = sendMessage;
-      document.getElementById("input").onkeydown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
+            socket.emit(
+              "join",
+              {
+                room: currentRoom,
+                sender: currentName,
+                lastTs: lastPersistedTs || null,
+                fcmToken: fcmToken, // ✅ include token so backend registers
+              },
+              (ack) => {
+                if (ack && ack.success) {
+                  console.log("✅ Joined room on reconnect:", currentRoom);
+                  joinedRooms.add(currentRoom);
+                  sendActive(!document.hidden);
+                } else {
+                  console.warn("⚠️ Join failed on reconnect, retrying...");
+                  setTimeout(() => {
+                    socket.disconnect(); // reset connection to retry cleanly
+                    socket.connect();
+                  }, 500);
+                }
+              }
+            );
+          } else {
+            // 🔄 restore last chat state if available
+            restoreChatState(socket);
+          }
+        });
+
+        socket.on("message", addMessage);
+        socket.on("file", addFileMessage);
+
+        document.getElementById("send").onclick = sendMessage;
+        document.getElementById("input").onkeydown = (e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+          }
+        };
+
+        document.getElementById("attach").onclick = (e) => {
           e.preventDefault();
-          sendMessage();
+          document.getElementById("fileInput").click();
+        };
+
+        document.getElementById("fileInput").onchange = handleFileUpload;
+      }
+
+      async function restoreChatState(socket) {
+        const state = await loadChatState();
+        if (state) {
+          // 🔑 fetch stored FCM token
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+
+          socket.emit("join", {
+            room: state.room,
+            sender: state.username,
+            lastTs: state.lastTs,
+            fcmToken: fcmToken, // ✅ include token so backend registers
+          });
         }
-      };
-
-      document.getElementById("attach").onclick = (e) => {
-        e.preventDefault();
-        document.getElementById("fileInput").click();
-      };
-
-      document.getElementById("fileInput").onchange = handleFileUpload;
-    }
-
-    async function restoreChatState(socket) {
-      const state = await loadChatState();
-      if (state) {
-        // 🔑 fetch stored FCM token
-        const fcmToken = localStorage.getItem("fcm_token") || null;
-
-        socket.emit("join", {
-          room: state.room,
-          sender: state.username,
-          lastTs: state.lastTs,
-          fcmToken: fcmToken, // ✅ include token so backend registers
-        });
-      }
-    }
-
-    async function sendMessage() {
-      if (sending) return;
-
-      const inputEl = document.getElementById("input");
-      const text = inputEl.value.trim();
-      if (!text || !currentRoom) return;
-
-      // --- NEW: mark lastPersistedTs now so reconnects won't cause server to resend this text ---
-      const nowTs = new Date().toISOString();
-      lastPersistedTs = nowTs;
-      try {
-        // store minimal chat state (used by restore/joins)
-        localStorage.setItem(
-          "chatState",
-          JSON.stringify({
-            username: currentName,
-            room: currentRoom,
-            lastTs: lastPersistedTs,
-          })
-        );
-      } catch (e) {
-        console.warn("Could not persist chatState:", e);
-      }
-      // ----------------------------------------------------------
-
-      sending = true;
-      document.getElementById("send").disabled = true;
-
-      let sub = null;
-      try {
-        console.log("📌 Current permission:", Notification.permission);
-
-        // await subscribeUser(currentName);
-        const savedSub = localStorage.getItem("pushSub");
-        sub = savedSub ? JSON.parse(savedSub) : null;
-      } catch (err) {
-        console.warn(
-          "⚠️ Subscription failed, but sending message anyway:",
-          err
-        );
       }
 
-      socket.emit(
-        "message",
-        { room: currentRoom, sender: currentName, text, subscription: sub },
-        () => {
-          sending = false;
-          document.getElementById("send").disabled = false;
-        }
-      );
+      async function sendMessage() {
+        if (sending) return;
 
-      inputEl.value = "";
-    }
+        const inputEl = document.getElementById("input");
+        const text = inputEl.value.trim();
+        if (!text || !currentRoom) return;
 
-    // Utility: show system message in chat (auto-remove after 2.5s)
-    function showCopyNotice(text) {
-      const messages = document.getElementById("messages");
-      const div = document.createElement("div");
-      div.className = "msg system";
-      div.textContent = text;
-      messages.appendChild(div);
-      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-
-      setTimeout(() => div.remove(), 2500);
-    }
-
-    // Utility: copy to clipboard + notify
-    let lastCopyTime = 0; // prevent double firing
-    function copyToClipboard(text, notice) {
-      const now = Date.now();
-      if (now - lastCopyTime < 400) return; // ignore duplicates within 400ms
-      lastCopyTime = now;
-
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          if (notice) showCopyNotice(notice);
-        })
-        .catch((err) => console.error("❌ Copy failed:", err));
-    }
-
-    // Enable copy on a full message
-    function enableCopyOnMessage(el, text) {
-      el.style.userSelect = "none";
-      let pressTimer;
-
-      // Mobile long press
-      el.addEventListener("touchstart", () => {
-        pressTimer = setTimeout(() => {
-          copyToClipboard(text, "📋 Message copied");
-        }, 500);
-      });
-      el.addEventListener("touchend", () => clearTimeout(pressTimer));
-
-      // Desktop right-click
-      el.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        copyToClipboard(text, "📋 Message copied");
-      });
-    }
-
-    // Enable copy on a link only
-    function enableCopyOnLink(el) {
-      el.style.userSelect = "none";
-
-      // Desktop right-click
-      el.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        copyToClipboard(el.href, "🔗 Link copied");
-      });
-
-      // Mobile long press
-      el.addEventListener("touchstart", (e) => {
-        e.stopPropagation();
-        const timer = setTimeout(() => {
-          copyToClipboard(el.href, "🔗 Link copied");
-        }, 500);
-        el.addEventListener("touchend", () => clearTimeout(timer), {
-          once: true,
-        });
-      });
-    }
-
-    // ======================================================
-    // =============== Existing Functions ===================
-    // ======================================================
-
-    function linkifyWithFavicon(text) {
-      const urlRegex = /(https?:\/\/[^\s]+)/g;
-      return text.replace(urlRegex, (url) => {
+        // --- NEW: mark lastPersistedTs now so reconnects won't cause server to resend this text ---
+        const nowTs = new Date().toISOString();
+        lastPersistedTs = nowTs;
         try {
-          const u = new URL(url);
-          const favicon = `${u.origin}/favicon.ico`;
-          return `
+          // store minimal chat state (used by restore/joins)
+          localStorage.setItem(
+            "chatState",
+            JSON.stringify({
+              username: currentName,
+              room: currentRoom,
+              lastTs: lastPersistedTs,
+            })
+          );
+        } catch (e) {
+          console.warn("Could not persist chatState:", e);
+        }
+        // ----------------------------------------------------------
+
+        sending = true;
+        document.getElementById("send").disabled = true;
+
+        let sub = null;
+        try {
+          console.log("📌 Current permission:", Notification.permission);
+
+          // await subscribeUser(currentName);
+          const savedSub = localStorage.getItem("pushSub");
+          sub = savedSub ? JSON.parse(savedSub) : null;
+        } catch (err) {
+          console.warn(
+            "⚠️ Subscription failed, but sending message anyway:",
+            err
+          );
+        }
+
+        socket.emit(
+          "message",
+          { room: currentRoom, sender: currentName, text, subscription: sub },
+          () => {
+            sending = false;
+            document.getElementById("send").disabled = false;
+          }
+        );
+
+        inputEl.value = "";
+      }
+
+      // Utility: show system message in chat (auto-remove after 2.5s)
+      function showCopyNotice(text) {
+        const messages = document.getElementById("messages");
+        const div = document.createElement("div");
+        div.className = "msg system";
+        div.textContent = text;
+        messages.appendChild(div);
+        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+        setTimeout(() => div.remove(), 2500);
+      }
+
+      // Utility: copy to clipboard + notify
+      let lastCopyTime = 0; // prevent double firing
+      function copyToClipboard(text, notice) {
+        const now = Date.now();
+        if (now - lastCopyTime < 400) return; // ignore duplicates within 400ms
+        lastCopyTime = now;
+
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            if (notice) showCopyNotice(notice);
+          })
+          .catch((err) => console.error("❌ Copy failed:", err));
+      }
+
+      // Enable copy on a full message
+      function enableCopyOnMessage(el, text) {
+        el.style.userSelect = "none";
+        let pressTimer;
+
+        // Mobile long press
+        el.addEventListener("touchstart", () => {
+          pressTimer = setTimeout(() => {
+            copyToClipboard(text, "📋 Message copied");
+          }, 500);
+        });
+        el.addEventListener("touchend", () => clearTimeout(pressTimer));
+
+        // Desktop right-click
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          copyToClipboard(text, "📋 Message copied");
+        });
+      }
+
+      // Enable copy on a link only
+      function enableCopyOnLink(el) {
+        el.style.userSelect = "none";
+
+        // Desktop right-click
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          copyToClipboard(el.href, "🔗 Link copied");
+        });
+
+        // Mobile long press
+        el.addEventListener("touchstart", (e) => {
+          e.stopPropagation();
+          const timer = setTimeout(() => {
+            copyToClipboard(el.href, "🔗 Link copied");
+          }, 500);
+          el.addEventListener("touchend", () => clearTimeout(timer), {
+            once: true,
+          });
+        });
+      }
+
+      // ======================================================
+      // =============== Existing Functions ===================
+      // ======================================================
+
+      function linkifyWithFavicon(text) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        return text.replace(urlRegex, (url) => {
+          try {
+            const u = new URL(url);
+            const favicon = `${u.origin}/favicon.ico`;
+            return `
         <span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
           <img src="${favicon}" alt="icon" 
                style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
@@ -1224,499 +1299,613 @@
           </a>
         </span>
       `;
-        } catch {
-          return `<a href="${url}" target="_blank" 
+          } catch {
+            return `<a href="${url}" target="_blank" 
                  style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">
                 ${url}
               </a>`;
-        }
-      });
-    }
+          }
+        });
+      }
 
-    function addMessage(data) {
-      const messages = document.getElementById("messages");
-      const last = messages.lastElementChild;
+      function addMessage(data) {
+        const messages = document.getElementById("messages");
+        const last = messages.lastElementChild;
 
-      if (data.sender === "System" && last && last.textContent === data.text)
-        return;
+        if (data.sender === "System" && last && last.textContent === data.text)
+          return;
 
-      if (
-        !currentRoom &&
-        data.sender === "System" &&
-        /joined/i.test(data.text) &&
-        data.text.includes(currentName)
-      )
-        return;
+        if (
+          !currentRoom &&
+          data.sender === "System" &&
+          /joined/i.test(data.text) &&
+          data.text.includes(currentName)
+        )
+          return;
 
-      const div = document.createElement("div");
+        const div = document.createElement("div");
 
-      if (data.sender === "System") {
-        div.className = "msg system";
-        div.textContent = data.text;
-        enableCopyOnMessage(div, data.text);
-      } else {
-        bumpTs(data.ts);
-        const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
-        div.className = "msg " + (isMe ? "me" : "other");
-        div.dataset.ts = data.ts;
+        if (data.sender === "System") {
+          div.className = "msg system";
+          div.textContent = data.text;
+          enableCopyOnMessage(div, data.text);
+        } else {
+          bumpTs(data.ts);
+          const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
+          div.className = "msg " + (isMe ? "me" : "other");
+          div.dataset.ts = data.ts;
 
-        const safeText = escapeHtml(data.text);
-        const formattedText = linkifyWithFavicon(safeText);
+          const safeText = escapeHtml(data.text);
+          const formattedText = linkifyWithFavicon(safeText);
 
-        div.innerHTML = `
+          div.innerHTML = `
       <strong>${data.sender}</strong><br>
       ${formattedText}
       <br><small>${new Date(data.ts).toLocaleString()}</small>
     `;
 
-        enableCopyOnMessage(div, data.text);
-        div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
+          enableCopyOnMessage(div, data.text);
+          div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
+        }
+
+        messages.appendChild(div);
+        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
       }
 
-      messages.appendChild(div);
-      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    }
-
-    // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
-    async function saveFileToDevice(base64Data, filename, mimeType) {
-      try {
-        console.log(
-          "DEBUG_DOWNLOAD",
-          "Preparing to save file:",
-          filename,
-          "type:",
-          mimeType
-        );
-
-        const cleaned = base64Data.includes(",")
-          ? base64Data.split(",")[1]
-          : base64Data;
-        console.log(
-          "DEBUG_DOWNLOAD",
-          "Base64 cleaned length:",
-          cleaned.length
-        );
-
-        const { Filesystem, Toast } = window.Capacitor.Plugins;
-
-        if (!Filesystem) {
-          console.error(
+      // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
+      async function saveFileToDevice(base64Data, filename, mimeType) {
+        try {
+          console.log(
             "DEBUG_DOWNLOAD",
-            "❌ Filesystem plugin not available!"
+            "Preparing to save file:",
+            filename,
+            "type:",
+            mimeType
           );
+
+          const cleaned = base64Data.includes(",")
+            ? base64Data.split(",")[1]
+            : base64Data;
+          console.log(
+            "DEBUG_DOWNLOAD",
+            "Base64 cleaned length:",
+            cleaned.length
+          );
+
+          const { Filesystem, Toast } = window.Capacitor.Plugins;
+
+          if (!Filesystem) {
+            console.error(
+              "DEBUG_DOWNLOAD",
+              "❌ Filesystem plugin not available!"
+            );
+            if (Toast) {
+              await Toast.show({
+                text: "❌ Filesystem plugin missing!",
+                duration: "short",
+                position: "bottom",
+              });
+            }
+            return;
+          }
+
+          console.log("DEBUG_DOWNLOAD", "Calling Filesystem.writeFile...");
+
+          const result = await Filesystem.writeFile({
+            path: filename,
+            data: cleaned,
+            directory: "DOCUMENTS", // ✅ safe folder
+          });
+
+          console.log("DEBUG_DOWNLOAD", "✅ File write result:", result);
+
           if (Toast) {
             await Toast.show({
-              text: "❌ Filesystem plugin missing!",
+              text: `✅ Downloaded: ${filename}`,
+              duration: "short", // ~2s auto-disappear
+              position: "bottom",
+            });
+          }
+
+          return result.uri;
+        } catch (e) {
+          console.error("DEBUG_DOWNLOAD", "❌ Save failed error object:", e);
+          const { Toast } = window.Capacitor.Plugins;
+          if (Toast) {
+            await Toast.show({
+              text: `❌ Save failed: ${e.message}`,
               duration: "short",
               position: "bottom",
             });
           }
-          return;
         }
+      }
 
-        console.log("DEBUG_DOWNLOAD", "Calling Filesystem.writeFile...");
+      window.downloadFile = async (base64, filename, mimetype) => {
+        try {
+          console.log(
+            "DEBUG_DOWNLOAD",
+            "Download clicked. Platform:",
+            window.Capacitor?.getPlatform?.()
+          );
 
-        const result = await Filesystem.writeFile({
-          path: filename,
-          data: cleaned,
-          directory: "DOCUMENTS", // ✅ safe folder
+          if (window.Capacitor?.isNativePlatform()) {
+            console.log(
+              "DEBUG_DOWNLOAD",
+              "📂 Running in Capacitor → will save file..."
+            );
+            await saveFileToDevice(base64, filename, mimetype);
+          } else {
+            console.log(
+              "DEBUG_DOWNLOAD",
+              "🌍 Running in browser → fallback download"
+            );
+            const a = document.createElement("a");
+            a.href = base64;
+            a.download = filename;
+            a.click();
+          }
+        } catch (err) {
+          console.error("DEBUG_DOWNLOAD", "❌ Download error:", err);
+          const { Toast } = window.Capacitor.Plugins;
+          if (Toast) {
+            await Toast.show({
+              text: `❌ Download error: ${err.message}`,
+              duration: "short",
+              position: "bottom",
+            });
+          }
+        }
+      };
+
+      function base64ToBlob(base64Data, contentType = "") {
+        const parts = base64Data.split(",");
+        const byteCharacters = atob(parts[1]);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: contentType });
+      }
+
+      function generateVideoThumbnail(videoUrl, callback) {
+        const video = document.createElement("video");
+        video.src = videoUrl;
+        video.crossOrigin = "anonymous";
+        video.load();
+
+        video.addEventListener("loadeddata", () => {
+          video.currentTime = 1; // Seek to 1 second to avoid blank frame at start
         });
 
-        console.log("DEBUG_DOWNLOAD", "✅ File write result:", result);
-
-        if (Toast) {
-          await Toast.show({
-            text: `✅ Downloaded: ${filename}`,
-            duration: "short", // ~2s auto-disappear
-            position: "bottom",
-          });
-        }
-
-        return result.uri;
-      } catch (e) {
-        console.error("DEBUG_DOWNLOAD", "❌ Save failed error object:", e);
-        const { Toast } = window.Capacitor.Plugins;
-        if (Toast) {
-          await Toast.show({
-            text: `❌ Save failed: ${e.message}`,
-            duration: "short",
-            position: "bottom",
-          });
-        }
+        video.addEventListener("seeked", () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const imageUrl = canvas.toDataURL();
+          callback(imageUrl);
+        });
       }
-    }
 
-    window.downloadFile = async (base64, filename, mimetype) => {
-      try {
-        console.log(
-          "DEBUG_DOWNLOAD",
-          "Download clicked. Platform:",
-          window.Capacitor?.getPlatform?.()
-        );
+      async function generatePdfThumbnail(pdfUrl, callback) {
+        const pdfjsLib = window["pdfjs-dist/build/pdf"];
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
 
-        if (window.Capacitor?.isNativePlatform()) {
-          console.log(
-            "DEBUG_DOWNLOAD",
-            "📂 Running in Capacitor → will save file..."
-          );
-          await saveFileToDevice(base64, filename, mimetype);
-        } else {
-          console.log(
-            "DEBUG_DOWNLOAD",
-            "🌍 Running in browser → fallback download"
-          );
-          const a = document.createElement("a");
-          a.href = base64;
-          a.download = filename;
-          a.click();
-        }
-      } catch (err) {
-        console.error("DEBUG_DOWNLOAD", "❌ Download error:", err);
-        const { Toast } = window.Capacitor.Plugins;
-        if (Toast) {
-          await Toast.show({
-            text: `❌ Download error: ${err.message}`,
-            duration: "short",
-            position: "bottom",
-          });
-        }
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        const pdf = await loadingTask.promise;
+        const page = await pdf.getPage(1); // first page
+
+        const viewport = page.getViewport({ scale: 1 });
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        await page.render({ canvasContext: context, viewport: viewport })
+          .promise;
+
+        const thumbnailUrl = canvas.toDataURL("image/png");
+        callback(thumbnailUrl);
       }
-    };
 
+      // ==================================================
+      // 🔽 UPDATED addFileMessage FUNCTION
+      // ==================================================
+      window.addFileMessage = function addFileMessage(data) {
+        bumpTs(data.ts);
+        const div = document.createElement("div");
+        const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
+        div.className = "msg " + (isMe ? "me" : "other");
+        div.dataset.ts = data.ts;
 
-    function base64ToBlob(base64Data, contentType = '') {
-      const parts = base64Data.split(',');
-      const byteCharacters = atob(parts[1]);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      return new Blob([byteArray], { type: contentType });
-    }
-
-
-    function generateVideoThumbnail(videoUrl, callback) {
-      const video = document.createElement('video');
-      video.src = videoUrl;
-      video.crossOrigin = 'anonymous';
-      video.load();
-
-      video.addEventListener('loadeddata', () => {
-        video.currentTime = 1; // Seek to 1 second to avoid blank frame at start
-      });
-
-      video.addEventListener('seeked', () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const imageUrl = canvas.toDataURL();
-        callback(imageUrl);
-      });
-    }
-
-
-
-    // ==================================================
-    // 🔽 UPDATED addFileMessage FUNCTION
-    // ==================================================
-    window.addFileMessage = function addFileMessage(data) {
-      bumpTs(data.ts);
-      const div = document.createElement("div");
-      const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
-      div.className = "msg " + (isMe ? "me" : "other");
-      div.dataset.ts = data.ts;
-
-      if (data.mimetype && data.mimetype.startsWith("image/")) {
-        div.innerHTML = `
+        if (data.mimetype && data.mimetype.startsWith("image/")) {
+          div.innerHTML = `
       <div class="username"><strong>${data.sender}</strong></div>
       <div class="image-wrapper">
         <a href="javascript:void(0)" 
            onclick="downloadFile('${data.data}', '${escapeAttr(
-          data.filename
-        )}', '${data.mimetype}')"
+            data.filename
+          )}', '${data.mimetype}')"
            class="download-icon" title="Download">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
             <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
           </svg>
         </a>
         <img src="${data.data}" alt="${escapeAttr(
-          data.filename
-        )}" style="cursor:pointer;">
+            data.filename
+          )}" style="cursor:pointer;">
       </div>
       <div class="timestamp"><small>${new Date(
-          data.ts
-        ).toLocaleString()}</small></div>`;
-      } else if (data.mimetype && data.mimetype.startsWith("video/")) {
-        const videoBlob = base64ToBlob(data.data, data.mimetype);
-        const videoUrl = URL.createObjectURL(videoBlob);
+        data.ts
+      ).toLocaleString()}</small></div>`;
+        } else if (data.mimetype && data.mimetype.startsWith("video/")) {
+          const videoBlob = base64ToBlob(data.data, data.mimetype);
+          const videoUrl = URL.createObjectURL(videoBlob);
 
-        generateVideoThumbnail(videoUrl, (thumbnailUrl) => {
-          div.innerHTML = `
+          generateVideoThumbnail(videoUrl, (thumbnailUrl) => {
+            div.innerHTML = `
       <div class="username"><strong>${data.sender}</strong></div>
       <div class="image-wrapper">
         <a href="javascript:void(0)" 
-           onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')"
+           onclick="downloadFile('${data.data}', '${escapeAttr(
+              data.filename
+            )}', '${data.mimetype}')"
            class="download-icon" title="Download">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
             <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
           </svg>
         </a>
-        <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${data.mimetype}','${data.filename}')">
+        <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${
+              data.mimetype
+            }','${data.filename}')">
       </div>
-      <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>
+      <div class="timestamp"><small>${new Date(
+        data.ts
+      ).toLocaleString()}</small></div>
     `;
-        });
-      }
-      else if (data.mimetype === "application/pdf") {
-        div.innerHTML = `
-      <div class="username"><strong>${data.sender}</strong></div>
-      <a href="javascript:void(0)" 
-         onclick="downloadFile('${data.data}', '${escapeAttr(
-          data.filename
-        )}', '${data.mimetype}')"
-         class="download-link">📄 ${escapeHtml(data.filename || "file")}</a><br>
-      <div class="timestamp"><small>${new Date(
-          data.ts
-        ).toLocaleString()}</small></div>`;
-      } else {
-        div.innerHTML = `
-      <div class="username"><strong>${data.sender}</strong></div>
-      <a href="javascript:void(0)" 
-         onclick="downloadFile('${data.data}', '${escapeAttr(
-          data.filename
-        )}', '${data.mimetype}')"
-         class="download-link">📎 ${escapeHtml(data.filename || "file")}</a><br>
-      <div class="timestamp"><small>${new Date(
-          data.ts
-        ).toLocaleString()}</small></div>`;
-      }
-
-      const messages = document.getElementById("messages");
-      messages.appendChild(div);
-      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-
-      // Attach preview handlers AFTER the element is created and appended
-      try {
-        console.log(
-          "DEBUG_PREVIEW",
-          "addFileMessage appended for",
-          data.filename || "(no filename)"
-        );
-
-        if (data.mimetype && data.mimetype.startsWith("image/")) {
-          const img = div.querySelector("img");
-          if (img) {
-            img.dataset.mimetype = data.mimetype || "";
-            img.dataset.filename = data.filename || "";
-            console.log(
-              "DEBUG_PREVIEW",
-              "binding img click for",
-              data.filename
-            );
-            img.addEventListener("click", (e) => {
-              try {
-                openPreview(
-                  img.src,
-                  img.dataset.mimetype || data.mimetype,
-                  img.dataset.filename || data.filename
-                );
-              } catch (err) {
-                console.error(
-                  "DEBUG_PREVIEW",
-                  "error in img click handler",
-                  err
-                );
-              }
-            });
-          }
-        } else if (data.mimetype && data.mimetype.startsWith("video/")) {
-          const video = div.querySelector("video");
-          if (video) {
-            video.dataset.mimetype = data.mimetype || "";
-            video.dataset.filename = data.filename || "";
-            console.log(
-              "DEBUG_PREVIEW",
-              "binding video click for",
-              data.filename
-            );
-            video.addEventListener("click", (e) => {
-              try {
-                openPreview(
-                  video.querySelector("source").src,
-                  video.dataset.mimetype || data.mimetype,
-                  video.dataset.filename || data.filename
-                );
-              } catch (err) {
-                console.error(
-                  "DEBUG_PREVIEW",
-                  "error in video click handler",
-                  err
-                );
-              }
-            });
-          }
+          });
         } else if (data.mimetype === "application/pdf") {
-          const link = div.querySelector(".download-link");
-          if (link) {
-            link.addEventListener(
-              "click",
-              (e) => {
-                e.preventDefault();
+          const pdfBlob = base64ToBlob(data.data, data.mimetype);
+          const pdfUrl = URL.createObjectURL(pdfBlob);
+
+          generatePdfThumbnail(pdfUrl, (thumbnailUrl) => {
+            div.innerHTML = `
+      <div class="username"><strong>${data.sender}</strong></div>
+      <div class="image-wrapper">
+        <a href="javascript:void(0)" 
+           onclick="downloadFile('${data.data}', '${escapeAttr(
+              data.filename
+            )}', '${data.mimetype}')"
+           class="download-icon" title="Download">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
+            <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
+          </svg>
+        </a>
+        <img src="${thumbnailUrl}" style="width:220px;height:150px;object-fit:cover;cursor:pointer;border-radius:8px;"
+             onclick="openPreview('${pdfUrl}','${data.mimetype}','${
+              data.filename
+            }')">
+        <div style="margin-top:4px;font-size:12px;color:#fff;text-align:center;">📄 ${
+          data.filename
+        }</div>
+      </div>
+      <div class="timestamp"><small>${new Date(
+        data.ts
+      ).toLocaleString()}</small></div>`;
+          });
+        }
+
+        const messages = document.getElementById("messages");
+        messages.appendChild(div);
+        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+        // Attach preview handlers AFTER the element is created and appended
+        try {
+          console.log(
+            "DEBUG_PREVIEW",
+            "addFileMessage appended for",
+            data.filename || "(no filename)"
+          );
+
+          if (data.mimetype && data.mimetype.startsWith("image/")) {
+            const img = div.querySelector("img");
+            if (img) {
+              img.dataset.mimetype = data.mimetype || "";
+              img.dataset.filename = data.filename || "";
+              console.log(
+                "DEBUG_PREVIEW",
+                "binding img click for",
+                data.filename
+              );
+              img.addEventListener("click", (e) => {
                 try {
-                  openPreview(data.data, data.mimetype, data.filename);
+                  openPreview(
+                    img.src,
+                    img.dataset.mimetype || data.mimetype,
+                    img.dataset.filename || data.filename
+                  );
                 } catch (err) {
                   console.error(
                     "DEBUG_PREVIEW",
-                    "error in pdf click handler",
+                    "error in img click handler",
                     err
                   );
                 }
-              },
-              { passive: false }
-            );
+              });
+            }
+          } else if (data.mimetype && data.mimetype.startsWith("video/")) {
+            const video = div.querySelector("video");
+            if (video) {
+              video.dataset.mimetype = data.mimetype || "";
+              video.dataset.filename = data.filename || "";
+              console.log(
+                "DEBUG_PREVIEW",
+                "binding video click for",
+                data.filename
+              );
+              video.addEventListener("click", (e) => {
+                try {
+                  openPreview(
+                    video.querySelector("source").src,
+                    video.dataset.mimetype || data.mimetype,
+                    video.dataset.filename || data.filename
+                  );
+                } catch (err) {
+                  console.error(
+                    "DEBUG_PREVIEW",
+                    "error in video click handler",
+                    err
+                  );
+                }
+              });
+            }
+          } else if (data.mimetype === "application/pdf") {
+            const link = div.querySelector(".download-link");
+            if (link) {
+              link.addEventListener(
+                "click",
+                (e) => {
+                  e.preventDefault();
+                  try {
+                    openPreview(data.data, data.mimetype, data.filename);
+                  } catch (err) {
+                    console.error(
+                      "DEBUG_PREVIEW",
+                      "error in pdf click handler",
+                      err
+                    );
+                  }
+                },
+                { passive: false }
+              );
+            }
           }
+        } catch (err) {
+          console.error("DEBUG_PREVIEW", "attach handler general error:", err);
         }
-      } catch (err) {
-        console.error("DEBUG_PREVIEW", "attach handler general error:", err);
-      }
-    };
+      };
 
-    // --- openPreview (keeps UI simple and non-invasive) ---
-    function openPreview(src, type, filename) {
-      try {
-        console.log(
-          "DEBUG_PREVIEW",
-          "openPreview called",
-          filename,
-          type,
-          "src_len=",
-          src ? src.length : 0
-        );
-        if (!src) {
-          console.warn("DEBUG_PREVIEW", "openPreview: no src provided");
-          return;
-        }
-        // avoid duplicate overlays
-        if (document.getElementById("preview-overlay")) return;
+      // ✅ Updated openPreview with pdf.js multi-page scrollable rendering
+      async function openPreview(src, type, filename) {
+        try {
+          console.log(
+            "DEBUG_PREVIEW",
+            "openPreview called",
+            filename,
+            type,
+            "src_len=",
+            src ? src.length : 0
+          );
+          if (!src) {
+            console.warn("DEBUG_PREVIEW", "openPreview: no src provided");
+            return;
+          }
+          if (document.getElementById("preview-overlay")) return; // avoid duplicate overlays
 
-        const overlay = document.createElement("div");
-        overlay.id = "preview-overlay";
-        overlay.style = `
+          // overlay
+          const overlay = document.createElement("div");
+          overlay.id = "preview-overlay";
+          overlay.style = `
       position:fixed;top:0;left:0;width:100%;height:100%;
       background:rgba(0,0,0,0.85);display:flex;
       align-items:center;justify-content:center;z-index:99999;padding:12px;box-sizing:border-box;
     `;
 
-        const box = document.createElement("div");
-        box.style = `
-      background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:auto;
-      padding:10px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;
+          const box = document.createElement("div");
+          box.style = `
+      background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:hidden;
+      padding:8px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;
     `;
 
-        if (type && type.startsWith("image/")) {
-          const img = document.createElement("img");
-          img.src = src;
-          img.alt = filename || "image";
-          img.style.maxWidth = "100%";
-          img.style.maxHeight = "80vh";
-          img.style.borderRadius = "6px";
-          box.appendChild(img);
-        } else {
-          // PDF and other types
+          // header (filename)
+          const header = document.createElement("div");
+          header.style =
+            "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
+          const title = document.createElement("div");
+          title.textContent = filename || "Preview";
+          title.style =
+            "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+          header.appendChild(title);
+          box.appendChild(header);
+
+          // content container
+          const contentWrapper = document.createElement("div");
+          contentWrapper.style = `
+      width:100%;flex:1 1 auto;overflow:auto;
+      display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 6px;box-sizing:border-box;
+    `;
+          box.appendChild(contentWrapper);
+
+          // close button
+          const controls = document.createElement("div");
+          controls.style =
+            "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
+          const closeBtn = document.createElement("button");
+          closeBtn.textContent = "Close";
+          closeBtn.onclick = closePreview;
+          closeBtn.style =
+            "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
+          controls.appendChild(closeBtn);
+          box.appendChild(controls);
+
+          overlay.appendChild(box);
+          document.body.appendChild(overlay);
+
+          // close on outside click
+          overlay.addEventListener("click", (ev) => {
+            if (ev.target === overlay) closePreview();
+          });
+
+          // Esc closes
+          const onKey = (ev) => {
+            if (ev.key === "Escape") closePreview();
+          };
+          window.addEventListener("keydown", onKey);
+
+          // Android back button support
+          const onPop = () => {
+            closePreview();
+          };
+          history.pushState({ preview: true }, "");
+          window.addEventListener("popstate", onPop);
+
+          overlay._cleanup = () => {
+            window.removeEventListener("keydown", onKey);
+            window.removeEventListener("popstate", onPop);
+          };
+
+          // === IMAGE preview ===
+          if (type && type.startsWith("image/")) {
+            const img = document.createElement("img");
+            img.src = src;
+            img.alt = filename || "image";
+            img.style.maxWidth = "100%";
+            img.style.maxHeight = "80vh";
+            img.style.borderRadius = "6px";
+            contentWrapper.appendChild(img);
+            return;
+          }
+
+          // === PDF preview ===
+          if (
+            type === "application/pdf" ||
+            (typeof src === "string" && src.startsWith("data:application/pdf"))
+          ) {
+            const loadingIndicator = document.createElement("div");
+            loadingIndicator.textContent = "Loading PDF…";
+            loadingIndicator.style = "color:#333;padding:8px;";
+            contentWrapper.appendChild(loadingIndicator);
+
+            try {
+              const pdfjsLib = window["pdfjs-dist/build/pdf"];
+              pdfjsLib.GlobalWorkerOptions.workerSrc =
+                "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+              const loadingTask = pdfjsLib.getDocument(src);
+              const pdf = await loadingTask.promise;
+              loadingIndicator.remove();
+
+              const maxDisplayWidth = Math.min(window.innerWidth * 0.9, 1200);
+
+              for (let p = 1; p <= pdf.numPages; p++) {
+                const page = await pdf.getPage(p);
+                const viewport = page.getViewport({ scale: 1 });
+                const devicePixelRatio = window.devicePixelRatio || 1;
+                const targetCssWidth = Math.min(
+                  viewport.width,
+                  maxDisplayWidth
+                );
+                const scale =
+                  (targetCssWidth / viewport.width) * devicePixelRatio;
+                const renderViewport = page.getViewport({ scale });
+
+                const canvas = document.createElement("canvas");
+                canvas.width = Math.round(renderViewport.width);
+                canvas.height = Math.round(renderViewport.height);
+                canvas.style.maxWidth = "90vw";
+                canvas.style.height = "auto";
+                canvas.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
+                canvas.style.borderRadius = "4px";
+                canvas.style.background = "#fff";
+
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                await page.render({
+                  canvasContext: ctx,
+                  viewport: renderViewport,
+                }).promise;
+
+                const label = document.createElement("div");
+                label.textContent = `Page ${p} / ${pdf.numPages}`;
+                label.style =
+                  "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
+
+                contentWrapper.appendChild(label);
+                contentWrapper.appendChild(canvas);
+              }
+              return;
+            } catch (err) {
+              console.error("DEBUG_PREVIEW", "PDF render failed:", err);
+              loadingIndicator.textContent =
+                "Failed to render PDF. Falling back to embed.";
+            }
+          }
+
+          // === fallback embed ===
           const embed = document.createElement("embed");
           embed.src = src;
           embed.type = type || "application/octet-stream";
           embed.style.width = "80vw";
           embed.style.height = "70vh";
-          box.appendChild(embed);
+          box.insertBefore(embed, controls);
+        } catch (err) {
+          console.error("DEBUG_PREVIEW", "openPreview error:", err);
+        }
+      }
+
+      function closePreview() {
+        const overlay = document.getElementById("preview-overlay");
+        if (!overlay) return;
+        try {
+          if (overlay._cleanup) overlay._cleanup();
+          // if we pushed the history state, go back
+          if (history.state && history.state.preview) {
+            try {
+              history.back();
+            } catch (e) {}
+          }
+        } finally {
+          overlay.remove();
+        }
+      }
+      // ✅ File Upload Handler with Preview + Crop & Rotate
+      function handleFileUpload() {
+        const fileInput = document.getElementById("fileInput");
+        const file = fileInput.files && fileInput.files[0];
+        if (!file || !currentRoom) {
+          if (fileInput) fileInput.value = "";
+          return;
         }
 
-        // close button
-        const controls = document.createElement("div");
-        controls.style =
-          "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
-        const closeBtn = document.createElement("button");
-        closeBtn.textContent = "Close";
-        closeBtn.onclick = closePreview;
-        closeBtn.style =
-          "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
-        controls.appendChild(closeBtn);
-        box.appendChild(controls);
-
-        overlay.appendChild(box);
-
-        // close on outside click
-        overlay.addEventListener("click", (ev) => {
-          if (ev.target === overlay) closePreview();
-        });
-
-        // Esc key closes
-        const onKey = (ev) => {
-          if (ev.key === "Escape") closePreview();
-        };
-        window.addEventListener("keydown", onKey);
-
-        // push history state to handle Android back button
-        const onPop = () => {
-          closePreview();
-        };
-        history.pushState({ preview: true }, "");
-        window.addEventListener("popstate", onPop);
-
-        // attach cleanup
-        overlay._cleanup = () => {
-          window.removeEventListener("keydown", onKey);
-          window.removeEventListener("popstate", onPop);
-        };
-
-        document.body.appendChild(overlay);
-        console.log("DEBUG_PREVIEW", "preview opened", filename);
-      } catch (err) {
-        console.error("DEBUG_PREVIEW", "openPreview error:", err);
-      }
-    }
-
-    function closePreview() {
-      const overlay = document.getElementById("preview-overlay");
-      if (!overlay) return;
-      try {
-        if (overlay._cleanup) overlay._cleanup();
-        // if we pushed the history state, go back
-        if (history.state && history.state.preview) {
-          try {
-            history.back();
-          } catch (e) { }
-        }
-      } finally {
-        overlay.remove();
-      }
-    }
-    // ✅ File Upload Handler with Preview + Crop & Rotate
-    function handleFileUpload() {
-      const fileInput = document.getElementById("fileInput");
-      const file = fileInput.files && fileInput.files[0];
-      if (!file || !currentRoom) {
-        if (fileInput) fileInput.value = "";
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        // Overlay
-        const overlay = document.createElement("div");
-        overlay.id = "file-preview";
-        overlay.style = `
+        const reader = new FileReader();
+        reader.onload = () => {
+          // Overlay
+          const overlay = document.createElement("div");
+          overlay.id = "file-preview";
+          overlay.style = `
       position:fixed;top:0;left:0;width:100%;height:100%;
       background:rgba(0,0,0,.9);
       display:flex;align-items:center;justify-content:center;
       flex-direction:column;z-index:9999;
     `;
 
-        if (file.type.startsWith("image/")) {
-          overlay.innerHTML = `
+          if (file.type.startsWith("image/")) {
+            overlay.innerHTML = `
         <div style="background:#222;padding:15px;border-radius:12px;
                     max-width:90%;max-height:90%;display:flex;
                     flex-direction:column;align-items:center;">
@@ -1739,8 +1928,8 @@
                            border:none;border-radius:4px;cursor:pointer;">Send</button>
           </div>
         </div>`;
-        } else if (file.type.startsWith("video/")) {
-          overlay.innerHTML = `
+          } else if (file.type.startsWith("video/")) {
+            overlay.innerHTML = `
         <div style="background:#222;padding:15px;border-radius:12px;
                     max-width:90%;max-height:90%;display:flex;
                     flex-direction:column;align-items:center;">
@@ -1757,8 +1946,53 @@
                            border:none;border-radius:4px;cursor:pointer;">Send</button>
           </div>
         </div>`;
-        } else if (file.type === "application/pdf") {
-          overlay.innerHTML = `
+          } else if (file.type === "application/pdf") {
+            const pdfUrl = URL.createObjectURL(file);
+
+            // Load first page with pdf.js
+            const pdfjsLib = window["pdfjs-dist/build/pdf"];
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+            const loadingTask = pdfjsLib.getDocument(pdfUrl);
+            loadingTask.promise.then(async (pdf) => {
+              const page = await pdf.getPage(1);
+
+              // Scale page to fit nicely in viewport but keep its aspect ratio
+              const viewport = page.getViewport({ scale: 1.5 }); // adjust scale as needed
+              const canvas = document.createElement("canvas");
+              const ctx = canvas.getContext("2d");
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+
+              await page.render({ canvasContext: ctx, viewport }).promise;
+
+              overlay.innerHTML = `
+      <div style="background:#222;padding:15px;border-radius:12px;
+                  max-width:95%;max-height:95%;display:flex;
+                  flex-direction:column;align-items:center;">
+        <canvas id="pdf-canvas" 
+                style="max-width:90vw;max-height:80vh;border-radius:8px;object-fit:contain"></canvas>
+        <div style="margin-top:8px;color:#fff;">📄 ${file.name}</div>
+        <div style="margin-top:12px;display:flex;gap:12px;">
+          <button onclick="closeFilePreview()" 
+                  style="background:#e74c3c;color:#fff;padding:6px 12px;
+                         border:none;border-radius:4px;cursor:pointer;">Cancel</button>
+          <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" 
+                  style="background:#27ae60;color:#fff;padding:6px 12px;
+                         border:none;border-radius:4px;cursor:pointer;">Send</button>
+        </div>
+      </div>`;
+
+              // Copy rendered content into our preview canvas
+              const previewCanvas = overlay.querySelector("#pdf-canvas");
+              previewCanvas.width = canvas.width;
+              previewCanvas.height = canvas.height;
+              previewCanvas.getContext("2d").drawImage(canvas, 0, 0);
+            });
+          } else {
+            // Non-image fallback
+            overlay.innerHTML = `
         <div style="background:#222;padding:15px;border-radius:12px;
                     max-width:90%;max-height:90%;display:flex;
                     flex-direction:column;align-items:center;">
@@ -1773,561 +2007,543 @@
                            border:none;border-radius:4px;cursor:pointer;">Send</button>
           </div>
         </div>`;
-        } else {
-          // Non-image fallback
-          overlay.innerHTML = `
-        <div style="background:#222;padding:15px;border-radius:12px;
-                    max-width:90%;max-height:90%;display:flex;
-                    flex-direction:column;align-items:center;">
-          <embed src="${reader.result}" type="${file.type}" 
-                 style="width:80vw;height:70vh;border-radius:8px;">
-          <div style="margin-top:12px;display:flex;gap:12px;">
-            <button onclick="closeFilePreview()" 
-                    style="background:#e74c3c;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Cancel</button>
-            <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" 
-                    style="background:#27ae60;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Send</button>
-          </div>
-        </div>`;
+          }
+
+          document.body.appendChild(overlay);
+
+          // Init cropper for images
+          if (file.type.startsWith("image/")) {
+            const image = document.getElementById("crop-image");
+            image.onload = () => {
+              if (window._cropper) window._cropper.destroy();
+              window._rotation = 0;
+
+              window._cropper = new Cropper(image, {
+                viewMode: 2, // ✅ image always fully visible in container
+                autoCropArea: 1, // start with full image
+                responsive: true,
+                rotatable: true,
+                ready() {
+                  // Start with crop box covering whole image
+                  const canvas = this.cropper.getCanvasData();
+                  this.cropper.setCropBoxData({
+                    width: canvas.width,
+                    height: canvas.height,
+                  });
+                },
+              });
+            };
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+
+      // ✅ Rotate and re-center crop box to full image
+      function rotateCrop(deg) {
+        const cropper = window._cropper;
+        if (!cropper) return;
+
+        // update rotation
+        window._rotation = ((window._rotation || 0) + deg) % 360;
+
+        // reset centers the image & clears crop box
+        cropper.reset();
+
+        // re-apply rotation
+        cropper.rotateTo(window._rotation);
+
+        // after render, fit crop to full image
+        setTimeout(() => {
+          fitFullImageCrop();
+        }, 80);
+      }
+
+      // ✅ Fit crop box to entire visible image
+      function fitFullImageCrop() {
+        const cropper = window._cropper;
+        if (!cropper) return;
+
+        const canvas = cropper.getCanvasData();
+
+        cropper.setCropBoxData({
+          width: canvas.width,
+          height: canvas.height,
+        });
+      }
+
+      // ✅ Apply crop and send
+      function applyCropAndSend(filename, mimetype) {
+        if (!window._cropper) return;
+
+        const canvas = window._cropper.getCroppedCanvas({
+          maxWidth: 1920,
+          maxHeight: 1920,
+          fillColor: "#fff",
+        });
+
+        if (!canvas) return;
+        canvas.toBlob((blob) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            confirmFileSend(reader.result, filename, mimetype);
+          };
+          reader.readAsDataURL(blob);
+        }, mimetype);
+      }
+
+      // ✅ Confirm Send → socket
+      function confirmFileSend(data, filename, mimetype) {
+        // mark time so server won't resend this file back to the same client on reconnect
+        const nowTs = new Date().toISOString();
+        lastPersistedTs = nowTs;
+        try {
+          localStorage.setItem(
+            "chatState",
+            JSON.stringify({
+              username: currentName,
+              room: currentRoom,
+              lastTs: lastPersistedTs,
+            })
+          );
+        } catch (e) {
+          /* ignore */
         }
 
-        document.body.appendChild(overlay);
+        socket.emit("file", {
+          room: currentRoom,
+          sender: currentName,
+          filename,
+          mimetype,
+          data,
+        });
+        closeFilePreview();
+        document.getElementById("fileInput").value = "";
+      }
 
-        // Init cropper for images
-        if (file.type.startsWith("image/")) {
-          const image = document.getElementById("crop-image");
-          image.onload = () => {
-            if (window._cropper) window._cropper.destroy();
-            window._rotation = 0;
+      // ✅ Close
+      function closeFilePreview() {
+        const overlay = document.getElementById("file-preview");
+        if (overlay) overlay.remove();
+        document.getElementById("fileInput").value = "";
+        if (window._cropper) {
+          window._cropper.destroy();
+          window._cropper = null;
+        }
+        window._rotation = 0;
+      }
+      function updateUserList(data) {
+        if (!currentRoom || data.room !== currentRoom) return;
 
-            window._cropper = new Cropper(image, {
-              viewMode: 2, // ✅ image always fully visible in container
-              autoCropArea: 1, // start with full image
-              responsive: true,
-              rotatable: true,
-              ready() {
-                // Start with crop box covering whole image
-                const canvas = this.cropper.getCanvasData();
-                this.cropper.setCropBoxData({
-                  width: canvas.width,
-                  height: canvas.height,
-                });
-              },
-            });
-          };
+        const list = document.getElementById("user-list");
+        const seen = new Set();
+        const existing = new Map();
+
+        list
+          .querySelectorAll("li")
+          .forEach((li) => existing.set(li.getAttribute("data-name"), li));
+
+        data.users.forEach((u) => {
+          if (seen.has(u.name)) return;
+          seen.add(u.name);
+
+          const color = u.status === "online" ? "#25d366" : "red";
+          const displayName =
+            u.name === currentName ? `${u.name} (Me)` : u.name;
+
+          let li = existing.get(u.name);
+          if (li) {
+            li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+            existing.delete(u.name);
+          } else {
+            li = document.createElement("li");
+            li.setAttribute("data-name", u.name);
+            li.className = "fade-in";
+            li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+            list.appendChild(li);
+          }
+        });
+
+        existing.forEach((li) => {
+          li.classList.add("fade-out");
+          setTimeout(() => li.remove(), 300);
+        });
+      }
+
+      function handleRoomDestroyed(data) {
+        if (currentRoom === data.room) {
+          document.getElementById("input").disabled = true;
+          document.getElementById("send").disabled = true;
+          document.getElementById("attach").disabled = true;
+
+          addMessage({
+            sender: "System",
+            text: "Room destroyed. You cannot send messages until you join a new room.",
+            ts: new Date().toISOString(),
+          });
+
+          lastPersistedTs = null;
+          joinedRooms.delete(data.room);
+          currentRoom = "";
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
+          document.getElementById("user-list").innerHTML = "";
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+          document.getElementById("messages").style.display = "none";
+        }
+      }
+
+      function handleRoomCleared(data) {
+        if (currentRoom === data.room) {
+          document.getElementById("messages").innerHTML = "";
+          addMessage({
+            sender: "System",
+            text: data.message,
+            ts: new Date().toISOString(),
+          });
+          lastPersistedTs = null;
+        }
+      }
+
+      const API_BASE = "https://realtime-chat-1mv3.onrender.com";
+
+      // expose globally (important for Android WebView buttons)
+      window.clearRoom = async function clearRoom() {
+        if (!currentRoom) {
+          alert("Join a room first!");
+          return;
+        }
+
+        try {
+          const res = await fetch(
+            `${API_BASE}/clear/${encodeURIComponent(currentRoom)}`,
+            {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" }, // Android fix
+              cache: "no-store",
+            }
+          );
+
+          const data = await res.json();
+          if (!res.ok)
+            throw new Error(
+              data?.error || `Failed to clear room: ${res.status}`
+            );
+
+          console.log("✅", data.message);
+
+          // Optional feedback
+          addMessage({
+            sender: "System",
+            text: data.message,
+            ts: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error("❌ clearRoom error:", err);
+          alert(err.message);
         }
       };
-      reader.readAsDataURL(file);
-    }
 
-    // ✅ Rotate and re-center crop box to full image
-    function rotateCrop(deg) {
-      const cropper = window._cropper;
-      if (!cropper) return;
-
-      // update rotation
-      window._rotation = ((window._rotation || 0) + deg) % 360;
-
-      // reset centers the image & clears crop box
-      cropper.reset();
-
-      // re-apply rotation
-      cropper.rotateTo(window._rotation);
-
-      // after render, fit crop to full image
-      setTimeout(() => {
-        fitFullImageCrop();
-      }, 80);
-    }
-
-    // ✅ Fit crop box to entire visible image
-    function fitFullImageCrop() {
-      const cropper = window._cropper;
-      if (!cropper) return;
-
-      const canvas = cropper.getCanvasData();
-
-      cropper.setCropBoxData({
-        width: canvas.width,
-        height: canvas.height,
-      });
-    }
-
-    // ✅ Apply crop and send
-    function applyCropAndSend(filename, mimetype) {
-      if (!window._cropper) return;
-
-      const canvas = window._cropper.getCroppedCanvas({
-        maxWidth: 1920,
-        maxHeight: 1920,
-        fillColor: "#fff",
-      });
-
-      if (!canvas) return;
-      canvas.toBlob((blob) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          confirmFileSend(reader.result, filename, mimetype);
-        };
-        reader.readAsDataURL(blob);
-      }, mimetype);
-    }
-
-    // ✅ Confirm Send → socket
-    function confirmFileSend(data, filename, mimetype) {
-      // mark time so server won't resend this file back to the same client on reconnect
-      const nowTs = new Date().toISOString();
-      lastPersistedTs = nowTs;
-      try {
-        localStorage.setItem(
-          "chatState",
-          JSON.stringify({
-            username: currentName,
-            room: currentRoom,
-            lastTs: lastPersistedTs,
-          })
-        );
-      } catch (e) {
-        /* ignore */
-      }
-
-      socket.emit("file", {
-        room: currentRoom,
-        sender: currentName,
-        filename,
-        mimetype,
-        data,
-      });
-      closeFilePreview();
-      document.getElementById("fileInput").value = "";
-    }
-
-    // ✅ Close
-    function closeFilePreview() {
-      const overlay = document.getElementById("file-preview");
-      if (overlay) overlay.remove();
-      document.getElementById("fileInput").value = "";
-      if (window._cropper) {
-        window._cropper.destroy();
-        window._cropper = null;
-      }
-      window._rotation = 0;
-    }
-    function updateUserList(data) {
-      if (!currentRoom || data.room !== currentRoom) return;
-
-      const list = document.getElementById("user-list");
-      const seen = new Set();
-      const existing = new Map();
-
-      list
-        .querySelectorAll("li")
-        .forEach((li) => existing.set(li.getAttribute("data-name"), li));
-
-      data.users.forEach((u) => {
-        if (seen.has(u.name)) return;
-        seen.add(u.name);
-
-        const color = u.status === "online" ? "#25d366" : "red";
-        const displayName =
-          u.name === currentName ? `${u.name} (Me)` : u.name;
-
-        let li = existing.get(u.name);
-        if (li) {
-          li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-          existing.delete(u.name);
-        } else {
-          li = document.createElement("li");
-          li.setAttribute("data-name", u.name);
-          li.className = "fade-in";
-          li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-          list.appendChild(li);
+      window.destroyRoom = async function destroyRoom() {
+        if (!currentRoom) {
+          alert("Join a room first!");
+          return;
         }
-      });
 
-      existing.forEach((li) => {
-        li.classList.add("fade-out");
-        setTimeout(() => li.remove(), 300);
-      });
-    }
+        if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`))
+          return;
 
-    function handleRoomDestroyed(data) {
-      if (currentRoom === data.room) {
+        try {
+          const res = await fetch(
+            `${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`,
+            {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" }, // Android fix
+            }
+          );
+
+          const data = await res.json();
+          if (!res.ok)
+            throw new Error(
+              data?.error || `Failed to destroy room: ${res.status}`
+            );
+
+          console.log("✅", data.message);
+
+          unsubscribeUser(currentName, currentRoom);
+
+          // reset UI
+          document.getElementById("messages").innerHTML = "";
+          addMessage({
+            sender: "System",
+            text: "Room destroyed. All messages cleared. Please join a new room.",
+            ts: new Date().toISOString(),
+          });
+
+          lastPersistedTs = null;
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
+          joinedRooms.delete(currentRoom);
+          currentRoom = "";
+          document.getElementById("user-list").innerHTML = "";
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+          document.getElementById("messages").style.display = "none";
+        } catch (err) {
+          console.error("❌ destroyRoom error:", err);
+          alert(err.message);
+        }
+      };
+
+      async function leaveRoom() {
+        if (!currentRoom) {
+          alert("You are not in a room!");
+          return;
+        }
+
+        const leftRoom = currentRoom;
+
+        // 🔑 Unregister FCM token for this room
+        const savedToken = localStorage.getItem("fcm_token");
+        if (savedToken) {
+          try {
+            await fetch("/api/unregister-fcm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                token: savedToken,
+                user: currentName,
+                room: currentRoom,
+              }),
+            });
+            console.log(
+              `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
+            );
+          } catch (err) {
+            console.error("❌ Failed to unregister FCM token:", err);
+          }
+        }
+
+        // 🛑 Unsubscribe from WebPush for this room
+        try {
+          await unsubscribeUser(currentName, currentRoom);
+        } catch (err) {
+          console.error("❌ Failed to unsubscribe WebPush:", err);
+        }
+
+        // 🔌 Leave socket room
+        socket.emit("leave", { room: currentRoom, sender: currentName });
+        console.log(`🚪 Left room ${currentRoom}`);
+
+        // 🖥️ Reset UI
         document.getElementById("input").disabled = true;
         document.getElementById("send").disabled = true;
         document.getElementById("attach").disabled = true;
 
         addMessage({
           sender: "System",
-          text: "Room destroyed. You cannot send messages until you join a new room.",
+          text: `YOU LEFT FROM ROOM ${leftRoom}`,
           ts: new Date().toISOString(),
         });
 
         lastPersistedTs = null;
-        joinedRooms.delete(data.room);
-        currentRoom = "";
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
-        document.getElementById("user-list").innerHTML = "";
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-        document.getElementById("messages").style.display = "none";
-      }
-    }
-
-    function handleRoomCleared(data) {
-      if (currentRoom === data.room) {
-        document.getElementById("messages").innerHTML = "";
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-        lastPersistedTs = null;
-      }
-    }
-
-    const API_BASE = "https://realtime-chat-1mv3.onrender.com";
-
-    // expose globally (important for Android WebView buttons)
-    window.clearRoom = async function clearRoom() {
-      if (!currentRoom) {
-        alert("Join a room first!");
-        return;
-      }
-
-      try {
-        const res = await fetch(
-          `${API_BASE}/clear/${encodeURIComponent(currentRoom)}`,
-          {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" }, // Android fix
-            cache: "no-store",
-          }
-        );
-
-        const data = await res.json();
-        if (!res.ok)
-          throw new Error(
-            data?.error || `Failed to clear room: ${res.status}`
-          );
-
-        console.log("✅", data.message);
-
-        // Optional feedback
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.error("❌ clearRoom error:", err);
-        alert(err.message);
-      }
-    };
-
-    window.destroyRoom = async function destroyRoom() {
-      if (!currentRoom) {
-        alert("Join a room first!");
-        return;
-      }
-
-      if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`))
-        return;
-
-      try {
-        const res = await fetch(
-          `${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`,
-          {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" }, // Android fix
-          }
-        );
-
-        const data = await res.json();
-        if (!res.ok)
-          throw new Error(
-            data?.error || `Failed to destroy room: ${res.status}`
-          );
-
-        console.log("✅", data.message);
-
-        unsubscribeUser(currentName, currentRoom);
-
-        // reset UI
-        document.getElementById("messages").innerHTML = "";
-        addMessage({
-          sender: "System",
-          text: "Room destroyed. All messages cleared. Please join a new room.",
-          ts: new Date().toISOString(),
-        });
-
-        lastPersistedTs = null;
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
         joinedRooms.delete(currentRoom);
         currentRoom = "";
+        Storage.remove("chat_name");
+        Storage.remove("chat_room");
         document.getElementById("user-list").innerHTML = "";
-        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("chat-container").style.display = "block";
         document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-        document.getElementById("messages").style.display = "none";
-      } catch (err) {
-        console.error("❌ destroyRoom error:", err);
-        alert(err.message);
-      }
-    };
-
-    async function leaveRoom() {
-      if (!currentRoom) {
-        alert("You are not in a room!");
-        return;
+        document.getElementById("messages").style.display = "block";
       }
 
-      const leftRoom = currentRoom;
+      // ======================================================
+      // =============== Event Listeners ======================
+      // ======================================================
+      document.addEventListener("visibilitychange", () =>
+        sendActive(!document.hidden)
+      );
+      window.addEventListener("focus", () => sendActive(true));
+      window.addEventListener("blur", () => sendActive(false));
 
-      // 🔑 Unregister FCM token for this room
-      const savedToken = localStorage.getItem("fcm_token");
-      if (savedToken) {
-        try {
-          await fetch("/api/unregister-fcm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token: savedToken,
-              user: currentName,
+      window.addEventListener("offline", () => {
+        if (socket && socket.connected) socket.disconnect();
+      });
+
+      let reconnectTimer;
+      window.addEventListener("online", () => {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          if (socket && !socket.connected && currentRoom && currentName) {
+            socket.connect();
+            socket.emit("join", {
               room: currentRoom,
-            }),
-          });
-          console.log(
-            `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
-          );
-        } catch (err) {
-          console.error("❌ Failed to unregister FCM token:", err);
-        }
-      }
-
-      // 🛑 Unsubscribe from WebPush for this room
-      try {
-        await unsubscribeUser(currentName, currentRoom);
-      } catch (err) {
-        console.error("❌ Failed to unsubscribe WebPush:", err);
-      }
-
-      // 🔌 Leave socket room
-      socket.emit("leave", { room: currentRoom, sender: currentName });
-      console.log(`🚪 Left room ${currentRoom}`);
-
-      // 🖥️ Reset UI
-      document.getElementById("input").disabled = true;
-      document.getElementById("send").disabled = true;
-      document.getElementById("attach").disabled = true;
-
-      addMessage({
-        sender: "System",
-        text: `YOU LEFT FROM ROOM ${leftRoom}`,
-        ts: new Date().toISOString(),
+              sender: currentName,
+              lastTs: lastPersistedTs || null,
+            });
+          }
+        }, 300);
       });
 
-      lastPersistedTs = null;
-      joinedRooms.delete(currentRoom);
-      currentRoom = "";
-      Storage.remove("chat_name");
-      Storage.remove("chat_room");
-      document.getElementById("user-list").innerHTML = "";
-      document.getElementById("chat-container").style.display = "block";
-      document.getElementById("input-area").style.display = "none";
-      document.getElementById("messages").style.display = "block";
-    }
+      // ======================================================
+      // =============== Initialization =======================
+      // ======================================================
+      window.addEventListener("load", async () => {
+        await requestNotificationPermission();
+        const savedName = Storage.get("chat_name");
+        const savedRoom = Storage.get("chat_room");
 
-    // ======================================================
-    // =============== Event Listeners ======================
-    // ======================================================
-    document.addEventListener("visibilitychange", () =>
-      sendActive(!document.hidden)
-    );
-    window.addEventListener("focus", () => sendActive(true));
-    window.addEventListener("blur", () => sendActive(false));
-
-    window.addEventListener("offline", () => {
-      if (socket && socket.connected) socket.disconnect();
-    });
-
-    let reconnectTimer;
-    window.addEventListener("online", () => {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(() => {
-        if (socket && !socket.connected && currentRoom && currentName) {
-          socket.connect();
-          socket.emit("join", {
-            room: currentRoom,
-            sender: currentName,
-            lastTs: lastPersistedTs || null,
-          });
-        }
-      }, 300);
-    });
-
-    // ======================================================
-    // =============== Initialization =======================
-    // ======================================================
-    window.addEventListener("load", async () => {
-      await requestNotificationPermission();
-      const savedName = Storage.get("chat_name");
-      const savedRoom = Storage.get("chat_room");
-
-      if (savedName && savedRoom) {
-        document.getElementById("name").value = savedName;
-        document.getElementById("room").value = savedRoom;
-        joinRoom({ preserveMessages: true });
-      } else {
-        document.getElementById("intro").style.display = "block";
-      }
-    });
-
-    document.getElementById("chat-title").addEventListener("click", () => {
-      const savedName = Storage.get("chat_name");
-      const savedRoom = Storage.get("chat_room");
-
-      if (savedName && savedRoom) {
-        document.getElementById("name").value = savedName;
-        document.getElementById("room").value = savedRoom;
-        joinRoom();
-      } else {
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("messages").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-      }
-    });
-
-    // ======================================================
-    // =============== Capacitor Push Notifications =========
-    // ======================================================
-    // ======================================================
-    // =============== Capacitor Push Notifications =========
-    // ======================================================
-    document.addEventListener("DOMContentLoaded", async () => {
-      const { PushNotifications } = Capacitor.Plugins;
-
-      if (!PushNotifications) {
-        console.error("❌ PushNotifications plugin not available");
-        return;
-      }
-
-      // Ask for permission
-      let permStatus = await PushNotifications.requestPermissions();
-      console.log("📌 Permission:", permStatus);
-
-      if (permStatus.receive === "granted") {
-        await PushNotifications.register();
-      }
-
-      // Registration success → send token to backend
-      PushNotifications.addListener("registration", async (token) => {
-        console.log("📱 Push registration token:", token.value);
-
-        try {
-          const user = localStorage.getItem("chat_name") || "guest";
-          const room = localStorage.getItem("chat_room") || null; // 🔑 now room-aware
-
-          await fetch(
-            "https://realtime-chat-1mv3.onrender.com/api/register-fcm",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                token: token.value,
-                user,
-                room, // 🔑 send room too
-              }),
-            }
-          );
-
-          console.log("📡 Token sent to backend for", user, "in room", room);
-          localStorage.setItem("fcm_token", token.value); // save for unregister later
-        } catch (err) {
-          console.error("❌ Failed to send token:", err);
+        if (savedName && savedRoom) {
+          document.getElementById("name").value = savedName;
+          document.getElementById("room").value = savedRoom;
+          joinRoom({ preserveMessages: true });
+        } else {
+          document.getElementById("intro").style.display = "block";
         }
       });
 
-      // Errors
-      PushNotifications.addListener("registrationError", (err) => {
-        console.error("❌ Registration error:", err.error);
+      document.getElementById("chat-title").addEventListener("click", () => {
+        const savedName = Storage.get("chat_name");
+        const savedRoom = Storage.get("chat_room");
+
+        if (savedName && savedRoom) {
+          document.getElementById("name").value = savedName;
+          document.getElementById("room").value = savedRoom;
+          joinRoom();
+        } else {
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("messages").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+        }
       });
 
-      // Foreground push (optional: show notification immediately)
-      PushNotifications.addListener(
-        "pushNotificationReceived",
-        (notification) => {
-          console.log("📩 Push received (foreground):", notification);
-        }
-      );
+      // ======================================================
+      // =============== Capacitor Push Notifications =========
+      // ======================================================
+      // ======================================================
+      // =============== Capacitor Push Notifications =========
+      // ======================================================
+      document.addEventListener("DOMContentLoaded", async () => {
+        const { PushNotifications } = Capacitor.Plugins;
 
-      // Notification tapped
-      PushNotifications.addListener(
-        "pushNotificationActionPerformed",
-        (action) => {
-          console.log("👉 Notification tapped:", action.notification);
+        if (!PushNotifications) {
+          console.error("❌ PushNotifications plugin not available");
+          return;
         }
-      );
 
-      // Example clear function
-      window.clearNotifications = async () => {
-        try {
-          await PushNotifications.removeAllDeliveredNotifications();
-          console.log("🧹 All notifications cleared");
-        } catch (err) {
-          console.error("❌ Failed to clear notifications:", err);
+        // Ask for permission
+        let permStatus = await PushNotifications.requestPermissions();
+        console.log("📌 Permission:", permStatus);
+
+        if (permStatus.receive === "granted") {
+          await PushNotifications.register();
         }
-      };
-    });
-  </script>
-  <script type="module">
-    import { Storage } from "@capacitor/storage";
-    import {
-      PushNotifications,
-      LocalNotifications,
-    } from "@capacitor/push-notifications";
 
-    async function saveChatState(username, room, lastTs) {
-      await Storage.set({
-        key: "chatState",
-        value: JSON.stringify({ username, room, lastTs }),
+        // Registration success → send token to backend
+        PushNotifications.addListener("registration", async (token) => {
+          console.log("📱 Push registration token:", token.value);
+
+          try {
+            const user = localStorage.getItem("chat_name") || "guest";
+            const room = localStorage.getItem("chat_room") || null; // 🔑 now room-aware
+
+            await fetch(
+              "https://realtime-chat-1mv3.onrender.com/api/register-fcm",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  token: token.value,
+                  user,
+                  room, // 🔑 send room too
+                }),
+              }
+            );
+
+            console.log("📡 Token sent to backend for", user, "in room", room);
+            localStorage.setItem("fcm_token", token.value); // save for unregister later
+          } catch (err) {
+            console.error("❌ Failed to send token:", err);
+          }
+        });
+
+        // Errors
+        PushNotifications.addListener("registrationError", (err) => {
+          console.error("❌ Registration error:", err.error);
+        });
+
+        // Foreground push (optional: show notification immediately)
+        PushNotifications.addListener(
+          "pushNotificationReceived",
+          (notification) => {
+            console.log("📩 Push received (foreground):", notification);
+          }
+        );
+
+        // Notification tapped
+        PushNotifications.addListener(
+          "pushNotificationActionPerformed",
+          (action) => {
+            console.log("👉 Notification tapped:", action.notification);
+          }
+        );
+
+        // Example clear function
+        window.clearNotifications = async () => {
+          try {
+            await PushNotifications.removeAllDeliveredNotifications();
+            console.log("🧹 All notifications cleared");
+          } catch (err) {
+            console.error("❌ Failed to clear notifications:", err);
+          }
+        };
       });
-    }
+    </script>
+    <script type="module">
+      import { Storage } from "@capacitor/storage";
+      import {
+        PushNotifications,
+        LocalNotifications,
+      } from "@capacitor/push-notifications";
 
-    async function loadChatState() {
-      const { value } = await Storage.get({ key: "chatState" });
-      return value ? JSON.parse(value) : null;
-    }
+      async function saveChatState(username, room, lastTs) {
+        await Storage.set({
+          key: "chatState",
+          value: JSON.stringify({ username, room, lastTs }),
+        });
+      }
 
-    // When joining a room (first time)
-    const fcmToken = localStorage.getItem("fcm_token") || null;
-    socket.emit("join", {
-      room,
-      sender: username,
-      lastTs,
-      fcmToken, // ✅ Include token
-    });
+      async function loadChatState() {
+        const { value } = await Storage.get({ key: "chatState" });
+        return value ? JSON.parse(value) : null;
+      }
 
-    // Save state after join
-    saveChatState(username, room, new Date().toISOString());
-
-    // On app startup, auto rejoin if state exists
-    const state = await loadChatState();
-    if (state) {
+      // When joining a room (first time)
       const fcmToken = localStorage.getItem("fcm_token") || null;
       socket.emit("join", {
-        room: state.room,
-        sender: state.username,
-        lastTs: state.lastTs,
-        fcmToken, // ✅ include token here too
+        room,
+        sender: username,
+        lastTs,
+        fcmToken, // ✅ Include token
       });
-    }
-  </script>
-</body>
 
+      // Save state after join
+      saveChatState(username, room, new Date().toISOString());
+
+      // On app startup, auto rejoin if state exists
+      const state = await loadChatState();
+      if (state) {
+        const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.emit("join", {
+          room: state.room,
+          sender: state.username,
+          lastTs: state.lastTs,
+          fcmToken, // ✅ include token here too
+        });
+      }
+    </script>
+  </body>
 </html>
