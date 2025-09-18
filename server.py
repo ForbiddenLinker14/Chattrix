@@ -639,7 +639,7 @@ async def file(sid, data):
 async def leave(sid, data):
     room = data.get("room")
     username = data.get("sender")
-    reason = data.get("reason", "leave")  # default is real leave
+    reason = data.get("reason", "leave")  # "leave" | "switch"
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         del ROOM_USERS[room][username]
@@ -650,32 +650,33 @@ async def leave(sid, data):
     await broadcast_users(room)
     await sio.emit("left_room", {"room": room}, to=sid)
 
-    # 🛑 Also cleanup FCM tokens in memory + DB
-    if username in FCM_TOKENS and room in FCM_TOKENS[username]:
-        tokens = list(FCM_TOKENS[username][room])  # copy
-        for token in tokens:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute(
-                "DELETE FROM fcm_tokens WHERE user=? AND room=? AND token=?",
-                (username, room, token),
-            )
-            conn.commit()
-            conn.close()
-            print(f"🗑️ Deleted FCM token for {username} in {room} [{token[:10]}...]")
-        del FCM_TOKENS[username][room]
-        if not FCM_TOKENS[username]:
-            del FCM_TOKENS[username]
-
-    # 🛑 Also cleanup WebPush subscriptions
-    if room in subscriptions and username in subscriptions[room]:
-        del subscriptions[room][username]
-        if not subscriptions[room]:
-            del subscriptions[room]
-        print(f"🛑 Cleared WebPush subs for {username} in {room}")
-
-    # ✅ Only show "left!" if it’s a real leave, not a switch
+    # 🛑 Only cleanup tokens/subscriptions on a *real leave*
     if reason == "leave":
+        # cleanup FCM tokens
+        if username in FCM_TOKENS and room in FCM_TOKENS[username]:
+            tokens = list(FCM_TOKENS[username][room])
+            for token in tokens:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute(
+                    "DELETE FROM fcm_tokens WHERE user=? AND room=? AND token=?",
+                    (username, room, token),
+                )
+                conn.commit()
+                conn.close()
+                print(f"🗑️ Deleted FCM token for {username} in {room} [{token[:10]}...]")
+            del FCM_TOKENS[username][room]
+            if not FCM_TOKENS[username]:
+                del FCM_TOKENS[username]
+
+        # cleanup WebPush subs
+        if room in subscriptions and username in subscriptions[room]:
+            del subscriptions[room][username]
+            if not subscriptions[room]:
+                del subscriptions[room]
+            print(f"🛑 Cleared WebPush subs for {username} in {room}")
+
+        # broadcast system "left"
         await sio.emit(
             "message",
             {
@@ -685,6 +686,7 @@ async def leave(sid, data):
             },
             room=room,
         )
+
 
 
 
