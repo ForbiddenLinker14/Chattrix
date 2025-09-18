@@ -1229,7 +1229,8 @@ function switchRoom(room) {
 
   // Update current room and highlight
   currentRoom = room;
-  lastPersistedTs = null; // ✅ force reload full history
+  lastPersistedTs = null;       // ✅ force reload full history
+  alreadyFetchingHistory = false; // ✅ reset history fetch guard
 
   [...document.getElementById("joined-rooms").children].forEach((li) => {
     li.style.background =
@@ -1240,7 +1241,7 @@ function switchRoom(room) {
   document.getElementById("room").value = currentRoom;
   Storage.set("chat_room", currentRoom);
 
-  // Rejoin via socket (force full history)
+  // Rejoin via socket
   if (!socket || !socket.connected) {
     console.warn("⚠️ Socket not connected, calling joinRoom()");
     joinRoom();
@@ -1267,6 +1268,7 @@ function switchRoom(room) {
     }
   );
 }
+
 
 
       async function restoreChatState(socket) {
