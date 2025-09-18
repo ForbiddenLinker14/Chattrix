@@ -636,16 +636,6 @@ async def file(sid, data):
 
 
 @sio.event
-async def check_rooms(sid, data):
-    rooms = data.get("rooms", [])
-    # Keep rooms that are not destroyed
-    alive = [r for r in rooms if r not in DESTROYED_ROOMS]
-    await sio.emit("check_rooms_response", alive, to=sid)
-    return alive
-
-
-
-@sio.event
 async def leave(sid, data):
     room = data.get("room")
     username = data.get("sender")

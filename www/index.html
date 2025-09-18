@@ -2321,23 +2321,30 @@
       }
 
 function handleRoomDestroyed(data) {
-  const destroyed = data.room;
+  // 🔹 Always remove destroyed room from sidebar list
+  const list = document.getElementById("joined-rooms");
+  [...list.children].forEach((li) => {
+    if (li.dataset.room === data.room) {
+      li.remove();
+    }
+  });
 
-  // 🔥 Always remove from joined sets + storage
-  joinedRooms.delete(destroyed);
-  if (joinedRoomsByUser[currentName]) {
+  // 🔹 Remove from joinedRooms set
+  joinedRooms.delete(data.room);
+
+  // 🔹 Remove from joinedRoomsByUser (persistent storage)
+  if (currentName && joinedRoomsByUser[currentName]) {
     joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
-      (r) => r !== destroyed
+      (room) => room !== data.room
     );
     localStorage.setItem(
       "joinedRoomsByUser",
       JSON.stringify(joinedRoomsByUser)
     );
   }
-  renderJoinedRooms();
 
-  // If you’re inside destroyed room → full reset
-  if (currentRoom === destroyed) {
+  // 🔹 If the destroyed room is the current room → apply full disable logic
+  if (currentRoom === data.room) {
     document.getElementById("input").disabled = true;
     document.getElementById("send").disabled = true;
     document.getElementById("attach").disabled = true;
@@ -2358,29 +2365,8 @@ function handleRoomDestroyed(data) {
     document.getElementById("intro").style.display = "block";
     document.getElementById("messages").style.display = "none";
   }
-
-  console.log(`🗑️ Room ${destroyed} destroyed for ${currentName}`);
 }
 
-function restoreJoinedRooms() {
-  const saved = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-  joinedRoomsByUser = saved;
-
-  if (joinedRoomsByUser[currentName]) {
-    // Ask server which rooms still exist
-    socket.emit("check_rooms", { rooms: joinedRoomsByUser[currentName] }, (aliveRooms) => {
-      // Keep only alive rooms
-      joinedRoomsByUser[currentName] = aliveRooms;
-      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-
-      renderJoinedRooms();
-      // auto join first alive room if needed
-      if (aliveRooms.length) {
-        switchRoom(aliveRooms[0]);
-      }
-    });
-  }
-}
 
 
       function handleRoomCleared(data) {
