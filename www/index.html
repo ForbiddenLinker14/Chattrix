@@ -2320,48 +2320,49 @@
         });
       }
 
-function handleRoomDestroyed(data) {
-  const destroyed = data.room;
+      function handleRoomDestroyed(data) {
+        const destroyed = data.room;
 
-  // Ensure we have currentName and the persisted joinedRooms map loaded
-  if (!currentName) currentName = Storage.get("chat_name") || "";
-  joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+        // Ensure we have currentName and the persisted joinedRooms map loaded
+        if (!currentName) currentName = Storage.get("chat_name") || "";
+        joinedRoomsByUser =
+          joinedRoomsByUser ||
+          JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
 
-  // Remove from runtime set (if present)
-  joinedRooms.delete(destroyed);
+        // Remove from runtime set (if present)
+        joinedRooms.delete(destroyed);
 
-  // Remove from persisted per-user list (if present)
-  if (currentName && Array.isArray(joinedRoomsByUser[currentName])) {
-    const idx = joinedRoomsByUser[currentName].indexOf(destroyed);
-    if (idx !== -1) {
-      joinedRoomsByUser[currentName].splice(idx, 1);
-      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-    }
-  }
+        // Remove from persisted per-user list (if present)
+        if (currentName && Array.isArray(joinedRoomsByUser[currentName])) {
+          const idx = joinedRoomsByUser[currentName].indexOf(destroyed);
+          if (idx !== -1) {
+            joinedRoomsByUser[currentName].splice(idx, 1);
+            localStorage.setItem(
+              "joinedRoomsByUser",
+              JSON.stringify(joinedRoomsByUser)
+            );
+          }
+        }
 
-  // Re-render sidebar (ensures DOM and storage are in sync)
-  renderJoinedRooms();
+        // Re-render sidebar (ensures DOM and storage are in sync)
+        renderJoinedRooms();
 
-  // If user is currently inside destroyed room, reset UI
-  if (currentRoom === destroyed) {
-    currentRoom = "";
-    document.getElementById("messages").innerHTML = "";
-    document.getElementById("user-list").innerHTML = "";
-    document.getElementById("chat-container").style.display = "none";
-    document.getElementById("input-area").style.display = "none";
-    document.getElementById("intro").style.display = "block";
+        // If user is currently inside destroyed room, reset UI
+        if (currentRoom === destroyed) {
+          currentRoom = "";
+          document.getElementById("messages").innerHTML = "";
+          document.getElementById("user-list").innerHTML = "";
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
 
-    addMessage({
-      sender: "System",
-      text: "Room destroyed. You cannot send messages until you join a new room.",
-      ts: new Date().toISOString()
-    });
-  }
-}
-
-
-
-
+          addMessage({
+            sender: "System",
+            text: "Room destroyed. You cannot send messages until you join a new room.",
+            ts: new Date().toISOString(),
+          });
+        }
+      }
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
