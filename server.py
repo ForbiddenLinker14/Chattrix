@@ -586,7 +586,7 @@ async def file(sid, data):
 
     # ✅ Send push notifications for file uploads
     # message = f"{sender} sent a file: {filename}"
-    message = f"{filename}"
+    message = filename
     await send_push_to_room(room, sender, message)
     await send_fcm_to_room(room, sender, message)
 
@@ -915,13 +915,14 @@ async def send_push_to_room(room: str, sender: str, text: str):
 
     now = datetime.now(timezone.utc)
     payload = {
-        "title": "Chattrix",
-        "sender": sender,
-        "text": text,
-        "room": room,
-        "url": f"/?room={room}",
-        "timestamp": now.isoformat(),
-    }
+    "title": "Chattrix",
+    "sender": sender,
+    # 👇 If text looks like a filename, prepend "sent a file:"
+    "text": f"{sender} sent a file: {text}" if not text.strip().startswith(("http", "www")) and "." in text else text,
+    "room": room,
+    "url": f"/?room={room}",
+    "timestamp": now.isoformat(),
+}
     push_id = make_push_id(room, sender, text, payload["timestamp"])
 
     for user, subs in list(subscriptions[room].items()):
