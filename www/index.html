@@ -2323,7 +2323,7 @@
 function handleRoomDestroyed(data) {
   const destroyed = data.room;
 
-  // Remove from joined sets
+  // 🔥 Always remove from joined sets + storage
   joinedRooms.delete(destroyed);
   if (joinedRoomsByUser[currentName]) {
     joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
@@ -2334,11 +2334,9 @@ function handleRoomDestroyed(data) {
       JSON.stringify(joinedRoomsByUser)
     );
   }
-
-  // Refresh sidebar
   renderJoinedRooms();
 
-  // If currently viewing destroyed room → full reset
+  // If you’re inside destroyed room → full reset
   if (currentRoom === destroyed) {
     document.getElementById("input").disabled = true;
     document.getElementById("send").disabled = true;
@@ -2362,6 +2360,26 @@ function handleRoomDestroyed(data) {
   }
 
   console.log(`🗑️ Room ${destroyed} destroyed for ${currentName}`);
+}
+
+function restoreJoinedRooms() {
+  const saved = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+  joinedRoomsByUser = saved;
+
+  if (joinedRoomsByUser[currentName]) {
+    // Ask server which rooms still exist
+    socket.emit("check_rooms", { rooms: joinedRoomsByUser[currentName] }, (aliveRooms) => {
+      // Keep only alive rooms
+      joinedRoomsByUser[currentName] = aliveRooms;
+      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+
+      renderJoinedRooms();
+      // auto join first alive room if needed
+      if (aliveRooms.length) {
+        switchRoom(aliveRooms[0]);
+      }
+    });
+  }
 }
 
 
