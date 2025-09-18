@@ -639,6 +639,7 @@ async def file(sid, data):
 async def leave(sid, data):
     room = data.get("room")
     username = data.get("sender")
+    reason = data.get("reason", "leave")  # default is real leave
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         del ROOM_USERS[room][username]
@@ -673,15 +674,18 @@ async def leave(sid, data):
             del subscriptions[room]
         print(f"🛑 Cleared WebPush subs for {username} in {room}")
 
-    await sio.emit(
-        "message",
-        {
-            "sender": "System",
-            "text": f"{username} left!",
-            "ts": datetime.now(timezone.utc).isoformat(),
-        },
-        room=room,
-    )
+    # ✅ Only show "left!" if it’s a real leave, not a switch
+    if reason == "leave":
+        await sio.emit(
+            "message",
+            {
+                "sender": "System",
+                "text": f"{username} left!",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=room,
+        )
+
 
 
 @sio.event
