@@ -1195,37 +1195,40 @@
       // ✅ Add this near your other room management functions
 async function syncDestroyedRooms() {
   try {
-    const res = await fetch("/destroyed_rooms");
+    const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
+    if (!res.ok) {
+      console.warn("syncDestroyedRooms: server returned", res.status);
+      return;
+    }
     const data = await res.json();
     const destroyed = data.destroyed || [];
 
     if (destroyed.length && currentName) {
-      joinedRoomsByUser[currentName] =
-        (joinedRoomsByUser[currentName] || []).filter(
-          (room) => !destroyed.includes(room)
-        );
-      localStorage.setItem(
-        "joinedRoomsByUser",
-        JSON.stringify(joinedRoomsByUser)
+      // ensure joinedRoomsByUser is loaded
+      joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+
+      joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter(
+        (room) => !destroyed.includes(room)
       );
-      renderJoinedRooms();
+
+      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+      console.log("syncDestroyedRooms: removed destroyed rooms:", destroyed);
     }
   } catch (err) {
     console.warn("Failed to sync destroyed rooms:", err);
   }
 }
 
-// ✅ Replace your current DOMContentLoaded block with this
-window.addEventListener("DOMContentLoaded", () => {
-  joinedRoomsByUser = JSON.parse(
-    localStorage.getItem("joinedRoomsByUser") || "{}"
-  );
+
+window.addEventListener("DOMContentLoaded", async () => {
+  joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
   currentName = Storage.get("chat_name") || "";
   if (currentName) {
-    renderJoinedRooms();
-    syncDestroyedRooms(); // 🔑 fetch and clean destroyed rooms
+    await syncDestroyedRooms();   // <-- clean up localStorage first
+    renderJoinedRooms();          // <-- then render (no ghost rooms)
   }
 });
+
 
 
       // ----------------- Render Joined Rooms -----------------

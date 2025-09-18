@@ -1095,7 +1095,11 @@ async def unregister_fcm(request: Request):
 # ---------------- Static / PWA assets ----------------
 @app.get("/destroyed_rooms")
 async def get_destroyed_rooms():
-    return {"destroyed": list(DESTROYED_ROOMS)}
+    """
+    Return list of rooms that were destroyed (in-memory).
+    Clients call this on startup to remove stale rooms from localStorage.
+    """
+    return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
 # serve /icons/*
