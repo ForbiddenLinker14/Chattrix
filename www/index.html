@@ -1220,80 +1220,82 @@
       });
 
       // ----------------- Switch Room -----------------
-function switchRoom(room) {
-  if (!room || room === currentRoom) return;
+      function switchRoom(room) {
+        if (!room || room === currentRoom) return;
 
-  const previousRoom = currentRoom;
+        const previousRoom = currentRoom;
 
-  // Reset UI immediately
-  const messagesEl = document.getElementById("messages");
-  const usersEl = document.getElementById("user-list");
-  messagesEl && (messagesEl.innerHTML = "");
-  usersEl && (usersEl.innerHTML = "");
+        // Reset UI immediately
+        const messagesEl = document.getElementById("messages");
+        const usersEl = document.getElementById("user-list");
+        messagesEl && (messagesEl.innerHTML = "");
+        usersEl && (usersEl.innerHTML = "");
 
-  // Update current room and persist
-  currentRoom = room;
-  lastPersistedTs = null; // force full history reload
-  document.getElementById("room").value = currentRoom;
-  Storage.set("chat_room", currentRoom);
+        // Update current room and persist
+        currentRoom = room;
+        lastPersistedTs = null; // force full history reload
+        document.getElementById("room").value = currentRoom;
+        Storage.set("chat_room", currentRoom);
 
-  // Update sidebar highlight safely
-  Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
-    li.style.background =
-      li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-  });
+        // Update sidebar highlight safely
+        Array.from(document.getElementById("joined-rooms").children).forEach(
+          (li) => {
+            li.style.background =
+              li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+          }
+        );
 
-  // If we were in another room, tell server we left it (keeps server state clean)
-  if (previousRoom && socket && socket.connected) {
-    try {
-      socket.emit("leave", {
-        room: previousRoom,
-        sender: currentName,
-        reason: "switch", // ✅ added reason flag
-      });
-      console.log("➡️ Left previous room:", previousRoom);
-    } catch (e) {
-      console.warn("Failed to emit leave for previous room:", e);
-    }
-  }
-
-  // If socket isn't ready, let joinRoom create/connect the socket and join
-  if (!socket || !socket.connected) {
-    console.warn("⚠️ Socket not connected; calling joinRoom()");
-    joinRoom();
-    return;
-  }
-
-  // Join the requested room and request full history (lastTs: null)
-  socket.emit(
-    "join",
-    { room: currentRoom, sender: currentName, lastTs: null },
-    (ack) => {
-      if (ack && ack.success) {
-        // mark local joined sets/storage
-        joinedRooms.add(currentRoom);
-        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
-        if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-          joinedRoomsByUser[currentName].push(currentRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+        // If we were in another room, tell server we left it (keeps server state clean)
+        if (previousRoom && socket && socket.connected) {
+          try {
+            socket.emit("leave", {
+              room: previousRoom,
+              sender: currentName,
+              reason: "switch", // ✅ added reason flag
+            });
+            console.log("➡️ Left previous room:", previousRoom);
+          } catch (e) {
+            console.warn("Failed to emit leave for previous room:", e);
+          }
         }
-        // refresh UI
-        renderJoinedRooms();
-        document.getElementById("chat-container").style.display = "flex";
-        document.getElementById("input-area").style.display = "flex";
-        document.getElementById("intro").style.display = "none";
-        document.getElementById("messages").style.display = "block";
-        console.log(`🔄 Switched to room ${currentRoom}`);
-      } else {
-        console.warn("❌ Failed to switch room:", room, ack);
-      }
-    }
-  );
-}
 
+        // If socket isn't ready, let joinRoom create/connect the socket and join
+        if (!socket || !socket.connected) {
+          console.warn("⚠️ Socket not connected; calling joinRoom()");
+          joinRoom();
+          return;
+        }
+
+        // Join the requested room and request full history (lastTs: null)
+        socket.emit(
+          "join",
+          { room: currentRoom, sender: currentName, lastTs: null },
+          (ack) => {
+            if (ack && ack.success) {
+              // mark local joined sets/storage
+              joinedRooms.add(currentRoom);
+              joinedRoomsByUser[currentName] =
+                joinedRoomsByUser[currentName] || [];
+              if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+                joinedRoomsByUser[currentName].push(currentRoom);
+                localStorage.setItem(
+                  "joinedRoomsByUser",
+                  JSON.stringify(joinedRoomsByUser)
+                );
+              }
+              // refresh UI
+              renderJoinedRooms();
+              document.getElementById("chat-container").style.display = "flex";
+              document.getElementById("input-area").style.display = "flex";
+              document.getElementById("intro").style.display = "none";
+              document.getElementById("messages").style.display = "block";
+              console.log(`🔄 Switched to room ${currentRoom}`);
+            } else {
+              console.warn("❌ Failed to switch room:", room, ack);
+            }
+          }
+        );
+      }
 
       async function restoreChatState(socket) {
         const state = await loadChatState();
@@ -2452,85 +2454,84 @@ function switchRoom(room) {
         }
       };
 
-async function leaveRoom() {
-  if (!currentRoom) {
-    alert("You are not in a room!");
-    return;
-  }
+      async function leaveRoom() {
+        if (!currentRoom) {
+          alert("You are not in a room!");
+          return;
+        }
 
-  const leftRoom = currentRoom;
+        const leftRoom = currentRoom;
 
-  // 🔑 Unregister FCM token for this room
-  const savedToken = localStorage.getItem("fcm_token");
-  if (savedToken) {
-    try {
-      await fetch("/api/unregister-fcm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          token: savedToken,
-          user: currentName,
+        // 🔑 Unregister FCM token for this room
+        const savedToken = localStorage.getItem("fcm_token");
+        if (savedToken) {
+          try {
+            await fetch("/api/unregister-fcm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                token: savedToken,
+                user: currentName,
+                room: currentRoom,
+              }),
+            });
+            console.log(
+              `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
+            );
+          } catch (err) {
+            console.error("❌ Failed to unregister FCM token:", err);
+          }
+        }
+
+        // 🛑 Unsubscribe from WebPush for this room
+        try {
+          await unsubscribeUser(currentName, currentRoom);
+        } catch (err) {
+          console.error("❌ Failed to unsubscribe WebPush:", err);
+        }
+
+        // 🔌 Leave socket room (with reason flag)
+        socket.emit("leave", {
           room: currentRoom,
-        }),
-      });
-      console.log(
-        `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
-      );
-    } catch (err) {
-      console.error("❌ Failed to unregister FCM token:", err);
-    }
-  }
+          sender: currentName,
+          reason: "leave", // ✅ added
+        });
+        console.log(`🚪 Left room ${currentRoom}`);
 
-  // 🛑 Unsubscribe from WebPush for this room
-  try {
-    await unsubscribeUser(currentName, currentRoom);
-  } catch (err) {
-    console.error("❌ Failed to unsubscribe WebPush:", err);
-  }
+        // 🖥️ Reset UI
+        document.getElementById("input").disabled = true;
+        document.getElementById("send").disabled = true;
+        document.getElementById("attach").disabled = true;
 
-  // 🔌 Leave socket room (with reason flag)
-  socket.emit("leave", {
-    room: currentRoom,
-    sender: currentName,
-    reason: "leave", // ✅ added
-  });
-  console.log(`🚪 Left room ${currentRoom}`);
+        addMessage({
+          sender: "System",
+          text: `YOU LEFT FROM ROOM ${leftRoom}`,
+          ts: new Date().toISOString(),
+        });
 
-  // 🖥️ Reset UI
-  document.getElementById("input").disabled = true;
-  document.getElementById("send").disabled = true;
-  document.getElementById("attach").disabled = true;
+        lastPersistedTs = null;
 
-  addMessage({
-    sender: "System",
-    text: `YOU LEFT FROM ROOM ${leftRoom}`,
-    ts: new Date().toISOString(),
-  });
+        // ❌ Remove from joined rooms set and sidebar
+        joinedRooms.delete(currentRoom);
+        if (joinedRoomsByUser[currentName]) {
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[
+            currentName
+          ].filter((r) => r !== currentRoom);
+          localStorage.setItem(
+            "joinedRoomsByUser",
+            JSON.stringify(joinedRoomsByUser)
+          );
+        }
+        renderJoinedRooms(); // ✅ refresh sidebar
 
-  lastPersistedTs = null;
-
-  // ❌ Remove from joined rooms set and sidebar
-  joinedRooms.delete(currentRoom);
-  if (joinedRoomsByUser[currentName]) {
-    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
-      (r) => r !== currentRoom
-    );
-    localStorage.setItem(
-      "joinedRoomsByUser",
-      JSON.stringify(joinedRoomsByUser)
-    );
-  }
-  renderJoinedRooms(); // ✅ refresh sidebar
-
-  currentRoom = "";
-  Storage.remove("chat_name");
-  Storage.remove("chat_room");
-  document.getElementById("user-list").innerHTML = "";
-  document.getElementById("chat-container").style.display = "block";
-  document.getElementById("input-area").style.display = "none";
-  document.getElementById("messages").style.display = "block";
-}
-
+        currentRoom = "";
+        Storage.remove("chat_name");
+        Storage.remove("chat_room");
+        document.getElementById("user-list").innerHTML = "";
+        document.getElementById("chat-container").style.display = "block";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("messages").style.display = "block";
+      }
 
       // ======================================================
       // =============== Event Listeners ======================

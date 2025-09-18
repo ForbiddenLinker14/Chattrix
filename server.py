@@ -688,8 +688,6 @@ async def leave(sid, data):
         )
 
 
-
-
 @sio.event
 async def disconnect(sid):
     USER_STATUS.pop(sid, None)
