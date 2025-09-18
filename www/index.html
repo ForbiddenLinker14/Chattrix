@@ -2320,36 +2320,50 @@
         });
       }
 
-      function handleRoomDestroyed(data) {
-        const destroyed = data.room;
+function handleRoomDestroyed(data) {
+  const destroyed = data.room;
 
-        // Remove from joinedRooms set & per-user mapping
-        joinedRooms.delete(destroyed);
-        if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== destroyed);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
-        }
+  // Remove from joined sets
+  joinedRooms.delete(destroyed);
+  if (joinedRoomsByUser[currentName]) {
+    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
+      (r) => r !== destroyed
+    );
+    localStorage.setItem(
+      "joinedRoomsByUser",
+      JSON.stringify(joinedRoomsByUser)
+    );
+  }
 
-        // Re-render sidebar
-        renderJoinedRooms();
+  // Refresh sidebar
+  renderJoinedRooms();
 
-        // If we're currently viewing that room, reset UI to intro
-        if (currentRoom === destroyed) {
-          currentRoom = "";
-          document.getElementById("messages").innerHTML = "";
-          document.getElementById("user-list").innerHTML = "";
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-        }
+  // If currently viewing destroyed room → full reset
+  if (currentRoom === destroyed) {
+    document.getElementById("input").disabled = true;
+    document.getElementById("send").disabled = true;
+    document.getElementById("attach").disabled = true;
 
-        alert(`Room ${destroyed} was destroyed and removed.`);
-      }
+    addMessage({
+      sender: "System",
+      text: "Room destroyed. You cannot send messages until you join a new room.",
+      ts: new Date().toISOString(),
+    });
+
+    lastPersistedTs = null;
+    currentRoom = "";
+    Storage.remove("chat_name");
+    Storage.remove("chat_room");
+    document.getElementById("user-list").innerHTML = "";
+    document.getElementById("chat-container").style.display = "none";
+    document.getElementById("input-area").style.display = "none";
+    document.getElementById("intro").style.display = "block";
+    document.getElementById("messages").style.display = "none";
+  }
+
+  console.log(`🗑️ Room ${destroyed} destroyed for ${currentName}`);
+}
+
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
