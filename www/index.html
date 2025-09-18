@@ -2335,10 +2335,10 @@ function handleRoomDestroyed(data) {
     );
   }
 
-  // 🔹 Refresh sidebar so destroyed room disappears
+  // 🔹 Refresh sidebar
   renderJoinedRooms();
 
-  // 🔹 If the destroyed room is the current room → apply disable logic
+  // 🔹 If current room was destroyed
   if (currentRoom === data.room) {
     document.getElementById("input").disabled = true;
     document.getElementById("send").disabled = true;
@@ -2361,6 +2361,7 @@ function handleRoomDestroyed(data) {
     document.getElementById("messages").style.display = "none";
   }
 }
+
 
 
 
