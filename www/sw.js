@@ -8,15 +8,17 @@ const CACHE_NAME = "chat-cache-v3";
 self.addEventListener("install", (event) => {
   console.log("⚡ Service Worker: Installed");
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll([
-        "/",
-        "/index.html",
-        "/manifest.json",
-        "/icons/icon-192.png",
-        "/icons/icon-512.png",
-      ])
-    )
+    caches
+      .open(CACHE_NAME)
+      .then((cache) =>
+        cache.addAll([
+          "/",
+          "/index.html",
+          "/manifest.json",
+          "/icons/icon-192.png",
+          "/icons/icon-512.png",
+        ])
+      )
   );
   self.skipWaiting();
 });
@@ -27,9 +29,13 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   console.log("⚡ Service Worker: Activated");
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+        )
+      )
   );
 });
 
@@ -39,9 +45,13 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   event.respondWith(
-    caches.match(event.request).then(
-      (res) => res || fetch(event.request).catch(() => new Response("⚠️ Offline mode"))
-    )
+    caches
+      .match(event.request)
+      .then(
+        (res) =>
+          res ||
+          fetch(event.request).catch(() => new Response("⚠️ Offline mode"))
+      )
   );
 });
 
@@ -59,8 +69,11 @@ self.addEventListener("push", (event) => {
 
       const title = data.title || "Chattrix";
       const roomLine = data.room ? `Room: ${data.room}` : "";
-      const msgLine =
-        data.sender && data.text ? `${data.sender}: ${data.text}` : "New message";
+      const msgLine = (() => {
+        if (!data.sender || !data.text) return "New message";
+        if (data.text.includes("sent a file:")) return data.text;
+        return `${data.sender}: ${data.text}`;
+      })();
       const body = `${roomLine}\n${msgLine}`;
 
       if (!isClientFocused) {
@@ -68,7 +81,10 @@ self.addEventListener("push", (event) => {
           body,
           icon: "/icons/icon-192.png",
           badge: "/icons/icon-192.png",
-          data: { url: data.url || `/chat/${data.room || ""}`, room: data.room || null },
+          data: {
+            url: data.url || `/chat/${data.room || ""}`,
+            room: data.room || null,
+          },
         };
         await self.registration.showNotification(title, options);
       } else {
@@ -92,7 +108,10 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     (async () => {
       event.notification.close();
-      const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+      const allClients = await clients.matchAll({
+        type: "window",
+        includeUncontrolled: true,
+      });
       if (allClients.length > 0) {
         const client = allClients[0];
         await client.focus();
@@ -133,7 +152,10 @@ async function sendPendingMessages() {
   for (const msg of all) {
     try {
       // 🔄 Tell client(s) to resend via socket.io
-      const allClients = await clients.matchAll({ includeUncontrolled: true, type: "window" });
+      const allClients = await clients.matchAll({
+        includeUncontrolled: true,
+        type: "window",
+      });
       if (allClients.length > 0) {
         allClients[0].postMessage({ type: "RESEND_MESSAGE", msg });
       }
