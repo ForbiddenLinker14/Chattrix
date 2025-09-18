@@ -2321,14 +2321,6 @@
       }
 
 function handleRoomDestroyed(data) {
-  // 🔹 Always remove destroyed room from sidebar list
-  const list = document.getElementById("joined-rooms");
-  [...list.children].forEach((li) => {
-    if (li.dataset.room === data.room) {
-      li.remove();
-    }
-  });
-
   // 🔹 Remove from joinedRooms set
   joinedRooms.delete(data.room);
 
@@ -2343,7 +2335,10 @@ function handleRoomDestroyed(data) {
     );
   }
 
-  // 🔹 If the destroyed room is the current room → apply full disable logic
+  // 🔹 Refresh sidebar so destroyed room disappears
+  renderJoinedRooms();
+
+  // 🔹 If the destroyed room is the current room → apply disable logic
   if (currentRoom === data.room) {
     document.getElementById("input").disabled = true;
     document.getElementById("send").disabled = true;
@@ -2366,6 +2361,7 @@ function handleRoomDestroyed(data) {
     document.getElementById("messages").style.display = "none";
   }
 }
+
 
 
 
