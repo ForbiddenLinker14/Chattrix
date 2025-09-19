@@ -559,8 +559,17 @@
       .cropper-bg {
         background: transparent !important;
       }
-      .room-badge { float: right; background: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 12px; font-size: 12px; min-width: 20px; text-align:center; display:none; }
-
+      .room-badge {
+        float: right;
+        background: #e74c3c;
+        color: #fff;
+        padding: 2px 6px;
+        border-radius: 12px;
+        font-size: 12px;
+        min-width: 20px;
+        text-align: center;
+        display: none;
+      }
     </style>
   </head>
 
@@ -978,6 +987,7 @@
       let sending = false;
       let roomTimestamps = {}; // Store the last timestamp per room
       let joinedRoomsByUser = {}; // Persist joined rooms per user
+      let unreadCounts = {}; // { roomId: n }
 
       // ======================================================
       // =============== Utility Functions ====================
@@ -1143,48 +1153,53 @@
         });
 
         socket.on("room_message_meta", (data) => {
-  try {
-    // only act if we know our username and joinedRoomsByUser
-    if (!currentName) return;
-    joinedRoomsByUser =
-      joinedRoomsByUser ||
-      JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-    const myRooms = joinedRoomsByUser[currentName] || [];
-    if (!myRooms.includes(data.room)) return; // ignore rooms we're not tracking
+          try {
+            // only act if we know our username and joinedRoomsByUser
+            if (!currentName) return;
+            joinedRoomsByUser =
+              joinedRoomsByUser ||
+              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+            const myRooms = joinedRoomsByUser[currentName] || [];
+            if (!myRooms.includes(data.room)) return; // ignore rooms we're not tracking
 
-    // if message belongs to the room we're currently viewing, let addMessage handle it
-    if (data.room === currentRoom) return;
+            // if message belongs to the room we're currently viewing, let addMessage handle it
+            if (data.room === currentRoom) return;
 
-    // increment unread
-    unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
-    saveUnread();
-    updateBadge(data.room);
+            // increment unread
+            unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
+            saveUnread();
+            updateBadge(data.room);
 
-    // show an in-page / desktop notification
-    const title = `Room ${data.room}`;
-    const body = `${data.sender}: ${data.text}`;
-    if ("Notification" in window && Notification.permission === "granted") {
-      try {
-        const n = new Notification(title, { body, tag: `room-${data.room}` });
-        n.onclick = () => {
-          window.focus();
-          switchRoom(data.room);
-          n.close();
-        };
-      } catch (e) {
-        console.warn("Notification failed:", e);
-      }
-    } else {
-      // fallback: briefly flash document title (simple)
-      const original = document.title;
-      document.title = `${data.room}: ${data.sender}`;
-      setTimeout(() => (document.title = original), 2500);
-    }
-  } catch (err) {
-    console.warn("room_message_meta handler err:", err);
-  }
-});
-
+            // show an in-page / desktop notification
+            const title = `Room ${data.room}`;
+            const body = `${data.sender}: ${data.text}`;
+            if (
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              try {
+                const n = new Notification(title, {
+                  body,
+                  tag: `room-${data.room}`,
+                });
+                n.onclick = () => {
+                  window.focus();
+                  switchRoom(data.room);
+                  n.close();
+                };
+              } catch (e) {
+                console.warn("Notification failed:", e);
+              }
+            } else {
+              // fallback: briefly flash document title (simple)
+              const original = document.title;
+              document.title = `${data.room}: ${data.sender}`;
+              setTimeout(() => (document.title = original), 2500);
+            }
+          } catch (err) {
+            console.warn("room_message_meta handler err:", err);
+          }
+        });
 
         socket.on("message", addMessage);
         socket.on("file", addFileMessage);
@@ -1238,7 +1253,9 @@
         renderJoinedRooms();
       }
 
-      // ✅ Add this near your other room management functions
+      // ======================================================
+      // ========== syncDestroyedRooms(Joined Room) ===========
+      // ======================================================
       async function syncDestroyedRooms() {
         try {
           const res = await fetch(`${API_BASE}/destroyed_rooms`, {
@@ -1286,79 +1303,81 @@
         }
       });
 
-      // ----- unread counters (persisted) -----
-let unreadCounts = {}; // { roomId: n }
-function unreadKey() {
-  // persist per-username to avoid cross-user collisions
-  return "unreadCounts_" + (currentName || "anon");
-}
-function loadUnread() {
-  try {
-    unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}");
-  } catch (e) {
-    unreadCounts = {};
-  }
-}
-function saveUnread() {
-  try {
-    localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts));
-  } catch (e) {}
-}
-function updateBadge(room) {
-  const list = document.getElementById("joined-rooms");
-  if (!list) return;
-  const li = [...list.children].find((x) => x.dataset.room === room);
-  if (!li) return;
-  let badge = li.querySelector(".room-badge");
-  if (!badge) {
-    badge = document.createElement("span");
-    badge.className = "room-badge";
-    // small inline styling so you don't need a separate CSS file
-    badge.style.cssText =
-      "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
-    li.appendChild(badge);
-  }
-  const count = unreadCounts[room] || 0;
-  badge.textContent = count > 0 ? (count > 99 ? "99+" : count) : "";
-  badge.style.display = count > 0 ? "inline-block" : "none";
-}
+      // ======================================================
+      // =============== Badge ===================
+      // ======================================================
 
+      function unreadKey() {
+        // persist per-username to avoid cross-user collisions
+        return "unreadCounts_" + (currentName || "anon");
+      }
+      function loadUnread() {
+        try {
+          unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}");
+        } catch (e) {
+          unreadCounts = {};
+        }
+      }
+      function saveUnread() {
+        try {
+          localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts));
+        } catch (e) {}
+      }
+      function updateBadge(room) {
+        const list = document.getElementById("joined-rooms");
+        if (!list) return;
+        const li = [...list.children].find((x) => x.dataset.room === room);
+        if (!li) return;
+        let badge = li.querySelector(".room-badge");
+        if (!badge) {
+          badge = document.createElement("span");
+          badge.className = "room-badge";
+          // small inline styling so you don't need a separate CSS file
+          badge.style.cssText =
+            "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
+          li.appendChild(badge);
+        }
+        const count = unreadCounts[room] || 0;
+        badge.textContent = count > 0 ? (count > 99 ? "99+" : count) : "";
+        badge.style.display = count > 0 ? "inline-block" : "none";
+      }
 
-      // ----------------- Render Joined Rooms -----------------
-  function renderJoinedRooms() {
-  loadUnread();
-  const list = document.getElementById("joined-rooms");
-  list.innerHTML = "";
-  const rooms = joinedRoomsByUser[currentName] || [];
-  rooms.forEach((room) => {
-    const li = document.createElement("li");
-    li.dataset.room = room;
-    li.style.padding = "6px 10px";
-    li.style.cursor = "pointer";
-    li.onclick = () => switchRoom(room);
+      // ======================================================
+      // =============== Joined Room =========================
+      // ======================================================
+      function renderJoinedRooms() {
+        loadUnread();
+        const list = document.getElementById("joined-rooms");
+        list.innerHTML = "";
+        const rooms = joinedRoomsByUser[currentName] || [];
+        rooms.forEach((room) => {
+          const li = document.createElement("li");
+          li.dataset.room = room;
+          li.style.padding = "6px 10px";
+          li.style.cursor = "pointer";
+          li.onclick = () => switchRoom(room);
 
-    // create text span + badge placeholder
-    const span = document.createElement("span");
-    span.className = "room-name";
-    span.textContent = room;
-    li.appendChild(span);
+          // create text span + badge placeholder
+          const span = document.createElement("span");
+          span.className = "room-name";
+          span.textContent = room;
+          li.appendChild(span);
 
-    const badge = document.createElement("span");
-    badge.className = "room-badge";
-    badge.style.cssText =
-      "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:none";
-    li.appendChild(badge);
+          const badge = document.createElement("span");
+          badge.className = "room-badge";
+          badge.style.cssText =
+            "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:none";
+          li.appendChild(badge);
 
-    if (room === currentRoom) {
-      li.style.background = "#256e4c"; // highlight active room
-    }
-    list.appendChild(li);
+          if (room === currentRoom) {
+            li.style.background = "#256e4c"; // highlight active room
+          }
+          list.appendChild(li);
 
-    // populate badge when rendered
-    updateBadge(room);
-  });
-}
-
+          // populate badge when rendered
+          updateBadge(room);
+        });
+      }
 
       window.addEventListener("DOMContentLoaded", () => {
         joinedRoomsByUser = JSON.parse(
@@ -1368,7 +1387,9 @@ function updateBadge(room) {
         if (currentName) renderJoinedRooms();
       });
 
-      // ----------------- Switch Room -----------------
+      // ======================================================
+      // =============== Switch Room ===================
+      // ======================================================
       function switchRoom(room) {
         if (!room || room === currentRoom) return;
 
@@ -1446,10 +1467,9 @@ function updateBadge(room) {
         );
 
         // reset unread for this room now that user switched into it
-unreadCounts[currentRoom] = 0;
-saveUnread();
-updateBadge(currentRoom);
-
+        unreadCounts[currentRoom] = 0;
+        saveUnread();
+        updateBadge(currentRoom);
       }
 
       async function restoreChatState(socket) {
@@ -1466,6 +1486,10 @@ updateBadge(currentRoom);
           });
         }
       }
+
+      // ======================================================
+      // ======= Room Management(sendMessage) + Copy =========
+      // ======================================================
 
       async function sendMessage() {
         if (sending) return;
@@ -1490,7 +1514,6 @@ updateBadge(currentRoom);
         } catch (e) {
           console.warn("Could not persist chatState:", e);
         }
-        // ----------------------------------------------------------
 
         sending = true;
         document.getElementById("send").disabled = true;

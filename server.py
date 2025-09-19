@@ -523,7 +523,7 @@ async def message(sid, data):
     LAST_MESSAGE[key] = (text, now)
 
     save_message(room, sender, text=text)
-        # broadcast the usual message to the room (already present)
+    # broadcast the usual message to the room (already present)
     await sio.emit(
         "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
     )
@@ -596,7 +596,7 @@ async def file(sid, data):
     )
 
     # --- If you have a file upload handler that emits "file", also add a meta broadcast there:
-# after await sio.emit("file", {...}, room=room) add:
+    # after await sio.emit("file", {...}, room=room) add:
 
     try:
         await sio.emit(
@@ -611,8 +611,7 @@ async def file(sid, data):
     except Exception as e:
         print("Failed to emit room_message_meta (file):", e)
 
-# (This keeps unread-count logic working for file messages too.)
-
+    # (This keeps unread-count logic working for file messages too.)
 
     # ✅ Send push notifications for file uploads
     # message = f"{sender} sent a file: {filename}"
@@ -964,11 +963,10 @@ async def send_push_to_room(room: str, sender: str, text: str):
         if user == sender:
             continue
 
-               # --- NEW: skip only if user is active in *this same room*
+            # --- NEW: skip only if user is active in *this same room*
         sid_in_room = ROOM_USERS.get(room, {}).get(user)
         if sid_in_room and USER_STATUS.get(sid_in_room, {}).get("active"):
             continue
-
 
         for sub in list(subs):
             try:
@@ -1027,7 +1025,7 @@ async def send_fcm_to_room(room: str, sender: str, text: str):
         if room not in rooms:
             continue
 
-                # --- NEW: skip only if user is active in *this same room*
+            # --- NEW: skip only if user is active in *this same room*
         sid_in_room = ROOM_USERS.get(room, {}).get(user)
         if sid_in_room and USER_STATUS.get(sid_in_room, {}).get("active"):
             continue
