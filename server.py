@@ -404,6 +404,9 @@ async def destroy_room(room: str):
     # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
 
+    # 2b. Clear recorded room history so old members don't stick around as ghosts
+    ROOM_HISTORY.pop(room, None)
+
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
