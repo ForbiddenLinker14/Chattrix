@@ -33,6 +33,7 @@ FCM_TOKENS = {"<username>": {"<room_id>": ["<token1>", "<token2>", ...]}}
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
 PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
+ROOM_HISTORY = {}  # { room: set([usernames...]) }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -302,9 +303,15 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "www")
 
 async def broadcast_users(room):
     users = []
-    for username, sid in ROOM_USERS.get(room, {}).items():
-        active = USER_STATUS.get(sid, {}).get("active", False)
+    all_users = ROOM_HISTORY.get(room, set())
+
+    for username in all_users:
+        sid = ROOM_USERS.get(room, {}).get(username)
+        active = False
+        if sid:
+            active = USER_STATUS.get(sid, {}).get("active", False)
         users.append({"name": username, "active": active})
+
     await sio.emit("users_update", {"room": room, "users": users}, room=room)
 
 
@@ -430,6 +437,8 @@ async def join(sid, data):
     username = data["sender"]
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
+
+    ROOM_HISTORY.setdefault(room, set()).add(username)
 
     # revive destroyed room
     if room in DESTROYED_ROOMS:
