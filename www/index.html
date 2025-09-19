@@ -2460,6 +2460,44 @@
         }
         window._rotation = 0;
       }
+      // function updateUserList(data) {
+      //   if (!currentRoom || data.room !== currentRoom) return;
+
+      //   const list = document.getElementById("user-list");
+      //   const seen = new Set();
+      //   const existing = new Map();
+
+      //   list
+      //     .querySelectorAll("li")
+      //     .forEach((li) => existing.set(li.getAttribute("data-name"), li));
+
+      //   data.users.forEach((u) => {
+      //     if (seen.has(u.name)) return;
+      //     seen.add(u.name);
+
+      //     const color = u.status === "online" ? "#25d366" : "red";
+      //     const displayName =
+      //       u.name === currentName ? `${u.name} (Me)` : u.name;
+
+      //     let li = existing.get(u.name);
+      //     if (li) {
+      //       li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+      //       existing.delete(u.name);
+      //     } else {
+      //       li = document.createElement("li");
+      //       li.setAttribute("data-name", u.name);
+      //       li.className = "fade-in";
+      //       li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+      //       list.appendChild(li);
+      //     }
+      //   });
+
+      //   existing.forEach((li) => {
+      //     li.classList.add("fade-out");
+      //     setTimeout(() => li.remove(), 300);
+      //   });
+      // }
+
       function updateUserList(data) {
         if (!currentRoom || data.room !== currentRoom) return;
 
@@ -2475,7 +2513,8 @@
           if (seen.has(u.name)) return;
           seen.add(u.name);
 
-          const color = u.status === "online" ? "#25d366" : "red";
+          // ✅ Green dot if active, red dot if inactive
+          const color = u.active ? "#25d366" : "#e74c3c";
           const displayName =
             u.name === currentName ? `${u.name} (Me)` : u.name;
 

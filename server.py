@@ -293,10 +293,18 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "www")
 
 
 # ---------------- Helpers ----------------
+# async def broadcast_users(room):
+#     users = [
+#         {"name": username, "status": "online"} for username in ROOM_USERS.get(room, {})
+#     ]
+#     await sio.emit("users_update", {"room": room, "users": users}, room=room)
+
+
 async def broadcast_users(room):
-    users = [
-        {"name": username, "status": "online"} for username in ROOM_USERS.get(room, {})
-    ]
+    users = []
+    for username, sid in ROOM_USERS.get(room, {}).items():
+        active = USER_STATUS.get(sid, {}).get("active", False)
+        users.append({"name": username, "active": active})
     await sio.emit("users_update", {"room": room, "users": users}, room=room)
 
 
