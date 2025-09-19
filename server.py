@@ -300,21 +300,19 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "www")
 #     ]
 #     await sio.emit("users_update", {"room": room, "users": users}, room=room)
 
+
 async def broadcast_users(room):
     users = []
-    # Connected users
-    for username, sid in ROOM_USERS.get(room, {}).items():
-        active = USER_STATUS.get(sid, {}).get("active", False)
+    all_users = ROOM_HISTORY.get(room, set())
+
+    for username in all_users:
+        sid = ROOM_USERS.get(room, {}).get(username)
+        active = False
+        if sid:
+            active = USER_STATUS.get(sid, {}).get("active", False)
         users.append({"name": username, "active": active})
 
-    # Historical users (inactive ones), only if the room is not destroyed
-    if room not in DESTROYED_ROOMS:
-        for username in ROOM_HISTORY.get(room, set()):
-            if username not in ROOM_USERS.get(room, {}):
-                users.append({"name": username, "active": False})
-
     await sio.emit("users_update", {"room": room, "users": users}, room=room)
-
 
 
 def normalize_endpoint(endpoint: str) -> str | None:
@@ -394,8 +392,8 @@ async def destroy_room(room: str):
         if room in FCM_TOKENS[user]:
             del FCM_TOKENS[user][room]
             print(f"🧹 Removed FCM tokens for {user} in room {room}")
-        if not FCM_TOKENS.get(user):
-            FCM_TOKENS.pop(user, None)
+        if not FCM_TOKENS[user]:
+            del FCM_TOKENS[user]
 
     # 0c. Clear persisted FCM tokens in DB
     delete_fcm_tokens_for_room(room)
@@ -403,65 +401,32 @@ async def destroy_room(room: str):
     # 1. Clear DB messages
     clear_room(room)
 
-    # 2. Mark destroyed (so clients can poll /destroyed_rooms)
+    # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
 
-    # --- Capture current ROOM_USERS (username -> sid) BEFORE we pop it
-    users_map = ROOM_USERS.get(room, {}).copy() if room in ROOM_USERS else {}
+    # 3. Remove user mapping
+    ROOM_USERS.pop(room, None)
 
-    # 2b. Clear room history so there are no ghost usernames later
-    ROOM_HISTORY.pop(room, None)
-
-    # 3. Notify clients in the room (room-scoped) and globally
+    # 4. Notify clients + force disconnect
     await sio.emit(
         "clear",
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
+    # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
-    # also broadcast globally so clients that still have the room in localStorage remove it
+
+    # --- NEW: also broadcast to all connected clients so clients
+    # who have already left the room (but still have it in localStorage)
+    # can remove it from their sidebar.
     await sio.emit("room_destroyed", {"room": room})
-
-    # 4. Force leave/disconnect any sids that were in the room
     namespace = "/"
-    # First: iterate the captured users_map and attempt targeted cleanup
-    for username, sid in users_map.items():
-        try:
-            # send a direct 'force_leave' / 'room_destroyed' (clients should handle either)
-            await sio.emit(
-                "room_destroyed", {"room": room, "reason": "destroy"}, to=sid
-            )
-        except Exception:
-            pass
-        try:
-            await sio.leave_room(sid, room, namespace=namespace)
-        except Exception:
-            pass
-        try:
-            # attempt to disconnect the socket cleanly
-            await sio.disconnect(sid)
-        except Exception:
-            # if disconnect fails, still remove server-side status below
-            pass
-        # clean USER_STATUS if present
-        USER_STATUS.pop(sid, None)
-
-    # Also attempt to leave any SIDs still tracked in manager.rooms (defensive)
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
-            try:
-                await sio.leave_room(sid, room, namespace=namespace)
-            except Exception:
-                pass
-            USER_STATUS.pop(sid, None)
+            await sio.leave_room(sid, room, namespace=namespace)
 
-    # Finally: remove user mapping for room (if any)
-    ROOM_USERS.pop(room, None)
-
-    print(
-        f"💥 Room {room} destroyed (history wiped; FCM tokens & subscriptions cleared)."
-    )
+    print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
 
 
