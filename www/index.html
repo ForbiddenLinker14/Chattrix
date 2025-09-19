@@ -2509,11 +2509,16 @@
           .querySelectorAll("li")
           .forEach((li) => existing.set(li.getAttribute("data-name"), li));
 
-        data.users.forEach((u) => {
+        // ✅ sort: active users first, inactive last
+        const sortedUsers = [...data.users].sort((a, b) => {
+          if (a.active === b.active) return a.name.localeCompare(b.name); // optional: alphabetical within groups
+          return a.active ? -1 : 1; // active before inactive
+        });
+
+        sortedUsers.forEach((u) => {
           if (seen.has(u.name)) return;
           seen.add(u.name);
 
-          // ✅ Green dot if active, red dot if inactive
           const color = u.active ? "#25d366" : "#e74c3c";
           const displayName =
             u.name === currentName ? `${u.name} (Me)` : u.name;
