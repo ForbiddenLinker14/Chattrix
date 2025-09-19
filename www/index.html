@@ -559,6 +559,13 @@
       .cropper-bg {
         background: transparent !important;
       }
+
+      #joined-rooms span {
+  display:inline-block;
+  min-width:18px;
+  text-align:center;
+}
+
     </style>
   </head>
 
@@ -1270,12 +1277,13 @@ rooms.forEach((room) => {
       }
 
       window.addEventListener("DOMContentLoaded", () => {
-        joinedRoomsByUser = JSON.parse(
-          localStorage.getItem("joinedRoomsByUser") || "{}"
-        );
-        currentName = Storage.get("chat_name") || "";
-        if (currentName) renderJoinedRooms();
-      });
+  joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+  currentName = Storage.get("chat_name") || "";
+  if (currentName) {
+    renderJoinedRooms();
+    renderJoinedRooms(); // force an extra paint after counters are restored
+  }
+});
 
       // ----------------- Switch Room -----------------
       function switchRoom(room) {
@@ -1530,17 +1538,20 @@ renderJoinedRooms();
         console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
         const messages = document.getElementById("messages");
 
+        // ensure room is set even for history or system messages
+  if (!data.room) data.room = currentRoom;
+
+  console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
+
+  // unread counter for inactive rooms
+  if (data.sender !== "System" && data.room !== currentRoom) {
+    unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
+    renderJoinedRooms();
+  }
+
         if (data.ts) {
           roomTimestamps[currentRoom] = data.ts;
         }
-
-          if (data.sender !== "System") {
-    // If the message is for a room we're not viewing, increment unread
-    if (data.room && data.room !== currentRoom) {
-      unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
-      renderJoinedRooms(); // refresh sidebar
-    }
-  }
 
         const div = document.createElement("div");
 
