@@ -1004,9 +1004,49 @@
         }
       }
 
-      function sendActive(active) {
-        if (socket) socket.emit("status", { active });
-      }
+// ----------------- Track unread counts -----------------
+let unreadCounts = JSON.parse(localStorage.getItem("unreadCounts") || "{}");
+
+function saveUnread() {
+  try {
+    localStorage.setItem("unreadCounts", JSON.stringify(unreadCounts));
+  } catch (e) {}
+}
+
+function incrementUnread(room) {
+  unreadCounts[room] = (unreadCounts[room] || 0) + 1;
+  saveUnread();
+  renderJoinedRooms();
+}
+
+function clearUnread(room) {
+  if (unreadCounts[room]) {
+    delete unreadCounts[room];
+    saveUnread();
+    renderJoinedRooms();
+  }
+}
+
+// ----------------- Status sending (room-aware) -----------------
+function sendActive(active, activeRoom = currentRoom) {
+  if (socket && socket.connected) {
+    try {
+      socket.emit("status", { active: !!active, activeRoom: activeRoom || null });
+    } catch (e) {
+      console.warn("status emit failed", e);
+    }
+  }
+}
+
+// Wire to visibility changes so server knows which room is focused
+document.addEventListener("visibilitychange", () => {
+  sendActive(!document.hidden, currentRoom);
+});
+
+// Also send active+room when window gains focus (optional)
+window.addEventListener("focus", () => sendActive(true, currentRoom));
+window.addEventListener("blur", () => sendActive(false, currentRoom));
+
 
       // ======================================================
       // =============== UI Functions =========================
@@ -1241,23 +1281,39 @@
       });
 
       // ----------------- Render Joined Rooms -----------------
-      function renderJoinedRooms() {
-        const list = document.getElementById("joined-rooms");
-        list.innerHTML = "";
-        const rooms = joinedRoomsByUser[currentName] || [];
-        rooms.forEach((room) => {
-          const li = document.createElement("li");
-          li.textContent = room;
-          li.dataset.room = room;
-          li.style.padding = "6px 10px";
-          li.style.cursor = "pointer";
-          li.onclick = () => switchRoom(room);
-          if (room === currentRoom) {
-            li.style.background = "#256e4c"; // highlight active room
-          }
-          list.appendChild(li);
-        });
-      }
+function renderJoinedRooms() {
+  const list = document.getElementById("joined-rooms");
+  list.innerHTML = "";
+  const rooms = joinedRoomsByUser[currentName] || [];
+  rooms.forEach((room) => {
+    const li = document.createElement("li");
+    li.textContent = room;
+    li.dataset.room = room;
+    li.style.padding = "6px 10px";
+    li.style.cursor = "pointer";
+    li.onclick = () => switchRoom(room);
+
+    // unread badge
+    const count = unreadCounts[room] || 0;
+    if (count > 0) {
+      const span = document.createElement("span");
+      span.textContent = count > 99 ? "99+" : count;
+      span.style.float = "right";
+      span.style.background = "#ff3b3b";
+      span.style.color = "#fff";
+      span.style.padding = "2px 6px";
+      span.style.borderRadius = "12px";
+      span.style.fontSize = "12px";
+      li.appendChild(span);
+    }
+
+    if (room === currentRoom) {
+      li.style.background = "#256e4c";
+    }
+    list.appendChild(li);
+  });
+}
+
 
       window.addEventListener("DOMContentLoaded", () => {
         joinedRoomsByUser = JSON.parse(
@@ -1268,82 +1324,61 @@
       });
 
       // ----------------- Switch Room -----------------
-      function switchRoom(room) {
-        if (!room || room === currentRoom) return;
+function switchRoom(room) {
+  if (!room || room === currentRoom) return;
 
-        const previousRoom = currentRoom;
+  // Reset UI immediately
+  const messagesEl = document.getElementById("messages");
+  const usersEl = document.getElementById("user-list");
+  messagesEl && (messagesEl.innerHTML = "");
+  usersEl && (usersEl.innerHTML = "");
 
-        // Reset UI immediately
-        const messagesEl = document.getElementById("messages");
-        const usersEl = document.getElementById("user-list");
-        messagesEl && (messagesEl.innerHTML = "");
-        usersEl && (usersEl.innerHTML = "");
+  const previousRoom = currentRoom;
+  currentRoom = room;
+  lastPersistedTs = null; // force full history reload
+  document.getElementById("room").value = currentRoom;
+  Storage.set("chat_room", currentRoom);
 
-        // Update current room and persist
-        currentRoom = room;
-        lastPersistedTs = null; // force full history reload
-        document.getElementById("room").value = currentRoom;
-        Storage.set("chat_room", currentRoom);
+  // Update joined-rooms highlight
+  Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
+    li.style.background = li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+  });
 
-        // Update sidebar highlight safely
-        Array.from(document.getElementById("joined-rooms").children).forEach(
-          (li) => {
-            li.style.background =
-              li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-          }
-        );
+  // If socket is not connected, let joinRoom handle connecting and joining
+  if (!socket || !socket.connected) {
+    joinRoom();
+    return;
+  }
 
-        // If we were in another room, tell server we left it (keeps server state clean)
-        if (previousRoom && socket && socket.connected) {
-          try {
-            socket.emit("leave", {
-              room: previousRoom,
-              sender: currentName,
-              reason: "switch", // ✅ added reason flag
-            });
-            console.log("➡️ Left previous room:", previousRoom);
-          } catch (e) {
-            console.warn("Failed to emit leave for previous room:", e);
-          }
-        }
-
-        // If socket isn't ready, let joinRoom create/connect the socket and join
-        if (!socket || !socket.connected) {
-          console.warn("⚠️ Socket not connected; calling joinRoom()");
-          joinRoom();
-          return;
-        }
-
-        // Join the requested room and request full history (lastTs: null)
-        socket.emit(
-          "join",
-          { room: currentRoom, sender: currentName, lastTs: null },
-          (ack) => {
-            if (ack && ack.success) {
-              // mark local joined sets/storage
-              joinedRooms.add(currentRoom);
-              joinedRoomsByUser[currentName] =
-                joinedRoomsByUser[currentName] || [];
-              if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-                joinedRoomsByUser[currentName].push(currentRoom);
-                localStorage.setItem(
-                  "joinedRoomsByUser",
-                  JSON.stringify(joinedRoomsByUser)
-                );
-              }
-              // refresh UI
-              renderJoinedRooms();
-              document.getElementById("chat-container").style.display = "flex";
-              document.getElementById("input-area").style.display = "flex";
-              document.getElementById("intro").style.display = "none";
-              document.getElementById("messages").style.display = "block";
-              console.log(`🔄 Switched to room ${currentRoom}`);
-            } else {
-              console.warn("❌ Failed to switch room:", room, ack);
-            }
-          }
-        );
+  // Join the requested room (do NOT leave previous room — keep joined membership)
+  socket.emit("join", { room: currentRoom, sender: currentName, lastTs: null }, (ack) => {
+    if (ack && ack.success) {
+      // store join
+      joinedRooms.add(currentRoom);
+      joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
+      if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+        joinedRoomsByUser[currentName].push(currentRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       }
+
+      // reset unread for this room because we're now active here
+      clearUnread(currentRoom);
+
+      renderJoinedRooms();
+      document.getElementById("chat-container").style.display = "flex";
+      document.getElementById("input-area").style.display = "flex";
+      document.getElementById("intro").style.display = "none";
+      document.getElementById("messages").style.display = "block";
+
+      // tell server we're active in this room
+      sendActive(true, currentRoom);
+
+      console.log(`🔄 Switched to room ${currentRoom}`);
+    } else {
+      console.warn("❌ Failed to switch room:", room, ack);
+    }
+  });
+}
 
       async function restoreChatState(socket) {
         const state = await loadChatState();
@@ -1513,43 +1548,78 @@
         });
       }
 
-      function addMessage(data) {
-        console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
-        const messages = document.getElementById("messages");
+// ----------------- addMessage: room-aware; notifications + unread -----------------
+function addMessage(data) {
+  console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
+  const messages = document.getElementById("messages");
 
-        if (data.ts) {
-          roomTimestamps[currentRoom] = data.ts;
-        }
+  // message may carry room (server now sends it) — fallback to currentRoom
+  const msgRoom = data.room || currentRoom;
 
-        const div = document.createElement("div");
+  // track timestamp per room
+  if (data.ts) {
+    roomTimestamps[msgRoom] = data.ts;
+  }
 
-        if (data.sender === "System") {
-          div.className = "msg system";
-          div.textContent = data.text;
-          enableCopyOnMessage(div, data.text);
-        } else {
-          bumpTs(data.ts);
-          const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
-          div.className = "msg " + (isMe ? "me" : "other");
-          div.dataset.ts = data.ts;
+  // create message node
+  const div = document.createElement("div");
+  if (data.sender === "System") {
+    div.className = "msg system";
+    div.textContent = data.text;
+    if (msgRoom === currentRoom) {
+      messages.appendChild(div);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    } else {
+      // system message for other room -> increment unread but keep simple
+      incrementUnread(msgRoom);
+    }
+    return;
+  }
 
-          const safeText = escapeHtml(data.text);
-          const formattedText = linkifyWithFavicon(safeText);
+  const isMe = data.sender === currentName;
+  div.className = "msg " + (isMe ? "me" : "other");
 
-          div.innerHTML = `
-      <strong>${data.sender}</strong><br>
-      ${formattedText}
-      <br><small>${new Date(data.ts).toLocaleString()}</small>
-    `;
+  // use linkifyWithFavicon but ensure we escape sender properly
+  const textHtml = data.text ? linkifyWithFavicon(escapeHtml(data.text)) : "";
+  div.innerHTML = `<strong class="username">${escapeHtml(data.sender)}</strong><div>${textHtml}</div>`;
 
-          enableCopyOnMessage(div, data.text);
-          div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
-        }
+  const tsEl = document.createElement("div");
+  tsEl.className = "timestamp";
+  tsEl.textContent = data.ts ? new Date(data.ts).toLocaleString() : "";
+  div.appendChild(tsEl);
 
-        // ✅ Append to DOM
-        messages.appendChild(div);
-        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+  // allow copying message
+  enableCopyOnMessage(div, data.text || "");
+
+  if (msgRoom === currentRoom) {
+    messages.appendChild(div);
+    messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+  } else {
+    // message arrived in a different room — increment unread & show desktop notification
+    incrementUnread(msgRoom);
+
+    // If notifications permission and page visible, show a desktop notification
+    if (Notification.permission === "granted") {
+      try {
+        const title = `${data.sender} • ${msgRoom}`;
+        const n = new Notification(title, {
+          body: data.text || "",
+          tag: `${msgRoom}-${data.ts}`,
+        });
+        n.onclick = () => {
+          window.focus();
+          switchRoom(msgRoom);
+          n.close();
+        };
+      } catch (e) {
+        console.warn("Notification failed:", e);
       }
+    } else {
+      // optional: small in-app toast
+      showCopyNotice(`${data.sender} • ${msgRoom}: ${data.text}`);
+    }
+  }
+}
 
       // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
       async function saveFileToDevice(base64Data, filename, mimeType) {
