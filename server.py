@@ -300,14 +300,21 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "www")
 #     ]
 #     await sio.emit("users_update", {"room": room, "users": users}, room=room)
 
-
 async def broadcast_users(room):
     users = []
-    # Only show users that are really connected
+    # Connected users
     for username, sid in ROOM_USERS.get(room, {}).items():
         active = USER_STATUS.get(sid, {}).get("active", False)
         users.append({"name": username, "active": active})
+
+    # Historical users (inactive ones), only if the room is not destroyed
+    if room not in DESTROYED_ROOMS:
+        for username in ROOM_HISTORY.get(room, set()):
+            if username not in ROOM_USERS.get(room, {}):
+                users.append({"name": username, "active": False})
+
     await sio.emit("users_update", {"room": room, "users": users}, room=room)
+
 
 
 def normalize_endpoint(endpoint: str) -> str | None:
