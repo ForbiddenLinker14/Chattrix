@@ -443,6 +443,7 @@ async def join(sid, data):
     # revive destroyed room
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
+        ROOM_HISTORY.pop(room, None)
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
@@ -459,6 +460,7 @@ async def join(sid, data):
 
     # map user → sid
     ROOM_USERS[room][username] = sid
+    USER_STATUS[sid] = {"user": username, "active": True}
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
