@@ -404,7 +404,7 @@ async def destroy_room(room: str):
     # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
 
-    # 2b. Clear recorded room history so old members don't stick around as ghosts
+    # 2b. Clear recorded room history
     ROOM_HISTORY.pop(room, None)
 
     # 3. Remove user mapping
@@ -421,15 +421,17 @@ async def destroy_room(room: str):
     # 5. Broadcast globally so even clients outside the room remove it
     await sio.emit("room_destroyed", {"room": room})
 
-    # 6. Forcefully remove all sockets from the destroyed room
+    # 6. Forcefully remove and disconnect all sockets from the destroyed room
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
+            await sio.disconnect(sid, namespace=namespace)
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
+
 
 
 
