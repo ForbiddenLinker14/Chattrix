@@ -486,27 +486,11 @@ async def join(sid, data):
     return {"success": True}
 
 
-# ---------------- New/updated helpers and events ----------------
-
-def user_active_in_room(username: str, room: str) -> bool:
-    """
-    Return True if username has any connection (sid) that is active
-    AND currently focused/active on `room`.
-    """
-    for sid, status in USER_STATUS.items():
-        if status.get("user") == username and status.get("active") and status.get("activeRoom") == room:
-            return True
-    return False
-
-
 @sio.event
 async def status(sid, data):
-    """
-    Client now sends: { active: true|false, activeRoom: "<room-id>" }
-    We store activeRoom so push suppression can be room-specific.
-    """
+    # Client sends: { active: true|false }
+    # Tracks per-connection foreground/visibility status for push suppression
     user = None
-    # find username for this sid
     for room, members in ROOM_USERS.items():
         for uname, usid in members.items():
             if usid == sid:
@@ -515,14 +499,10 @@ async def status(sid, data):
         if user:
             break
     if not user:
-        # not associated -> ignore
         return
-
     is_active = bool((data or {}).get("active"))
-    active_room = (data or {}).get("activeRoom")  # can be None
-    USER_STATUS[sid] = {"user": user, "active": is_active, "activeRoom": active_room}
-    print(f"📌 Status update: {user} active={is_active} activeRoom={active_room}")
-
+    USER_STATUS[sid] = {"user": user, "active": is_active}
+    print(f"📌 Status update: {user} is now {'ACTIVE' if is_active else 'INACTIVE'}")
 
 
 @sio.event
@@ -535,7 +515,7 @@ async def message(sid, data):
     if not text or not room or not sender:
         return
 
-    # optional duplicate suppression
+    # optional: keep duplicate suppression
     key = (room, sender)
     last = LAST_MESSAGE.get(key)
     if last and last[0] == text and (now - last[1]).total_seconds() < 1.5:
@@ -543,13 +523,11 @@ async def message(sid, data):
     LAST_MESSAGE[key] = (text, now)
 
     save_message(room, sender, text=text)
-
-    # include 'room' in payload
     await sio.emit(
-        "message",
-        {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
-        room=room,
-    )
+    "message",
+    {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
+    room=room
+)
 
     # Web push
     await send_push_to_room(room, sender, text)
@@ -599,7 +577,6 @@ async def file(sid, data):
     await sio.emit(
         "file",
         {
-            "room": room,
             "sender": sender,
             "filename": filename,
             "mimetype": mimetype,
@@ -609,22 +586,11 @@ async def file(sid, data):
         room=room,
     )
 
+    # ✅ Send push notifications for file uploads
+    # message = f"{sender} sent a file: {filename}"
     message = filename
     await send_push_to_room(room, sender, message)
     await send_fcm_to_room(room, sender, message)
-
-
-    # When sending missed messages to a reconnecting client, also include room:
-# (inside join handler where you loop load_messages(room) -> change emits:)
-# replace the previous emits with these:
-
-# for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
-#     if last_ts and ts <= last_ts:
-#         continue
-#     if filename:
-#         await sio.emit("file", { "room": room, ... }, to=sid)
-#     else:
-#         await sio.emit("message", { "room": room, ... }, to=sid)
 
 
 # @sio.event
@@ -945,8 +911,6 @@ async def send_push_notification():
 from pywebpush import WebPushException
 
 
-# ----------------- Updated push sending (room-aware suppression) -----------------
-
 async def send_push_to_room(room: str, sender: str, text: str):
     if room not in subscriptions:
         return
@@ -955,6 +919,7 @@ async def send_push_to_room(room: str, sender: str, text: str):
     payload = {
         "title": "Chattrix",
         "sender": sender,
+        # 👇 If text looks like a filename, prepend "sent a file:"
         "text": (
             f"{sender} sent a file: {text}"
             if not text.strip().startswith(("http", "www")) and "." in text
@@ -971,8 +936,8 @@ async def send_push_to_room(room: str, sender: str, text: str):
         if user == sender:
             continue
 
-        # skip if user is active in this *same* room (do NOT suppress when active in a different room)
-        if user_active_in_room(user, room):
+        # skip if user is active in foreground
+        if user_active_foreground(user):
             continue
 
         for sub in list(subs):
@@ -981,7 +946,7 @@ async def send_push_to_room(room: str, sender: str, text: str):
                 if not endpoint:
                     continue
 
-                # suppress duplicates per-endpoint
+                # suppress duplicates
                 if not should_send_push(endpoint, push_id, now):
                     continue
 
@@ -1011,7 +976,9 @@ async def send_push_to_room(room: str, sender: str, text: str):
                         del subscriptions[room][user]
                         if not subscriptions[room]:
                             del subscriptions[room]
-                    print(f"🗑️ Removed expired WebPush subscription for {user} in {room}")
+                    print(
+                        f"🗑️ Removed expired WebPush subscription for {user} in {room}"
+                    )
 
 
 async def send_fcm_to_room(room: str, sender: str, text: str):
@@ -1021,7 +988,7 @@ async def send_fcm_to_room(room: str, sender: str, text: str):
 
     now = datetime.now(timezone.utc)
 
-    # favicon extraction as before
+    # ✅ Try to extract favicon from the first link in the text
     favicon_url = extract_favicon_from_text(text)
 
     for user, rooms in list(FCM_TOKENS.items()):
@@ -1030,8 +997,8 @@ async def send_fcm_to_room(room: str, sender: str, text: str):
         if room not in rooms:
             continue
 
-        # skip if user is active in this *same* room
-        if user_active_in_room(user, room):
+        # skip if user is active in foreground
+        if user_active_foreground(user):
             continue
 
         for token in list(rooms[room]):
@@ -1040,7 +1007,9 @@ async def send_fcm_to_room(room: str, sender: str, text: str):
                     notification=messaging.Notification(
                         title=f"Room {room}",
                         body=f"{sender}: {text}",
-                        image=(favicon_url if favicon_url else None),
+                        image=(
+                            favicon_url if favicon_url else None
+                        ),  # ✅ favicon as notification image
                     ),
                     token=token,
                     data={
@@ -1048,15 +1017,16 @@ async def send_fcm_to_room(room: str, sender: str, text: str):
                         "sender": sender,
                         "message": text,
                         "timestamp": now.isoformat(),
-                        "favicon": favicon_url or "",
+                        "favicon": favicon_url
+                        or "",  # ✅ pass along favicon in data too
                     },
                     android=messaging.AndroidConfig(
                         priority="high",
                         notification=messaging.AndroidNotification(
-                            channel_id="chat_messages",
+                            channel_id="chat_messages",  # 👈 must exist on device
                             sound="default",
                             priority="high",
-                            icon="chat_icon",
+                            icon="chat_icon",  # fallback if favicon not shown
                         ),
                     ),
                 )
