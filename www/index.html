@@ -2624,6 +2624,40 @@
             ts: new Date().toISOString(),
           });
         }
+
+        // 🔹 NEW: unregister FCM and webpush for this room (best-effort, non-blocking)
+        try {
+          const savedToken = localStorage.getItem("fcm_token");
+          if (savedToken && currentName) {
+            fetch("/api/unregister-fcm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                token: savedToken,
+                user: currentName,
+                room: destroyed,
+              }),
+            }).catch((e) =>
+              console.warn(
+                "Failed to auto-unregister FCM for destroyed room:",
+                e
+              )
+            );
+          }
+        } catch (e) {
+          console.warn("Failed to trigger FCM unregister:", e);
+        }
+
+        try {
+          unsubscribeUser(currentName, destroyed).catch((e) =>
+            console.warn(
+              "Failed to auto-unsubscribe webpush for destroyed room:",
+              e
+            )
+          );
+        } catch (e) {
+          console.warn("Failed to trigger webpush unsubscribe:", e);
+        }
       }
 
       function handleRoomCleared(data) {
