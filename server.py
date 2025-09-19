@@ -523,12 +523,21 @@ async def message(sid, data):
     LAST_MESSAGE[key] = (text, now)
 
     save_message(room, sender, text=text)
+        # broadcast the usual message to the room (already present)
     await sio.emit(
-    "message",
-    {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
-    room=room
-)
+        "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
+    )
 
+    # --- NEW: tell all connected clients a metadata event (room, sender, short text, ts)
+    # so clients can update unread counters for rooms they have joined.
+    # This is lightweight and does NOT include file binary data.
+    try:
+        await sio.emit(
+            "room_message_meta",
+            {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
+        )
+    except Exception as e:
+        print("Failed to emit room_message_meta:", e)
     # Web push
     await send_push_to_room(room, sender, text)
 
@@ -585,6 +594,25 @@ async def file(sid, data):
         },
         room=room,
     )
+
+    # --- If you have a file upload handler that emits "file", also add a meta broadcast there:
+# after await sio.emit("file", {...}, room=room) add:
+
+    try:
+        await sio.emit(
+            "room_message_meta",
+            {
+                "room": room,
+                "sender": sender,
+                "text": filename or "(file)",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+    except Exception as e:
+        print("Failed to emit room_message_meta (file):", e)
+
+# (This keeps unread-count logic working for file messages too.)
+
 
     # ✅ Send push notifications for file uploads
     # message = f"{sender} sent a file: {filename}"
@@ -936,9 +964,11 @@ async def send_push_to_room(room: str, sender: str, text: str):
         if user == sender:
             continue
 
-        # skip if user is active in foreground
-        if user_active_foreground(user):
+               # --- NEW: skip only if user is active in *this same room*
+        sid_in_room = ROOM_USERS.get(room, {}).get(user)
+        if sid_in_room and USER_STATUS.get(sid_in_room, {}).get("active"):
             continue
+
 
         for sub in list(subs):
             try:
@@ -997,8 +1027,9 @@ async def send_fcm_to_room(room: str, sender: str, text: str):
         if room not in rooms:
             continue
 
-        # skip if user is active in foreground
-        if user_active_foreground(user):
+                # --- NEW: skip only if user is active in *this same room*
+        sid_in_room = ROOM_USERS.get(room, {}).get(user)
+        if sid_in_room and USER_STATUS.get(sid_in_room, {}).get("active"):
             continue
 
         for token in list(rooms[room]):

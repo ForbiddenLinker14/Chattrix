@@ -559,12 +559,7 @@
       .cropper-bg {
         background: transparent !important;
       }
-
-      #joined-rooms span {
-  display:inline-block;
-  min-width:18px;
-  text-align:center;
-}
+      .room-badge { float: right; background: #e74c3c; color: #fff; padding: 2px 6px; border-radius: 12px; font-size: 12px; min-width: 20px; text-align:center; display:none; }
 
     </style>
   </head>
@@ -983,7 +978,6 @@
       let sending = false;
       let roomTimestamps = {}; // Store the last timestamp per room
       let joinedRoomsByUser = {}; // Persist joined rooms per user
-      let unreadCounts = {}; // room -> count
 
       // ======================================================
       // =============== Utility Functions ====================
@@ -1148,6 +1142,50 @@
           }
         });
 
+        socket.on("room_message_meta", (data) => {
+  try {
+    // only act if we know our username and joinedRoomsByUser
+    if (!currentName) return;
+    joinedRoomsByUser =
+      joinedRoomsByUser ||
+      JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    const myRooms = joinedRoomsByUser[currentName] || [];
+    if (!myRooms.includes(data.room)) return; // ignore rooms we're not tracking
+
+    // if message belongs to the room we're currently viewing, let addMessage handle it
+    if (data.room === currentRoom) return;
+
+    // increment unread
+    unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
+    saveUnread();
+    updateBadge(data.room);
+
+    // show an in-page / desktop notification
+    const title = `Room ${data.room}`;
+    const body = `${data.sender}: ${data.text}`;
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification(title, { body, tag: `room-${data.room}` });
+        n.onclick = () => {
+          window.focus();
+          switchRoom(data.room);
+          n.close();
+        };
+      } catch (e) {
+        console.warn("Notification failed:", e);
+      }
+    } else {
+      // fallback: briefly flash document title (simple)
+      const original = document.title;
+      document.title = `${data.room}: ${data.sender}`;
+      setTimeout(() => (document.title = original), 2500);
+    }
+  } catch (err) {
+    console.warn("room_message_meta handler err:", err);
+  }
+});
+
+
         socket.on("message", addMessage);
         socket.on("file", addFileMessage);
 
@@ -1248,42 +1286,87 @@
         }
       });
 
-      // ----------------- Render Joined Rooms -----------------
-      function renderJoinedRooms() {
-        const list = document.getElementById("joined-rooms");
-        list.innerHTML = "";
-        const rooms = joinedRoomsByUser[currentName] || [];
-rooms.forEach((room) => {
-  const li = document.createElement("li");
-  const count = unreadCounts[room] || 0;
-  li.innerHTML = count > 0 ? `${room} <span style="
-    background:#e74c3c;
-    color:white;
-    border-radius:8px;
-    padding:2px 6px;
-    font-size:12px;
-    margin-left:6px;">${count}</span>` : room;
-
-  li.dataset.room = room;
-  li.style.padding = "6px 10px";
-  li.style.cursor = "pointer";
-  li.onclick = () => switchRoom(room);
-  if (room === currentRoom) {
-    li.style.background = "#256e4c";
+      // ----- unread counters (persisted) -----
+let unreadCounts = {}; // { roomId: n }
+function unreadKey() {
+  // persist per-username to avoid cross-user collisions
+  return "unreadCounts_" + (currentName || "anon");
+}
+function loadUnread() {
+  try {
+    unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}");
+  } catch (e) {
+    unreadCounts = {};
   }
-  list.appendChild(li);
-});
+}
+function saveUnread() {
+  try {
+    localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts));
+  } catch (e) {}
+}
+function updateBadge(room) {
+  const list = document.getElementById("joined-rooms");
+  if (!list) return;
+  const li = [...list.children].find((x) => x.dataset.room === room);
+  if (!li) return;
+  let badge = li.querySelector(".room-badge");
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "room-badge";
+    // small inline styling so you don't need a separate CSS file
+    badge.style.cssText =
+      "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
+    li.appendChild(badge);
+  }
+  const count = unreadCounts[room] || 0;
+  badge.textContent = count > 0 ? (count > 99 ? "99+" : count) : "";
+  badge.style.display = count > 0 ? "inline-block" : "none";
+}
 
-      }
+
+      // ----------------- Render Joined Rooms -----------------
+  function renderJoinedRooms() {
+  loadUnread();
+  const list = document.getElementById("joined-rooms");
+  list.innerHTML = "";
+  const rooms = joinedRoomsByUser[currentName] || [];
+  rooms.forEach((room) => {
+    const li = document.createElement("li");
+    li.dataset.room = room;
+    li.style.padding = "6px 10px";
+    li.style.cursor = "pointer";
+    li.onclick = () => switchRoom(room);
+
+    // create text span + badge placeholder
+    const span = document.createElement("span");
+    span.className = "room-name";
+    span.textContent = room;
+    li.appendChild(span);
+
+    const badge = document.createElement("span");
+    badge.className = "room-badge";
+    badge.style.cssText =
+      "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:none";
+    li.appendChild(badge);
+
+    if (room === currentRoom) {
+      li.style.background = "#256e4c"; // highlight active room
+    }
+    list.appendChild(li);
+
+    // populate badge when rendered
+    updateBadge(room);
+  });
+}
+
 
       window.addEventListener("DOMContentLoaded", () => {
-  joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-  currentName = Storage.get("chat_name") || "";
-  if (currentName) {
-    renderJoinedRooms();
-    renderJoinedRooms(); // force an extra paint after counters are restored
-  }
-});
+        joinedRoomsByUser = JSON.parse(
+          localStorage.getItem("joinedRoomsByUser") || "{}"
+        );
+        currentName = Storage.get("chat_name") || "";
+        if (currentName) renderJoinedRooms();
+      });
 
       // ----------------- Switch Room -----------------
       function switchRoom(room) {
@@ -1302,9 +1385,6 @@ rooms.forEach((room) => {
         lastPersistedTs = null; // force full history reload
         document.getElementById("room").value = currentRoom;
         Storage.set("chat_room", currentRoom);
-        unreadCounts[room] = 0;
-renderJoinedRooms();
-
 
         // Update sidebar highlight safely
         Array.from(document.getElementById("joined-rooms").children).forEach(
@@ -1364,6 +1444,12 @@ renderJoinedRooms();
             }
           }
         );
+
+        // reset unread for this room now that user switched into it
+unreadCounts[currentRoom] = 0;
+saveUnread();
+updateBadge(currentRoom);
+
       }
 
       async function restoreChatState(socket) {
@@ -1537,17 +1623,6 @@ renderJoinedRooms();
       function addMessage(data) {
         console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
         const messages = document.getElementById("messages");
-
-        // ensure room is set even for history or system messages
-  if (!data.room) data.room = currentRoom;
-
-  console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
-
-  // unread counter for inactive rooms
-  if (data.sender !== "System" && data.room !== currentRoom) {
-    unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
-    renderJoinedRooms();
-  }
 
         if (data.ts) {
           roomTimestamps[currentRoom] = data.ts;
