@@ -438,12 +438,13 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # revive destroyed room
+    # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
         ROOM_HISTORY.pop(room, None)
 
-        ROOM_HISTORY.setdefault(room, set()).add(username)
+    # ensure history exists, then add user
+    ROOM_HISTORY.setdefault(room, set()).add(username)
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
@@ -458,9 +459,10 @@ async def join(sid, data):
         except Exception:
             pass
 
-    # map user → sid
+    # map user → sid and mark active immediately
     ROOM_USERS[room][username] = sid
     USER_STATUS[sid] = {"user": username, "active": True}
+
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
@@ -487,7 +489,9 @@ async def join(sid, data):
             )
         else:
             await sio.emit(
-                "message", {"sender": sender_, "text": text, "ts": ts}, to=sid
+                "message",
+                {"sender": sender_, "text": text, "ts": ts},
+                to=sid,
             )
 
     # broadcast system join
