@@ -570,6 +570,59 @@
         text-align: center;
         display: none;
       }
+
+      #joined-rooms-title {
+        font-size: 16px;
+        font-weight: bold;
+        color: #f3f4f6;
+        margin: 15px 0 10px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid #333;
+      }
+
+      #joined-rooms {
+        flex: 1;
+        min-height: 0; /* 👈 allows shrinking inside flex */
+        overflow-y: auto; /* scrollable like users */
+        overscroll-behavior: contain;
+
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background: #100e09;
+        border: 1px solid #333;
+        border-radius: 12px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+
+        /* scrollbar hidden but still scrollable */
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE/Edge */
+      }
+      #joined-rooms::-webkit-scrollbar {
+        display: none; /* Chrome, Safari */
+      }
+
+      #joined-rooms li {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 10px;
+        font-size: 14px;
+        color: #e5e7eb;
+        transition: background 0.2s;
+        border-bottom: 1px solid #222;
+        cursor: pointer;
+      }
+
+      #joined-rooms li:hover {
+        background: #1a1813;
+      }
+
+      #joined-rooms li.active {
+        background: #256e4c; /* green highlight */
+        color: #fff;
+        font-weight: bold;
+      }
     </style>
   </head>
 
@@ -629,22 +682,8 @@
         <ul id="user-list"></ul>
       </div>
 
-      <div id="joined-rooms-title" style="margin-top: 15px; font-weight: bold">
-        📂 Joined Rooms
-      </div>
-      <ul
-        id="joined-rooms"
-        style="
-          list-style: none;
-          padding: 0;
-          margin: 0;
-          background: #100e09;
-          border: 1px solid #333;
-          border-radius: 8px;
-          max-height: 150px;
-          overflow-y: auto;
-        "
-      ></ul>
+      <div id="joined-rooms-title">📂 Joined Rooms</div>
+      <ul id="joined-rooms"></ul>
     </div>
 
     <!-- Intro Section -->
@@ -1349,32 +1388,33 @@
         loadUnread();
         const list = document.getElementById("joined-rooms");
         list.innerHTML = "";
+
         const rooms = joinedRoomsByUser[currentName] || [];
         rooms.forEach((room) => {
           const li = document.createElement("li");
           li.dataset.room = room;
-          li.style.padding = "6px 10px";
-          li.style.cursor = "pointer";
-          li.onclick = () => switchRoom(room);
+          li.className = "joined-room-item"; // base class
+          if (room === currentRoom) {
+            li.classList.add("active"); // highlight if current
+          }
 
-          // create text span + badge placeholder
+          // room name span
           const span = document.createElement("span");
           span.className = "room-name";
           span.textContent = room;
           li.appendChild(span);
 
+          // badge span
           const badge = document.createElement("span");
           badge.className = "room-badge";
-          badge.style.cssText =
-            "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:none";
           li.appendChild(badge);
 
-          if (room === currentRoom) {
-            li.style.background = "#256e4c"; // highlight active room
-          }
+          // click to switch
+          li.onclick = () => switchRoom(room);
+
           list.appendChild(li);
 
-          // populate badge when rendered
+          // update unread badge
           updateBadge(room);
         });
       }
