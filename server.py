@@ -410,19 +410,18 @@ async def destroy_room(room: str):
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
-    # 4. Notify clients + force disconnect
+    # 4. Notify clients (in-room) to clear their UI
     await sio.emit(
         "clear",
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
-    # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
-    # --- NEW: also broadcast to all connected clients so clients
-    # who have already left the room (but still have it in localStorage)
-    # can remove it from their sidebar.
+    # 5. Broadcast globally so even clients outside the room remove it
     await sio.emit("room_destroyed", {"room": room})
+
+    # 6. Forcefully remove all sockets from the destroyed room
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
@@ -431,6 +430,7 @@ async def destroy_room(room: str):
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
+
 
 
 # ---------------- Socket.IO Events ----------------
