@@ -438,12 +438,12 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    ROOM_HISTORY.setdefault(room, set()).add(username)
-
     # revive destroyed room
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
         ROOM_HISTORY.pop(room, None)
+
+        ROOM_HISTORY.setdefault(room, set()).add(username)
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
