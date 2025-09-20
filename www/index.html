@@ -2949,6 +2949,36 @@
           }
         };
       });
+
+      import { Keyboard } from '@capacitor/keyboard';
+
+const inputArea = document.getElementById('input-area');
+const messages = document.getElementById('messages');
+const chatContainer = document.getElementById('chat-container');
+
+function updatePadding(extra = 0) {
+  // keep messages visible above the input area
+  chatContainer.style.paddingBottom = `${inputArea.offsetHeight + extra}px`;
+  messages.scrollTop = messages.scrollHeight;
+}
+
+// initial padding so messages don't hide behind input bar
+updatePadding();
+
+Keyboard.addListener('keyboardWillShow', (info) => {
+  const h = info.keyboardHeight || 0;
+  inputArea.style.position = 'fixed';
+  inputArea.style.left = '0';
+  inputArea.style.right = '0';
+  inputArea.style.bottom = `${h}px`;            // lift input above keyboard
+  updatePadding(h);
+});
+
+Keyboard.addListener('keyboardWillHide', () => {
+  inputArea.style.bottom = '0';
+  updatePadding(0);
+});
+
     </script>
     <script type="module">
       import { Storage } from "@capacitor/storage";
