@@ -401,11 +401,8 @@ async def destroy_room(room: str):
     # 1. Clear DB messages
     clear_room(room)
 
-    # 2. Mark destroyed (DO NOT DISCARD until room explicitly created)
+    # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
-
-    # 2b. Remove any persisted history so other clients don't see stale users
-    ROOM_HISTORY.pop(room, None)
 
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
@@ -416,23 +413,21 @@ async def destroy_room(room: str):
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
+    # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
-    await sio.emit("room_destroyed", {"room": room})  # global
 
-    # Force all sids to leave this room if still present
+    # --- NEW: also broadcast to all connected clients so clients
+    # who have already left the room (but still have it in localStorage)
+    # can remove it from their sidebar.
+    await sio.emit("room_destroyed", {"room": room})
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
-    
-    # ✅ Do NOT discard the destroyed marker here
-    # DESTROYED_ROOMS.discard(room)
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
-
-
 
 
 # ---------------- Socket.IO Events ----------------
@@ -443,23 +438,18 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # 1️⃣ Refuse joins to destroyed rooms
+    # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
-        await sio.emit("room_destroyed", {"room": room}, to=sid)
-        return {"success": False, "error": "room_destroyed"}
+        DESTROYED_ROOMS.remove(room)
+        ROOM_HISTORY.pop(room, None)
 
-    # 2️⃣ Refuse joins to rooms that do not exist (not yet created)
-    if room not in ROOM_HISTORY:
-        await sio.emit("error", {"message": "Room does not exist. Create it first."}, to=sid)
-        return {"success": False, "error": "room_not_created"}
-
-    # 3️⃣ Ensure history exists and add user
+    # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
 
-    # 4️⃣ Handle duplicate sessions
+    # handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
         return {"success": True, "message": "Already in room"}
@@ -469,19 +459,19 @@ async def join(sid, data):
         except Exception:
             pass
 
-    # 5️⃣ Map user → sid and mark active
+    # map user → sid and mark active immediately
     ROOM_USERS[room][username] = sid
     USER_STATUS[sid] = {"user": username, "active": True}
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
-    # 6️⃣ Register token in memory + DB
+    # 🔑 register token in memory + DB
     if token:
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # 7️⃣ Send missed messages
+    # send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
@@ -504,7 +494,7 @@ async def join(sid, data):
                 to=sid,
             )
 
-    # 8️⃣ Broadcast system join
+    # broadcast system join
     if not old_sid:
         await sio.emit(
             "message",
@@ -517,8 +507,6 @@ async def join(sid, data):
         )
 
     return {"success": True}
-
-
 
 
 @sio.event
@@ -815,6 +803,7 @@ async def startup_tasks():
 
 
 # ---------------- Subscribe / Push test ----------------
+# ---------------- Subscribe ----------------
 @app.post("/api/subscribe")
 async def subscribe(request: Request):
     body = await request.json()
@@ -965,19 +954,6 @@ async def send_push_notification():
         except Exception as e:
             print("❌ FCM push failed:", e)
 
-    return {"status": "ok"}
-
-
-@app.post("/create/{room}")
-async def create_room(room: str):
-    # If the room was previously destroyed, unblock it
-    if room in DESTROYED_ROOMS:
-        DESTROYED_ROOMS.discard(room)
-
-    # Initialize fresh room state
-    ROOM_HISTORY[room] = set()
-    ROOM_USERS[room] = {}
-    print(f"✨ Room {room} created")
     return {"status": "ok"}
 
 
