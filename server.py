@@ -438,10 +438,11 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # revive destroyed room → clear history
+    # ✅ If this room was previously destroyed → allow fresh start
     if room in DESTROYED_ROOMS:
-        DESTROYED_ROOMS.remove(room)
-        ROOM_HISTORY.pop(room, None)
+        DESTROYED_ROOMS.pop(room, None)  # remove from destroyed list
+        ROOM_HISTORY.pop(room, None)  # reset old history if needed
+        print(f"♻️ Room {room} revived by {username}")
 
     # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -1149,10 +1150,6 @@ async def unregister_fcm(request: Request):
 # ---------------- Static / PWA assets ----------------
 @app.get("/destroyed_rooms")
 async def get_destroyed_rooms():
-    """
-    Return list of rooms that were destroyed (in-memory).
-    Clients call this on startup to remove stale rooms from localStorage.
-    """
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
