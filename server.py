@@ -443,21 +443,23 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # NEW: refuse joins to destroyed rooms
+    # 1️⃣ Refuse joins to destroyed rooms
     if room in DESTROYED_ROOMS:
-        try:
-            await sio.emit("room_destroyed", {"room": room}, to=sid)
-        except Exception:
-            pass
+        await sio.emit("room_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "room_destroyed"}
 
-    # ensure history exists, then add user
+    # 2️⃣ Refuse joins to rooms that do not exist (not yet created)
+    if room not in ROOM_HISTORY:
+        await sio.emit("error", {"message": "Room does not exist. Create it first."}, to=sid)
+        return {"success": False, "error": "room_not_created"}
+
+    # 3️⃣ Ensure history exists and add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
 
-    # handle duplicate sessions
+    # 4️⃣ Handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
         return {"success": True, "message": "Already in room"}
@@ -467,19 +469,19 @@ async def join(sid, data):
         except Exception:
             pass
 
-    # map user → sid and mark active immediately
+    # 5️⃣ Map user → sid and mark active
     ROOM_USERS[room][username] = sid
     USER_STATUS[sid] = {"user": username, "active": True}
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
-    # 🔑 register token in memory + DB
+    # 6️⃣ Register token in memory + DB
     if token:
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # send missed messages
+    # 7️⃣ Send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
@@ -502,7 +504,7 @@ async def join(sid, data):
                 to=sid,
             )
 
-    # broadcast system join
+    # 8️⃣ Broadcast system join
     if not old_sid:
         await sio.emit(
             "message",
@@ -515,6 +517,7 @@ async def join(sid, data):
         )
 
     return {"success": True}
+
 
 
 
@@ -967,7 +970,11 @@ async def send_push_notification():
 
 @app.post("/create/{room}")
 async def create_room(room: str):
-    DESTROYED_ROOMS.discard(room)
+    # If the room was previously destroyed, unblock it
+    if room in DESTROYED_ROOMS:
+        DESTROYED_ROOMS.discard(room)
+
+    # Initialize fresh room state
     ROOM_HISTORY[room] = set()
     ROOM_USERS[room] = {}
     print(f"✨ Room {room} created")
