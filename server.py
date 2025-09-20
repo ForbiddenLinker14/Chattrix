@@ -379,7 +379,6 @@ async def clear_messages(room: str):
     print(f"🧹 Room {room} history cleared.")
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
-
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str):
     # 0. Clear webpush subscriptions
@@ -404,9 +403,6 @@ async def destroy_room(room: str):
     # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
 
-    # 2b. Clear recorded room history
-    ROOM_HISTORY.pop(room, None)
-
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
@@ -427,11 +423,14 @@ async def destroy_room(room: str):
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
-            await sio.disconnect(sid, namespace=namespace)
+            # forcefully drop the socket connection so closed/frozen apps reconnect clean
+            try:
+                await sio.disconnect(sid, namespace=namespace)
+            except Exception:
+                pass
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
-
 
 
 

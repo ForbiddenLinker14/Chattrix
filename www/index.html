@@ -1295,7 +1295,6 @@
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
-// Replace your existing syncDestroyedRooms with this function
 async function syncDestroyedRooms() {
   try {
     const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
@@ -1307,18 +1306,14 @@ async function syncDestroyedRooms() {
     const destroyed = data.destroyed || [];
 
     if (destroyed.length && currentName) {
-      // ensure joinedRoomsByUser is loaded (same as before)
+      // remove destroyed rooms from per-user map (sidebar)
       joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-
-      joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter(
-        (room) => !destroyed.includes(room)
-      );
-
+      joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter((room) => !destroyed.includes(room));
       localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       console.log("syncDestroyedRooms: removed destroyed rooms:", destroyed);
     }
 
-    // --- NEW: also clear Capacitor chatState (and fallbacks) if it points to any destroyed room
+    // --- NEW: remove saved chatState (Capacitor + localStorage) if it points to a destroyed room
     try {
       if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Storage) {
         const cap = await Capacitor.Plugins.Storage.get({ key: "chatState" });
@@ -1327,28 +1322,26 @@ async function syncDestroyedRooms() {
           if (st && destroyed.includes(st.room)) {
             await Capacitor.Plugins.Storage.remove({ key: "chatState" });
             console.log("syncDestroyedRooms: removed Capacitor chatState for destroyed room", st.room);
-
-            // clear the local fallback keys (your non-module Storage wrapper)
-            try {
-              Storage.remove("chat_room");
-              Storage.remove("chat_name");
-            } catch (e) {
-              // Storage wrapper may not exist in module scope; ignore if unavailable
-            }
-
-            // ensure joinedRoomsByUser is cleaned globally for that username
-            joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-            if (joinedRoomsByUser[st.username]) {
-              joinedRoomsByUser[st.username] = joinedRoomsByUser[st.username].filter(
-                (r) => !destroyed.includes(r)
-              );
-              localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-            }
           }
         }
       }
     } catch (e) {
       console.warn("syncDestroyedRooms: Capacitor Storage cleanup failed", e);
+    }
+
+    try {
+      const ls = localStorage.getItem("chatState");
+      if (ls) {
+        const st = JSON.parse(ls);
+        if (st && destroyed.includes(st.room)) {
+          localStorage.removeItem("chatState");
+          localStorage.removeItem("chat_room");
+          localStorage.removeItem("chat_name");
+          console.log("syncDestroyedRooms: removed localStorage chatState for destroyed room", st.room);
+        }
+      }
+    } catch (e) {
+      console.warn("syncDestroyedRooms: localStorage cleanup failed", e);
     }
   } catch (err) {
     console.warn("Failed to sync destroyed rooms:", err);
@@ -1366,8 +1359,6 @@ async function syncDestroyedRooms() {
           renderJoinedRooms(); // <-- then render (no ghost rooms)
         }
       });
-
-
 
       // ======================================================
       // =============== Badge ===================
@@ -1539,32 +1530,52 @@ async function syncDestroyedRooms() {
         updateBadge(currentRoom);
       }
 
-// Replace your existing restoreChatState(socket) with this version
 async function restoreChatState(socket) {
+  // Try Capacitor Storage (module import) first if available
   let state = null;
-
-  // Try Capacitor Storage first (if available)
   try {
     if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Storage) {
       const cap = await Capacitor.Plugins.Storage.get({ key: "chatState" });
       state = cap && cap.value ? JSON.parse(cap.value) : null;
     }
   } catch (e) {
-    console.warn("restoreChatState: Capacitor Storage get failed", e);
+    console.warn("restoreChatState: Capacitor read failed", e);
   }
 
-  // fall back to any global loadChatState() if present
-  if (!state && typeof loadChatState === "function") {
+  // fallback to localStorage
+  if (!state) {
     try {
-      state = await loadChatState();
+      const ls = localStorage.getItem("chatState");
+      state = ls ? JSON.parse(ls) : null;
     } catch (e) {
-      console.warn("restoreChatState: loadChatState failed", e);
+      console.warn("restoreChatState: localStorage read failed", e);
     }
   }
 
   if (!state) return;
 
-  // Check destroyed rooms before rejoining
+  // If user has no other joined rooms (persisted list), skip restore
+  try {
+    const j = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    const userRooms = j[state.username] || [];
+    if (!userRooms.length) {
+      // no rooms left; clear saved state to be safe and skip join
+      try {
+        if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Storage) {
+          await Capacitor.Plugins.Storage.remove({ key: "chatState" });
+        }
+        localStorage.removeItem("chatState");
+        localStorage.removeItem("chat_room");
+        localStorage.removeItem("chat_name");
+      } catch (e) {}
+      console.log("restoreChatState: skipping restore because user has no persisted rooms");
+      return;
+    }
+  } catch (e) {
+    console.warn("restoreChatState: failed to parse joinedRoomsByUser", e);
+  }
+
+  // Now double-check destroyed rooms endpoint
   try {
     const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
     if (res.ok) {
@@ -1572,45 +1583,46 @@ async function restoreChatState(socket) {
       const destroyed = json.destroyed || [];
       if (destroyed.includes(state.room)) {
         console.log("restoreChatState: saved state references destroyed room, cleaning:", state.room);
-
-        // remove Capacitor saved state if present
+        // remove saved state and do not rejoin
         try {
           if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Storage) {
             await Capacitor.Plugins.Storage.remove({ key: "chatState" });
           }
-        } catch (e) {
-          console.warn("restoreChatState: failed to remove Capacitor chatState", e);
-        }
-
-        // remove local fallbacks and per-user joinedRooms entry
+        } catch (e) {}
         try {
-          Storage.remove("chat_room");
-          Storage.remove("chat_name");
+          localStorage.removeItem("chatState");
+          localStorage.removeItem("chat_room");
+          localStorage.removeItem("chat_name");
+        } catch (e) {}
+        // also remove per-user joinedRoomsByUser entry for that room
+        try {
           const j = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
           if (j[state.username]) {
             j[state.username] = j[state.username].filter((r) => r !== state.room);
             localStorage.setItem("joinedRoomsByUser", JSON.stringify(j));
             renderJoinedRooms();
           }
-        } catch (e) {
-          // ignore if Storage wrapper missing
-        }
-
-        return; // don't rejoin destroyed room
+        } catch (e) {}
+        return;
       }
     }
   } catch (e) {
-    console.warn("restoreChatState: failed to load destroyed_rooms", e);
-    // If the check fails, we'll still attempt to join (best-effort)
+    console.warn("restoreChatState: failed to load destroyed_rooms; will attempt join anyway", e);
   }
 
-  // safe join (include fcm token if available)
+  // If all checks passed — safe to rejoin
   const fcmToken = localStorage.getItem("fcm_token") || null;
   socket.emit("join", {
     room: state.room,
     sender: state.username,
     lastTs: state.lastTs,
-    fcmToken, // include so backend registers token
+    fcmToken,
+  }, (ack) => {
+    if (ack && ack.success) {
+      console.log("restoreChatState: rejoined", state.room);
+    } else {
+      console.warn("restoreChatState: join ack failed", ack);
+    }
   });
 }
 
@@ -2670,24 +2682,21 @@ async function restoreChatState(socket) {
         });
       }
 
-// Replace your existing handleRoomDestroyed with this one
 async function handleRoomDestroyed(data) {
   const destroyed = data.room;
 
-  // make sure currentName and joinedRoomsByUser are loaded
-  if (!currentName) currentName = Storage.get("chat_name") || "";
+  // load user and joinedRoomsByUser
+  if (!currentName) currentName = Storage.get ? (Storage.get("chat_name") || "") : (localStorage.getItem("chat_name") || "");
   joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
 
-  // Remove from runtime set (if present)
+  // remove runtime + persisted lists
   joinedRooms.delete(destroyed);
-
-  // Remove from persisted per-user list (if present)
   if (currentName && Array.isArray(joinedRoomsByUser[currentName])) {
     joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== destroyed);
     localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
   }
 
-  // NEW: Clear Capacitor chatState if it points to this destroyed room
+  // Clear Capacitor chatState if it points to this destroyed room
   try {
     if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Storage) {
       const cap = await Capacitor.Plugins.Storage.get({ key: "chatState" });
@@ -2703,20 +2712,22 @@ async function handleRoomDestroyed(data) {
     console.warn("handleRoomDestroyed: Capacitor cleanup failed", e);
   }
 
-  // Also clear local Storage fallbacks if necessary
+  // Clear localStorage fallback if needed
   try {
-    if (Storage.get("chat_room") === destroyed) {
-      Storage.remove("chat_room");
-      Storage.remove("chat_name");
+    const ls = localStorage.getItem("chatState");
+    if (ls) {
+      const st = JSON.parse(ls);
+      if (st && st.room === destroyed) {
+        localStorage.removeItem("chatState");
+        localStorage.removeItem("chat_room");
+        localStorage.removeItem("chat_name");
+        console.log("handleRoomDestroyed: removed localStorage chatState for destroyed room", destroyed);
+      }
     }
-  } catch (e) {
-    // ignore if wrapper not present
-  }
+  } catch (e) {}
 
-  // re-render the sidebar
-  renderJoinedRooms();
-
-  // If the user was viewing that room, reset the UI to intro state
+  // If the user was viewing that room, and now has no other rooms -> reset UI and ensure chatState cleared
+  const userRooms = (joinedRoomsByUser[currentName] || []);
   if (currentRoom === destroyed) {
     currentRoom = "";
     document.getElementById("messages").innerHTML = "";
@@ -2730,7 +2741,25 @@ async function handleRoomDestroyed(data) {
       text: "Room destroyed. You cannot send messages until you join a new room.",
       ts: new Date().toISOString(),
     });
+
+    // If user has no other rooms left, ensure chatState is fully removed
+    if (!userRooms.length) {
+      try {
+        if (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Storage) {
+          await Capacitor.Plugins.Storage.remove({ key: "chatState" });
+        }
+        localStorage.removeItem("chatState");
+        localStorage.removeItem("chat_room");
+        localStorage.removeItem("chat_name");
+        console.log("handleRoomDestroyed: cleared saved state because last room was destroyed");
+      } catch (e) {
+        console.warn("handleRoomDestroyed: failed final cleanup", e);
+      }
+    }
   }
+
+  // refresh UI
+  renderJoinedRooms();
 }
 
 
@@ -3091,23 +3120,31 @@ async function handleRoomDestroyed(data) {
       saveChatState(username, room, new Date().toISOString());
 
       // On app startup, auto rejoin if state exists
-// On app startup, auto rejoin if state exists (but first check destroyed rooms)
+      // On app startup, auto rejoin if state exists (but skip destroyed rooms)
 const state = await loadChatState();
 if (state) {
   try {
     const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
     const destroyed = res.ok ? (await res.json()).destroyed || [] : [];
     if (destroyed.includes(state.room)) {
-      // remove saved state (Capacitor Storage) and local fallbacks
-      await Storage.remove({ key: "chatState" }); // this Storage is the Capacitor import in module scope
-      if (window.Storage) {
-        try { window.Storage.remove("chat_room"); window.Storage.remove("chat_name"); } catch (e) {}
-      }
-      const j = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-      if (j[state.username]) {
-        j[state.username] = j[state.username].filter((r) => r !== state.room);
-        localStorage.setItem("joinedRoomsByUser", JSON.stringify(j));
-      }
+      // cleaned up on server — remove saved state and do NOT rejoin
+      try {
+        await Storage.remove({ key: "chatState" });
+      } catch (e) {}
+      try {
+        localStorage.removeItem("chatState");
+        localStorage.removeItem("chat_room");
+        localStorage.removeItem("chat_name");
+      } catch (e) {}
+      // also clean per-user joinedRoomsByUser
+      try {
+        const j = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+        if (j[state.username]) {
+          j[state.username] = j[state.username].filter((r) => r !== state.room);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(j));
+          renderJoinedRooms();
+        }
+      } catch (e) {}
       console.log("Auto-join skipped because saved state references destroyed room:", state.room);
     } else {
       const fcmToken = localStorage.getItem("fcm_token") || null;
