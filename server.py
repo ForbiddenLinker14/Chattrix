@@ -379,6 +379,7 @@ async def clear_messages(room: str):
     print(f"🧹 Room {room} history cleared.")
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
+
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str):
     # 0. Clear webpush subscriptions
@@ -403,10 +404,13 @@ async def destroy_room(room: str):
     # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
 
+    # 2b. Remove any persisted history so other clients don't see stale users
+    ROOM_HISTORY.pop(room, None)
+
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
-    # 4. Notify clients (in-room) to clear their UI
+    # 4. Notify clients + force disconnect
     await sio.emit(
         "clear",
         {"room": room, "message": "Room destroyed. All messages cleared."},
@@ -414,20 +418,15 @@ async def destroy_room(room: str):
     )
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
-    # 5. Broadcast globally so even clients outside the room remove it
+    # Broadcast globally (so clients not in the room can also clean up)
     await sio.emit("room_destroyed", {"room": room})
 
-    # 6. Forcefully remove and disconnect all sockets from the destroyed room
+    # Force all sids to leave this room if still present
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
-            # forcefully drop the socket connection so closed/frozen apps reconnect clean
-            try:
-                await sio.disconnect(sid, namespace=namespace)
-            except Exception:
-                pass
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
@@ -442,10 +441,13 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # revive destroyed room → clear history
+    # NEW: refuse joins to destroyed rooms
     if room in DESTROYED_ROOMS:
-        DESTROYED_ROOMS.remove(room)
-        ROOM_HISTORY.pop(room, None)
+        try:
+            await sio.emit("room_destroyed", {"room": room}, to=sid)
+        except Exception:
+            pass
+        return {"success": False, "error": "room_destroyed"}
 
     # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -511,6 +513,7 @@ async def join(sid, data):
         )
 
     return {"success": True}
+
 
 
 @sio.event
