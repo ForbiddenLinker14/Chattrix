@@ -1295,52 +1295,61 @@
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
-      async function syncDestroyedRooms() {
-        try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-            cache: "no-store",
-          });
-          if (!res.ok) {
-            console.warn("syncDestroyedRooms: server returned", res.status);
-            return;
-          }
-          const data = await res.json();
-          const destroyed = data.destroyed || [];
+async function syncDestroyedRooms() {
+  try {
+    const res = await fetch(`${API_BASE}/destroyed_rooms`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn("syncDestroyedRooms: server returned", res.status);
+      return;
+    }
+    const data = await res.json();
+    const destroyed = data.destroyed || [];
 
-          if (destroyed.length && currentName) {
-            // ensure joinedRoomsByUser is loaded
-            joinedRoomsByUser =
-              joinedRoomsByUser ||
-              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    if (destroyed.length && currentName) {
+      // ensure joinedRoomsByUser is loaded
+      joinedRoomsByUser =
+        joinedRoomsByUser ||
+        JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
 
-            joinedRoomsByUser[currentName] = (
-              joinedRoomsByUser[currentName] || []
-            ).filter((room) => !destroyed.includes(room));
+      // filter out destroyed rooms from local storage
+      joinedRoomsByUser[currentName] = (
+        joinedRoomsByUser[currentName] || []
+      ).filter((room) => !destroyed.includes(room));
 
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
-            console.log(
-              "syncDestroyedRooms: removed destroyed rooms:",
-              destroyed
-            );
-          }
-        } catch (err) {
-          console.warn("Failed to sync destroyed rooms:", err);
-        }
+      localStorage.setItem(
+        "joinedRoomsByUser",
+        JSON.stringify(joinedRoomsByUser)
+      );
+      console.log("syncDestroyedRooms: removed destroyed rooms:", destroyed);
+
+      // ✅ If the currently open room was destroyed, reset to intro
+      if (destroyed.includes(currentRoom)) {
+        currentRoom = "";
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("user-list").innerHTML = "";
       }
+    }
+  } catch (err) {
+    console.warn("Failed to sync destroyed rooms:", err);
+  }
+}
 
-      window.addEventListener("DOMContentLoaded", async () => {
-        joinedRoomsByUser = JSON.parse(
-          localStorage.getItem("joinedRoomsByUser") || "{}"
-        );
-        currentName = Storage.get("chat_name") || "";
-        if (currentName) {
-          await syncDestroyedRooms(); // <-- clean up localStorage first
-          renderJoinedRooms(); // <-- then render (no ghost rooms)
-        }
-      });
+window.addEventListener("DOMContentLoaded", async () => {
+  joinedRoomsByUser = JSON.parse(
+    localStorage.getItem("joinedRoomsByUser") || "{}"
+  );
+  currentName = Storage.get("chat_name") || "";
+  if (currentName) {
+    await syncDestroyedRooms(); // <-- clean up localStorage first
+    renderJoinedRooms();        // <-- then render (no ghost rooms)
+  }
+});
+
 
       // ======================================================
       // =============== Badge ===================
@@ -2582,49 +2591,37 @@
         });
       }
 
-      function handleRoomDestroyed(data) {
-        const destroyed = data.room;
+function handleRoomDestroyed(data) {
+  const destroyedRoom = data.room;
+  console.log("💥 Room destroyed:", destroyedRoom);
 
-        // Ensure we have currentName and the persisted joinedRooms map loaded
-        if (!currentName) currentName = Storage.get("chat_name") || "";
-        joinedRoomsByUser =
-          joinedRoomsByUser ||
-          JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+  // Remove from memory + localStorage
+  if (joinedRooms.has(destroyedRoom)) {
+    joinedRooms.delete(destroyedRoom);
+  }
+  if (joinedRoomsByUser[currentName]) {
+    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
+      (r) => r !== destroyedRoom
+    );
+    localStorage.setItem(
+      "joinedRoomsByUser",
+      JSON.stringify(joinedRoomsByUser)
+    );
+  }
 
-        // Remove from runtime set (if present)
-        joinedRooms.delete(destroyed);
+  // If current room is destroyed, reset UI
+  if (currentRoom === destroyedRoom) {
+    currentRoom = "";
+    document.getElementById("messages").innerHTML = "";
+    document.getElementById("user-list").innerHTML = "";
+    document.getElementById("chat-container").style.display = "none";
+    document.getElementById("input-area").style.display = "none";
+    document.getElementById("intro").style.display = "block";
+  }
 
-        // Remove from persisted per-user list (if present)
-        if (currentName && Array.isArray(joinedRoomsByUser[currentName])) {
-          const idx = joinedRoomsByUser[currentName].indexOf(destroyed);
-          if (idx !== -1) {
-            joinedRoomsByUser[currentName].splice(idx, 1);
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
-          }
-        }
+  renderJoinedRooms();
+}
 
-        // Re-render sidebar (ensures DOM and storage are in sync)
-        renderJoinedRooms();
-
-        // If user is currently inside destroyed room, reset UI
-        if (currentRoom === destroyed) {
-          currentRoom = "";
-          document.getElementById("messages").innerHTML = "";
-          document.getElementById("user-list").innerHTML = "";
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-
-          addMessage({
-            sender: "System",
-            text: "Room destroyed. You cannot send messages until you join a new room.",
-            ts: new Date().toISOString(),
-          });
-        }
-      }
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
