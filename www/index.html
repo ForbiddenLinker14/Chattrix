@@ -2949,6 +2949,54 @@
         };
       });
     </script>
+    <script>
+      // --- ensure input is visible when keyboard opens / on focus (mobile) ---
+(function() {
+  const input = document.getElementById('input');
+  const messages = document.getElementById('messages');
+  if (!input || !messages) return;
+
+  // Scroll helper: scroll messages to bottom and make input visible
+  function ensureInputVisible(delay = 260) {
+    setTimeout(() => {
+      try {
+        // 1) scroll messages to bottom (so the latest messages and input are visible)
+        messages.scrollTop = messages.scrollHeight;
+
+        // 2) attempt to bring the input into view if necessary
+        input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) {
+        // ignore errors on weird browsers
+      }
+    }, delay);
+  }
+
+  // When input gets focus (user taps), ensure it's visible
+  input.addEventListener('focus', () => ensureInputVisible(300));
+  input.addEventListener('click', () => ensureInputVisible(180));
+  input.addEventListener('touchstart', () => ensureInputVisible(180));
+
+  // Use visualViewport resize to detect keyboard open/close on modern WebViews
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      // when keyboard opens visualViewport.height shrinks
+      ensureInputVisible(120);
+    });
+  }
+
+  // Also ensure final scroll after joinRoom enables input (joins re-enable input)
+  document.addEventListener('DOMContentLoaded', () => {
+    // if the input gets enabled later (joinRoom), re-scroll when it becomes enabled
+    const obs = new MutationObserver(() => {
+      if (!input.disabled) {
+        ensureInputVisible(120);
+      }
+    });
+    obs.observe(input, { attributes: true, attributeFilter: ['disabled'] });
+  });
+})();
+
+    </script>
     <script type="module">
       import { Storage } from "@capacitor/storage";
       import {
