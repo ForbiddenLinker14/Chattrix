@@ -401,7 +401,7 @@ async def destroy_room(room: str):
     # 1. Clear DB messages
     clear_room(room)
 
-    # 2. Mark destroyed
+    # 2. Mark destroyed (DO NOT DISCARD until room explicitly created)
     DESTROYED_ROOMS.add(room)
 
     # 2b. Remove any persisted history so other clients don't see stale users
@@ -417,9 +417,7 @@ async def destroy_room(room: str):
         room=room,
     )
     await sio.emit("room_destroyed", {"room": room}, room=room)
-
-    # Broadcast globally (so clients not in the room can also clean up)
-    await sio.emit("room_destroyed", {"room": room})
+    await sio.emit("room_destroyed", {"room": room})  # global
 
     # Force all sids to leave this room if still present
     namespace = "/"
@@ -428,11 +426,12 @@ async def destroy_room(room: str):
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
     
-    # 🧹 Immediately clear the destroyed marker so the room name is reusable
-    DESTROYED_ROOMS.discard(room)
+    # ✅ Do NOT discard the destroyed marker here
+    # DESTROYED_ROOMS.discard(room)
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
+
 
 
 
@@ -813,7 +812,6 @@ async def startup_tasks():
 
 
 # ---------------- Subscribe / Push test ----------------
-# ---------------- Subscribe ----------------
 @app.post("/api/subscribe")
 async def subscribe(request: Request):
     body = await request.json()
@@ -964,6 +962,15 @@ async def send_push_notification():
         except Exception as e:
             print("❌ FCM push failed:", e)
 
+    return {"status": "ok"}
+
+
+@app.post("/create/{room}")
+async def create_room(room: str):
+    DESTROYED_ROOMS.discard(room)
+    ROOM_HISTORY[room] = set()
+    ROOM_USERS[room] = {}
+    print(f"✨ Room {room} created")
     return {"status": "ok"}
 
 
