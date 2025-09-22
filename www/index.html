@@ -1392,18 +1392,28 @@
         badge.style.display = count > 0 ? "inline-block" : "none";
       }
 
-      async function syncUnread() {
-  const res = await fetch(`/unread/${currentName}`);
-  if (!res.ok) return;
-  const data = await res.json();
-  unreadCounts = data.unread || {};
-  saveUnread();
-  renderJoinedRooms();
+async function syncUnread() {
+  if (!currentName) return;
+  try {
+    const res = await fetch(`/unread/${encodeURIComponent(currentName)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    unreadCounts = data.unread || {};
+    saveUnread();
+    renderJoinedRooms();
+  } catch (err) {
+    console.warn("Unread sync failed:", err);
+  }
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  if (currentName) syncUnread();
+  currentName = Storage.get("chat_name") || "";
+  if (currentName) {
+    syncUnread();
+    renderJoinedRooms();
+  }
 });
+
 
 
       // ======================================================

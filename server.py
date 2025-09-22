@@ -1148,13 +1148,22 @@ async def unregister_fcm(request: Request):
 
 # ---------------- Static / PWA assets ----------------
 @app.get("/unread/{user}")
-async def unread_counts(user: str):
+async def get_unread(user: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT room, COUNT(*) FROM messages WHERE ts > ? GROUP BY room", (...))
+    # assume you store last_read per user+room in a table "last_reads"
+    c.execute("""
+        SELECT m.room, COUNT(*) 
+        FROM messages m
+        LEFT JOIN last_reads r 
+        ON m.room = r.room AND r.user = ?
+        WHERE m.ts > IFNULL(r.last_ts, '1970-01-01T00:00:00Z')
+        GROUP BY m.room
+    """, (user,))
     rows = c.fetchall()
     conn.close()
-    return {"unread": dict(rows)}
+    return {"unread": {room: count for room, count in rows}}
+
 
 
 @app.get("/destroyed_rooms")
