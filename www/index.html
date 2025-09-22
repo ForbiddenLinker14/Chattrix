@@ -1191,54 +1191,47 @@
           }
         });
 
-        socket.on("room_message_meta", (data) => {
-          try {
-            // only act if we know our username and joinedRoomsByUser
-            if (!currentName) return;
-            joinedRoomsByUser =
-              joinedRoomsByUser ||
-              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-            const myRooms = joinedRoomsByUser[currentName] || [];
-            if (!myRooms.includes(data.room)) return; // ignore rooms we're not tracking
+socket.on("room_message_meta", (data) => {
+  try {
+    if (!currentName) return;
 
-            // if message belongs to the room we're currently viewing, let addMessage handle it
-            if (data.room === currentRoom) return;
+    joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    const myRooms = joinedRoomsByUser[currentName] || [];
+    if (!myRooms.includes(data.room)) return;
 
-            // increment unread
-            unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
-            saveUnread();
-            updateBadge(data.room);
+    // skip if message belongs to the current room
+    if (data.room === currentRoom) return;
 
-            // show an in-page / desktop notification
-            const title = `Room ${data.room}`;
-            const body = `${data.sender}: ${data.text}`;
-            if (
-              "Notification" in window &&
-              Notification.permission === "granted"
-            ) {
-              try {
-                const n = new Notification(title, {
-                  body,
-                  tag: `room-${data.room}`,
-                });
-                n.onclick = () => {
-                  window.focus();
-                  switchRoom(data.room);
-                  n.close();
-                };
-              } catch (e) {
-                console.warn("Notification failed:", e);
-              }
-            } else {
-              // fallback: briefly flash document title (simple)
-              const original = document.title;
-              document.title = `${data.room}: ${data.sender}`;
-              setTimeout(() => (document.title = original), 2500);
-            }
-          } catch (err) {
-            console.warn("room_message_meta handler err:", err);
-          }
-        });
+    // increment unread count
+    unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
+    saveUnread();
+    updateBadge(data.room); // ✅ Works across reloads
+
+    // desktop / in-page notifications
+    const title = `Room ${data.room}`;
+    const body = `${data.sender}: ${data.text}`;
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification(title, { body, tag: `room-${data.room}` });
+        n.onclick = () => {
+          window.focus();
+          switchRoom(data.room);
+          n.close();
+        };
+      } catch (e) {
+        console.warn("Notification failed:", e);
+      }
+    } else {
+      // fallback: flash document title
+      const original = document.title;
+      document.title = `${data.room}: ${data.sender}`;
+      setTimeout(() => (document.title = original), 2500);
+    }
+  } catch (err) {
+    console.warn("room_message_meta handler err:", err);
+  }
+});
+
 
         socket.on("message", addMessage);
         socket.on("file", addFileMessage);
@@ -1295,65 +1288,58 @@
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
-      async function syncDestroyedRooms() {
-        try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-            cache: "no-store",
-          });
-          if (!res.ok) {
-            console.warn("syncDestroyedRooms: server returned", res.status);
-            return;
-          }
-          const data = await res.json();
-          const destroyed = data.destroyed || [];
+async function syncDestroyedRooms() {
+  try {
+    const res = await fetch(`${API_BASE}/destroyed_rooms`, {
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      console.warn("syncDestroyedRooms: server returned", res.status);
+      return;
+    }
+    const data = await res.json();
+    const destroyed = data.destroyed || [];
 
-          if (destroyed.length && currentName) {
-            // ensure joinedRoomsByUser is loaded
-            joinedRoomsByUser =
-              joinedRoomsByUser ||
-              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    if (destroyed.length && currentName) {
+      // ensure joinedRoomsByUser is loaded
+      joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
 
-            // filter out destroyed rooms from local storage
-            joinedRoomsByUser[currentName] = (
-              joinedRoomsByUser[currentName] || []
-            ).filter((room) => !destroyed.includes(room));
+      // filter out destroyed rooms from local storage
+      joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter((room) => !destroyed.includes(room));
 
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
-            console.log(
-              "syncDestroyedRooms: removed destroyed rooms:",
-              destroyed
-            );
+      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+      console.log("syncDestroyedRooms: removed destroyed rooms:", destroyed);
 
-            // ✅ If the currently open room was destroyed, reset to intro
-            if (destroyed.includes(currentRoom)) {
-              currentRoom = "";
-              document.getElementById("chat-container").style.display = "none";
-              document.getElementById("input-area").style.display = "none";
-              document.getElementById("intro").style.display = "block";
-              document.getElementById("messages").innerHTML = "";
-              document.getElementById("user-list").innerHTML = "";
-            }
-          }
-        } catch (err) {
-          console.warn("Failed to sync destroyed rooms:", err);
-        }
+      // ✅ If the currently open room was destroyed, reset to intro
+      if (destroyed.includes(currentRoom)) {
+        currentRoom = "";
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("user-list").innerHTML = "";
       }
+    }
 
-      window.addEventListener("DOMContentLoaded", async () => {
-        joinedRoomsByUser = JSON.parse(
-          localStorage.getItem("joinedRoomsByUser") || "{}"
-        );
-        currentName = Storage.get("chat_name") || "";
-        if (currentName) {
-          await syncDestroyedRooms(); // <-- clean up localStorage first
-              loadUnread();        // 🔹 restore unread badge counts from localStorage
-    renderJoinedRooms(); // 🔹 rebuild the sidebar with badges
+    // ✅ NEW: Load unread counts and update badges for ALL rooms
+    loadUnread();
+    const rooms = joinedRoomsByUser[currentName] || [];
+    rooms.forEach(room => {
+      updateBadge(room);
+    });
+  } catch (err) {
+    console.warn("Failed to sync destroyed rooms:", err);
+  }
+}
 
-        }
-      });
+  window.addEventListener("DOMContentLoaded", async () => {
+  joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+  currentName = Storage.get("chat_name") || "";
+  if (currentName) {
+    await syncDestroyedRooms(); // <-- this now also updates badges
+    renderJoinedRooms(); // <-- this will show badges for all rooms
+  }
+});
 
       // ======================================================
       // =============== Badge ===================
@@ -1443,82 +1429,87 @@
       // ======================================================
       // =============== Switch Room ===================
       // ======================================================
-function switchRoom(room) {
-  if (!room || room === currentRoom) return;
+      function switchRoom(room) {
+        if (!room || room === currentRoom) return;
 
-  // ✅ Clear unread for the room you’re switching *into*
-  unreadCounts[room] = 0;
-  saveUnread();
-  updateBadge(room);
+        const previousRoom = currentRoom;
 
-  const previousRoom = currentRoom;
+        // Reset UI immediately
+        const messagesEl = document.getElementById("messages");
+        const usersEl = document.getElementById("user-list");
+        messagesEl && (messagesEl.innerHTML = "");
+        usersEl && (usersEl.innerHTML = "");
 
-  // Reset UI immediately
-  const messagesEl = document.getElementById("messages");
-  const usersEl = document.getElementById("user-list");
-  messagesEl && (messagesEl.innerHTML = "");
-  usersEl && (usersEl.innerHTML = "");
+        // Update current room and persist
+        currentRoom = room;
+        lastPersistedTs = null; // force full history reload
+        document.getElementById("room").value = currentRoom;
+        Storage.set("chat_room", currentRoom);
 
-  // Update current room and persist
-  currentRoom = room;
-  lastPersistedTs = null;
-  document.getElementById("room").value = currentRoom;
-  Storage.set("chat_room", currentRoom);
+        // Update sidebar highlight safely
+        Array.from(document.getElementById("joined-rooms").children).forEach(
+          (li) => {
+            li.style.background =
+              li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+          }
+        );
 
-  // Update sidebar highlight safely
-  Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
-    li.style.background =
-      li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-  });
-
-  // Notify server we left previous room
-  if (previousRoom && socket && socket.connected) {
-    try {
-      socket.emit("leave", {
-        room: previousRoom,
-        sender: currentName,
-        reason: "switch",
-      });
-      console.log("➡️ Left previous room:", previousRoom);
-    } catch (e) {
-      console.warn("Failed to emit leave for previous room:", e);
-    }
-  }
-
-  // Join requested room
-  if (!socket || !socket.connected) {
-    console.warn("⚠️ Socket not connected; calling joinRoom()");
-    joinRoom();
-    return;
-  }
-
-  socket.emit(
-    "join",
-    { room: currentRoom, sender: currentName, lastTs: null },
-    (ack) => {
-      if (ack && ack.success) {
-        joinedRooms.add(currentRoom);
-        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
-        if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-          joinedRoomsByUser[currentName].push(currentRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+        // If we were in another room, tell server we left it (keeps server state clean)
+        if (previousRoom && socket && socket.connected) {
+          try {
+            socket.emit("leave", {
+              room: previousRoom,
+              sender: currentName,
+              reason: "switch", // ✅ added reason flag
+            });
+            console.log("➡️ Left previous room:", previousRoom);
+          } catch (e) {
+            console.warn("Failed to emit leave for previous room:", e);
+          }
         }
-        renderJoinedRooms();
-        document.getElementById("chat-container").style.display = "flex";
-        document.getElementById("input-area").style.display = "flex";
-        document.getElementById("intro").style.display = "none";
-        document.getElementById("messages").style.display = "block";
-        console.log(`🔄 Switched to room ${currentRoom}`);
-      } else {
-        console.warn("❌ Failed to switch room:", room, ack);
-      }
-    }
-  );
-}
 
+        // If socket isn't ready, let joinRoom create/connect the socket and join
+        if (!socket || !socket.connected) {
+          console.warn("⚠️ Socket not connected; calling joinRoom()");
+          joinRoom();
+          return;
+        }
+
+        // Join the requested room and request full history (lastTs: null)
+        socket.emit(
+          "join",
+          { room: currentRoom, sender: currentName, lastTs: null },
+          (ack) => {
+            if (ack && ack.success) {
+              // mark local joined sets/storage
+              joinedRooms.add(currentRoom);
+              joinedRoomsByUser[currentName] =
+                joinedRoomsByUser[currentName] || [];
+              if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+                joinedRoomsByUser[currentName].push(currentRoom);
+                localStorage.setItem(
+                  "joinedRoomsByUser",
+                  JSON.stringify(joinedRoomsByUser)
+                );
+              }
+              // refresh UI
+              renderJoinedRooms();
+              document.getElementById("chat-container").style.display = "flex";
+              document.getElementById("input-area").style.display = "flex";
+              document.getElementById("intro").style.display = "none";
+              document.getElementById("messages").style.display = "block";
+              console.log(`🔄 Switched to room ${currentRoom}`);
+            } else {
+              console.warn("❌ Failed to switch room:", room, ack);
+            }
+          }
+        );
+
+        // reset unread for this room now that user switched into it
+        unreadCounts[currentRoom] = 0;
+        saveUnread();
+        updateBadge(currentRoom);
+      }
 
       async function restoreChatState(socket) {
         const state = await loadChatState();

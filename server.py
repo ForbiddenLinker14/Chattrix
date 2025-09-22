@@ -436,15 +436,18 @@ async def join(sid, data):
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")
+    token = data.get("fcmToken")  # 🔑 client should send token when joining
 
     # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
         ROOM_HISTORY.pop(room, None)
 
+    # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
-    ROOM_USERS.setdefault(room, {})
+
+    if room not in ROOM_USERS:
+        ROOM_USERS[room] = {}
 
     # handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
@@ -456,17 +459,19 @@ async def join(sid, data):
         except Exception:
             pass
 
+    # map user → sid and mark active immediately
     ROOM_USERS[room][username] = sid
     USER_STATUS[sid] = {"user": username, "active": True}
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
+    # 🔑 register token in memory + DB
     if token:
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # ➡ Send missed full messages first
+    # send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
@@ -489,21 +494,7 @@ async def join(sid, data):
                 to=sid,
             )
 
-    # ➡ Then replay lightweight metadata for badge counts
-    for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
-        if last_ts and ts <= last_ts:
-            continue
-        await sio.emit(
-            "room_message_meta",
-            {
-                "room": room,
-                "sender": sender_,
-                "text": text or filename or "(file)",
-                "ts": ts,
-            },
-            to=sid,
-        )
-
+    # broadcast system join
     if not old_sid:
         await sio.emit(
             "message",
@@ -516,7 +507,6 @@ async def join(sid, data):
         )
 
     return {"success": True}
-
 
 
 @sio.event
