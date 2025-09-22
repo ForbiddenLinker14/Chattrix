@@ -1160,39 +1160,39 @@
         socket.on("room_destroyed", handleRoomDestroyed);
         socket.on("clear", handleRoomCleared);
 
-socket.on("connect", () => {
-  if (currentRoom && currentName) {
-    const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.on("connect", () => {
+          if (currentRoom && currentName) {
+            const fcmToken = localStorage.getItem("fcm_token") || null;
 
-    socket.emit(
-      "join",
-      {
-        room: currentRoom,
-        sender: currentName,
-        lastTs: lastPersistedTs || null,
-        fcmToken: fcmToken,
-      },
-      (ack) => {
-        if (ack && ack.success) {
-          console.log("✅ Joined room on reconnect:", currentRoom);
-          joinedRooms.add(currentRoom);
-          sendActive(!document.hidden);
-          
-          // ✅ NEW: Fetch unread counts when reconnecting after being offline
-          fetchUnreadCounts();
-        } else {
-          console.warn("⚠️ Join failed on reconnect, retrying...");
-          setTimeout(() => {
-            socket.disconnect();
-            socket.connect();
-          }, 500);
-        }
-      }
-    );
-  } else {
-    restoreChatState(socket);
-  }
-});
+            socket.emit(
+              "join",
+              {
+                room: currentRoom,
+                sender: currentName,
+                lastTs: lastPersistedTs || null,
+                fcmToken: fcmToken,
+              },
+              (ack) => {
+                if (ack && ack.success) {
+                  console.log("✅ Joined room on reconnect:", currentRoom);
+                  joinedRooms.add(currentRoom);
+                  sendActive(!document.hidden);
+
+                  // ✅ NEW: Fetch unread counts when reconnecting after being offline
+                  fetchUnreadCounts();
+                } else {
+                  console.warn("⚠️ Join failed on reconnect, retrying...");
+                  setTimeout(() => {
+                    socket.disconnect();
+                    socket.connect();
+                  }, 500);
+                }
+              }
+            );
+          } else {
+            restoreChatState(socket);
+          }
+        });
 
         socket.on("room_message_meta", (data) => {
           try {
@@ -1396,45 +1396,47 @@ socket.on("connect", () => {
       }
 
       async function fetchUnreadCounts() {
-  if (!currentName || !socket || !socket.connected) return;
-  
-  try {
-    const response = await fetch(`${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`);
-    if (response.ok) {
-      const data = await response.json();
-      if (data.unreadCounts) {
-        // Merge server unread counts with local ones
-        Object.keys(data.unreadCounts).forEach(room => {
-          unreadCounts[room] = (unreadCounts[room] || 0) + data.unreadCounts[room];
-        });
-        saveUnread();
-        
-        // Update badges for all rooms
-        const rooms = joinedRoomsByUser[currentName] || [];
-        rooms.forEach(room => {
-          updateBadge(room);
-        });
+        if (!currentName || !socket || !socket.connected) return;
+
+        try {
+          const response = await fetch(
+            `${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (data.unreadCounts) {
+              // Merge server unread counts with local ones
+              Object.keys(data.unreadCounts).forEach((room) => {
+                unreadCounts[room] =
+                  (unreadCounts[room] || 0) + data.unreadCounts[room];
+              });
+              saveUnread();
+
+              // Update badges for all rooms
+              const rooms = joinedRoomsByUser[currentName] || [];
+              rooms.forEach((room) => {
+                updateBadge(room);
+              });
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to fetch unread counts:", err);
+        }
       }
-    }
-  } catch (err) {
-    console.warn("Failed to fetch unread counts:", err);
-  }
-}
 
-
-function loadUnread() {
-  try {
-    const saved = localStorage.getItem(unreadKey());
-    if (saved) {
-      unreadCounts = JSON.parse(saved);
-    } else {
-      unreadCounts = {};
-    }
-  } catch (e) {
-    unreadCounts = {};
-    console.warn("Failed to load unread counts:", e);
-  }
-}
+      function loadUnread() {
+        try {
+          const saved = localStorage.getItem(unreadKey());
+          if (saved) {
+            unreadCounts = JSON.parse(saved);
+          } else {
+            unreadCounts = {};
+          }
+        } catch (e) {
+          unreadCounts = {};
+          console.warn("Failed to load unread counts:", e);
+        }
+      }
       // ======================================================
       // =============== Joined Room =========================
       // ======================================================
@@ -2863,18 +2865,18 @@ function loadUnread() {
       });
 
       let reconnectTimer;
-window.addEventListener("online", () => {
-  clearTimeout(reconnectTimer);
-  reconnectTimer = setTimeout(() => {
-    if (socket && !socket.connected && currentRoom && currentName) {
-      socket.connect();
-      // fetchUnreadCounts will be called after successful reconnect
-    } else if (socket && socket.connected) {
-      // If already connected but just came online, fetch unread counts
-      fetchUnreadCounts();
-    }
-  }, 300);
-});
+      window.addEventListener("online", () => {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          if (socket && !socket.connected && currentRoom && currentName) {
+            socket.connect();
+            // fetchUnreadCounts will be called after successful reconnect
+          } else if (socket && socket.connected) {
+            // If already connected but just came online, fetch unread counts
+            fetchUnreadCounts();
+          }
+        }, 300);
+      });
 
       // ======================================================
       // =============== Initialization =======================
