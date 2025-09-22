@@ -1349,7 +1349,9 @@
         currentName = Storage.get("chat_name") || "";
         if (currentName) {
           await syncDestroyedRooms(); // <-- clean up localStorage first
-          renderJoinedRooms(); // <-- then render (no ghost rooms)
+              loadUnread();        // 🔹 restore unread badge counts from localStorage
+    renderJoinedRooms(); // 🔹 rebuild the sidebar with badges
+
         }
       });
 
@@ -1391,30 +1393,6 @@
         badge.textContent = count > 0 ? (count > 99 ? "99+" : count) : "";
         badge.style.display = count > 0 ? "inline-block" : "none";
       }
-
-async function syncUnread() {
-  if (!currentName) return;
-  try {
-    const res = await fetch(`/unread/${encodeURIComponent(currentName)}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    unreadCounts = data.unread || {};
-    saveUnread();
-    renderJoinedRooms();
-  } catch (err) {
-    console.warn("Unread sync failed:", err);
-  }
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  currentName = Storage.get("chat_name") || "";
-  if (currentName) {
-    syncUnread();
-    renderJoinedRooms();
-  }
-});
-
-
 
       // ======================================================
       // =============== Joined Room =========================
@@ -1465,87 +1443,82 @@ window.addEventListener("DOMContentLoaded", () => {
       // ======================================================
       // =============== Switch Room ===================
       // ======================================================
-      function switchRoom(room) {
-        if (!room || room === currentRoom) return;
+function switchRoom(room) {
+  if (!room || room === currentRoom) return;
 
-        const previousRoom = currentRoom;
+  // ✅ Clear unread for the room you’re switching *into*
+  unreadCounts[room] = 0;
+  saveUnread();
+  updateBadge(room);
 
-        // Reset UI immediately
-        const messagesEl = document.getElementById("messages");
-        const usersEl = document.getElementById("user-list");
-        messagesEl && (messagesEl.innerHTML = "");
-        usersEl && (usersEl.innerHTML = "");
+  const previousRoom = currentRoom;
 
-        // Update current room and persist
-        currentRoom = room;
-        lastPersistedTs = null; // force full history reload
-        document.getElementById("room").value = currentRoom;
-        Storage.set("chat_room", currentRoom);
+  // Reset UI immediately
+  const messagesEl = document.getElementById("messages");
+  const usersEl = document.getElementById("user-list");
+  messagesEl && (messagesEl.innerHTML = "");
+  usersEl && (usersEl.innerHTML = "");
 
-        // Update sidebar highlight safely
-        Array.from(document.getElementById("joined-rooms").children).forEach(
-          (li) => {
-            li.style.background =
-              li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-          }
-        );
+  // Update current room and persist
+  currentRoom = room;
+  lastPersistedTs = null;
+  document.getElementById("room").value = currentRoom;
+  Storage.set("chat_room", currentRoom);
 
-        // If we were in another room, tell server we left it (keeps server state clean)
-        if (previousRoom && socket && socket.connected) {
-          try {
-            socket.emit("leave", {
-              room: previousRoom,
-              sender: currentName,
-              reason: "switch", // ✅ added reason flag
-            });
-            console.log("➡️ Left previous room:", previousRoom);
-          } catch (e) {
-            console.warn("Failed to emit leave for previous room:", e);
-          }
+  // Update sidebar highlight safely
+  Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
+    li.style.background =
+      li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+  });
+
+  // Notify server we left previous room
+  if (previousRoom && socket && socket.connected) {
+    try {
+      socket.emit("leave", {
+        room: previousRoom,
+        sender: currentName,
+        reason: "switch",
+      });
+      console.log("➡️ Left previous room:", previousRoom);
+    } catch (e) {
+      console.warn("Failed to emit leave for previous room:", e);
+    }
+  }
+
+  // Join requested room
+  if (!socket || !socket.connected) {
+    console.warn("⚠️ Socket not connected; calling joinRoom()");
+    joinRoom();
+    return;
+  }
+
+  socket.emit(
+    "join",
+    { room: currentRoom, sender: currentName, lastTs: null },
+    (ack) => {
+      if (ack && ack.success) {
+        joinedRooms.add(currentRoom);
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
+        if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+          joinedRoomsByUser[currentName].push(currentRoom);
+          localStorage.setItem(
+            "joinedRoomsByUser",
+            JSON.stringify(joinedRoomsByUser)
+          );
         }
-
-        // If socket isn't ready, let joinRoom create/connect the socket and join
-        if (!socket || !socket.connected) {
-          console.warn("⚠️ Socket not connected; calling joinRoom()");
-          joinRoom();
-          return;
-        }
-
-        // Join the requested room and request full history (lastTs: null)
-        socket.emit(
-          "join",
-          { room: currentRoom, sender: currentName, lastTs: null },
-          (ack) => {
-            if (ack && ack.success) {
-              // mark local joined sets/storage
-              joinedRooms.add(currentRoom);
-              joinedRoomsByUser[currentName] =
-                joinedRoomsByUser[currentName] || [];
-              if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-                joinedRoomsByUser[currentName].push(currentRoom);
-                localStorage.setItem(
-                  "joinedRoomsByUser",
-                  JSON.stringify(joinedRoomsByUser)
-                );
-              }
-              // refresh UI
-              renderJoinedRooms();
-              document.getElementById("chat-container").style.display = "flex";
-              document.getElementById("input-area").style.display = "flex";
-              document.getElementById("intro").style.display = "none";
-              document.getElementById("messages").style.display = "block";
-              console.log(`🔄 Switched to room ${currentRoom}`);
-            } else {
-              console.warn("❌ Failed to switch room:", room, ack);
-            }
-          }
-        );
-
-        // reset unread for this room now that user switched into it
-        unreadCounts[currentRoom] = 0;
-        saveUnread();
-        updateBadge(currentRoom);
+        renderJoinedRooms();
+        document.getElementById("chat-container").style.display = "flex";
+        document.getElementById("input-area").style.display = "flex";
+        document.getElementById("intro").style.display = "none";
+        document.getElementById("messages").style.display = "block";
+        console.log(`🔄 Switched to room ${currentRoom}`);
+      } else {
+        console.warn("❌ Failed to switch room:", room, ack);
       }
+    }
+  );
+}
+
 
       async function restoreChatState(socket) {
         const state = await loadChatState();
