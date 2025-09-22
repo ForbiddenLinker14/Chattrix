@@ -16,7 +16,6 @@ from fastapi.staticfiles import StaticFiles
 import aiohttp
 from pywebpush import webpush, WebPushException
 from dotenv import load_dotenv
-from fastapi import Body
 
 import firebase_admin
 from firebase_admin import credentials, messaging
@@ -102,19 +101,6 @@ def init_db():
     UNIQUE(user, room, token)
 );
   """
-    )
-
-    # Last-read timestamps per user/room
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS last_reads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user TEXT NOT NULL,
-            room TEXT NOT NULL,
-            last_ts TEXT NOT NULL,
-            UNIQUE(user, room)
-        )
-        """
     )
 
     conn.commit()
@@ -275,34 +261,6 @@ def clear_room(room):
     c.execute("DELETE FROM messages WHERE room=?", (room,))
     conn.commit()
     conn.close()
-
-
-# ---------------- last-read helpers ----------------
-def set_last_read(user: str, room: str, ts: str | None = None):
-    """Upsert last read timestamp for (user,room)."""
-    if not ts:
-        ts = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        """
-        INSERT INTO last_reads (user, room, last_ts)
-        VALUES (?, ?, ?)
-        ON CONFLICT(user, room) DO UPDATE SET last_ts=excluded.last_ts
-        """,
-        (user, room, ts),
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_last_read(user: str, room: str) -> str | None:
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT last_ts FROM last_reads WHERE user=? AND room=?", (user, room))
-    row = c.fetchone()
-    conn.close()
-    return row[0] if row else None
 
 
 # ---------------- FastAPI + Socket.IO ----------------
@@ -845,6 +803,7 @@ async def startup_tasks():
 
 
 # ---------------- Subscribe / Push test ----------------
+# ---------------- Subscribe ----------------
 @app.post("/api/subscribe")
 async def subscribe(request: Request):
     body = await request.json()
@@ -996,50 +955,6 @@ async def send_push_notification():
             print("❌ FCM push failed:", e)
 
     return {"status": "ok"}
-
-
-@app.post("/api/mark_read")
-async def api_mark_read(payload: dict = Body(...)):
-    """
-    body: { "user": "<username>", "room": "<room>", "ts": "<iso_ts (optional)>" }
-    stores last-read timestamp for the user/room
-    """
-    user = payload.get("user")
-    room = payload.get("room")
-    ts = payload.get("ts") or datetime.now(timezone.utc).isoformat()
-    if not user or not room:
-        return JSONResponse({"error": "missing user or room"}, status_code=400)
-    try:
-        set_last_read(user, room, ts)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-    return {"status": "ok", "user": user, "room": room, "last_ts": ts}
-
-
-@app.post("/api/unread_counts")
-async def api_unread_counts(payload: dict = Body(...)):
-    """
-    body: { "user": "<username>", "rooms": ["room1","room2", ...] }
-    returns: { "room1": n1, "room2": n2, ... }
-    """
-    user = payload.get("user")
-    rooms = payload.get("rooms") or []
-    if not user:
-        return JSONResponse({"error": "missing user"}, status_code=400)
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    result = {}
-    for room in rooms:
-        c.execute("SELECT last_ts FROM last_reads WHERE user=? AND room=?", (user, room))
-        row = c.fetchone()
-        last_ts = row[0] if row else "1970-01-01T00:00:00+00:00"
-        # messages.ts stored as ISO strings — lexicographical comparison works for ISO8601
-        c.execute("SELECT COUNT(*) FROM messages WHERE room=? AND ts > ?", (room, last_ts))
-        n = c.fetchone()[0]
-        result[room] = n
-    conn.close()
-    return JSONResponse(result)
 
 
 # ---------------- Web Push only ----------------
@@ -1232,6 +1147,16 @@ async def unregister_fcm(request: Request):
 
 
 # ---------------- Static / PWA assets ----------------
+@app.get("/unread/{user}")
+async def unread_counts(user: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT room, COUNT(*) FROM messages WHERE ts > ? GROUP BY room", (...))
+    rows = c.fetchall()
+    conn.close()
+    return {"unread": dict(rows)}
+
+
 @app.get("/destroyed_rooms")
 async def get_destroyed_rooms():
     """

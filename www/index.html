@@ -1144,7 +1144,6 @@
                 console.log("✅ Joined room:", currentRoom);
                 joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
-                markRoomRead(currentRoom);
               } else {
                 console.log("⚠️ Join failed, retrying...", attempt);
                 setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
@@ -1178,7 +1177,6 @@
                   console.log("✅ Joined room on reconnect:", currentRoom);
                   joinedRooms.add(currentRoom);
                   sendActive(!document.hidden);
-                  markRoomRead(currentRoom);
                 } else {
                   console.warn("⚠️ Join failed on reconnect, retrying...");
                   setTimeout(() => {
@@ -1193,7 +1191,6 @@
           }
         });
 
-        
         socket.on("room_message_meta", (data) => {
           try {
             // only act if we know our username and joinedRoomsByUser
@@ -1395,69 +1392,19 @@
         badge.style.display = count > 0 ? "inline-block" : "none";
       }
 
-// =================== Fetch unread counts on app open ===================
-async function fetchUnreadCounts() {
-  if (!currentName) return;
-
-  // load joined rooms for this user
-  joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-  const rooms = joinedRoomsByUser[currentName] || [];
-  if (!rooms.length) return;
-
-  try {
-    const res = await fetch("/api/unread_counts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: currentName, rooms }),
-    });
-    if (!res.ok) {
-      console.warn("fetchUnreadCounts failed:", res.status);
-      return;
-    }
-    const data = await res.json();
-
-    // overwrite local unreadCounts from server
-    unreadCounts = unreadCounts || {};
-    rooms.forEach((room) => {
-      unreadCounts[room] = data[room] || 0;
-      updateBadge(room);
-    });
-    saveUnread();
-  } catch (err) {
-    console.error("fetchUnreadCounts error:", err);
-  }
+      async function syncUnread() {
+  const res = await fetch(`/unread/${currentName}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  unreadCounts = data.unread || {};
+  saveUnread();
+  renderJoinedRooms();
 }
 
-// Call it on startup
 window.addEventListener("DOMContentLoaded", () => {
-  currentName = Storage.get("chat_name") || "";
-  if (currentName) {
-    fetchUnreadCounts(); // <-- 🔑 this will restore badges
-  }
+  if (currentName) syncUnread();
 });
 
-// Also refresh when socket reconnects or tab gains focus
-if (socket) {
-  socket.on("connect", () => {
-    fetchUnreadCounts();
-  });
-}
-window.addEventListener("focus", () => {
-  fetchUnreadCounts();
-});
-
-async function markRoomRead(room, ts) {
-  if (!currentName || !room) return;
-  try {
-    await fetch("/api/mark_read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user: currentName, room, ts: ts || new Date().toISOString() }),
-    });
-  } catch (err) {
-    console.warn("markRoomRead failed:", err);
-  }
-}
 
       // ======================================================
       // =============== Joined Room =========================
