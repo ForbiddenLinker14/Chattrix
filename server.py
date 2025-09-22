@@ -34,6 +34,7 @@ PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
 PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
+USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -550,6 +551,13 @@ async def message(sid, data):
     await sio.emit(
         "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
     )
+
+     # Update unread counts for all users in the room except sender
+    for username in ROOM_HISTORY.get(room, set()):
+        if username != sender:
+            # Mark this message as unread for user
+            key = (username, room)
+            USER_LAST_SEEN[key] = now.isoformat()
 
     # --- NEW: tell all connected clients a metadata event (room, sender, short text, ts)
     # so clients can update unread counters for rooms they have joined.
@@ -1147,6 +1155,37 @@ async def unregister_fcm(request: Request):
 
 
 # ---------------- Static / PWA assets ----------------
+@app.get("/unread-counts")
+async def get_unread_counts(request: Request):
+    user = request.query_params.get("user")
+    if not user:
+        return JSONResponse({"error": "user parameter required"}, status_code=400)
+    
+    unread_counts = {}
+    
+    # Get all rooms this user has joined
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT room FROM fcm_tokens WHERE user = ? UNION SELECT room FROM messages WHERE sender = ?", (user, user))
+    rooms = set(row[0] for row in c.fetchall())
+    conn.close()
+    
+    for room in rooms:
+        # Count messages after user's last seen time
+        last_seen = USER_LAST_SEEN.get((user, room))
+        if last_seen:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM messages WHERE room = ? AND sender != ? AND ts > ?", 
+                     (room, user, last_seen))
+            count = c.fetchone()[0]
+            conn.close()
+            
+            if count > 0:
+                unread_counts[room] = count
+    
+    return JSONResponse({"unreadCounts": unread_counts})
+
 @app.get("/destroyed_rooms")
 async def get_destroyed_rooms():
     """
