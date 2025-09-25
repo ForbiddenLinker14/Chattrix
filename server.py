@@ -23,8 +23,6 @@ from firebase_admin import credentials, messaging
 # ---------------- Globals ----------------
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
-# If get_destroyed_rooms is synchronous:
-  # No await needed
 ROOM_USERS = {}  # { room: { username: sid } }
 LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
@@ -72,13 +70,13 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- DB ----------------
-# Update init_db function to add destroyed_rooms table
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
     # Messages table
-    c.execute("""
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             room TEXT NOT NULL,
@@ -89,59 +87,29 @@ def init_db():
             filedata TEXT,
             ts TEXT NOT NULL
         )
-    """)
+        """
+    )
 
-    # FCM tokens table
-    c.execute("""
+    # FCM tokens table (with UNIQUE user)
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS fcm_tokens (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user TEXT NOT NULL,
-            room TEXT NOT NULL,
-            token TEXT NOT NULL,
-            ts TEXT NOT NULL,
-            UNIQUE(user, room, token)
-        )
-    """)
-    
-    # ✅ NEW: Destroyed rooms table (persists for 7 days)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS destroyed_rooms (
-            room TEXT PRIMARY KEY,
-            destroyed_at TEXT NOT NULL
-        )
-    """)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user TEXT NOT NULL,
+    room TEXT NOT NULL,
+    token TEXT NOT NULL,
+    ts TEXT NOT NULL,
+    UNIQUE(user, room, token)
+);
+  """
+    )
 
     conn.commit()
     conn.close()
 
 
 # ---------------- Helpers for FCM tokens ----------------
-def add_destroyed_room(room: str):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute(
-        "INSERT OR REPLACE INTO destroyed_rooms (room, destroyed_at) VALUES (?, ?)",
-        (room, datetime.now(timezone.utc).isoformat())
-    )
-    conn.commit()
-    conn.close()
-
-async def get_destroyed_rooms():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT room FROM destroyed_rooms WHERE destroyed_at > datetime('now', '-7 days')")
-    rows = c.fetchall()
-    conn.close()
-    return set(row[0] for row in rows)
-
-def remove_destroyed_room(room: str):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM destroyed_rooms WHERE room = ?", (room,))
-    conn.commit()
-    conn.close()
-
-
+# ---------------- Helpers for FCM tokens ----------------
 def load_fcm_tokens():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -434,9 +402,8 @@ async def destroy_room(room: str):
     # 1. Clear DB messages
     clear_room(room)
 
-    # 2. Mark destroyed (BOTH in memory AND database)
+    # 2. Mark destroyed
     DESTROYED_ROOMS.add(room)
-    add_destroyed_room(room)  # ✅ Persist to DB
 
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
@@ -472,21 +439,9 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # ✅ Check both in-memory AND database for destroyed rooms
-    if room in DESTROYED_ROOMS:
-        # Double-check persistence
-        destroyed_rooms_from_db = get_destroyed_rooms()
-        if room in destroyed_rooms_from_db:
-            # Room is truly destroyed, reject the join
-            return {"success": False, "error": "Room has been destroyed"}
-        else:
-            # DB says it's not destroyed, clean up memory
-            DESTROYED_ROOMS.discard(room)
-
-    # revive destroyed room → clear history (only if it was in memory but not DB)
+    # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
-        remove_destroyed_room(room)  # ✅ Clean up DB too
         ROOM_HISTORY.pop(room, None)
 
     # ensure history exists, then add user
@@ -826,14 +781,9 @@ async def disconnect(sid):
 async def startup_tasks():
     init_db()
 
-    global FCM_TOKENS, DESTROYED_ROOMS
+    global FCM_TOKENS
     FCM_TOKENS = load_fcm_tokens()
-    
-    # ✅ Fix: Await the async function
-    DESTROYED_ROOMS = await get_destroyed_rooms()
-    
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
-    
 
     async def loop_cleanup():
         while True:

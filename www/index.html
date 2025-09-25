@@ -1140,37 +1140,16 @@
               fcmToken: fcmToken,
             },
             (ack) => {
-            if (ack && ack.success) {
+              if (ack && ack.success) {
                 console.log("✅ Joined room:", currentRoom);
                 joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
-            } else if (ack && ack.error === "Room has been destroyed") {
-                // ✅ Handle destroyed room case
-                console.log("❌ Room was destroyed:", ack.error);
-                alert("This room has been destroyed. Please create a new room.");
-                
-                // Clean up local storage
-                Storage.remove("chat_name");
-                Storage.remove("chat_room");
-                
-                // Reset UI to intro
-                document.getElementById("chat-container").style.display = "none";
-                document.getElementById("input-area").style.display = "none";
-                document.getElementById("intro").style.display = "block";
-                document.getElementById("messages").innerHTML = "";
-                
-                // Remove from joined rooms
-                if (joinedRoomsByUser[currentName]) {
-                    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== currentRoom);
-                    localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-                    renderJoinedRooms();
-                }
-            } else {
+              } else {
                 console.log("⚠️ Join failed, retrying...", attempt);
                 setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+              }
             }
-        }
-    );
+          );
         }
 
         socket.on("users_update", updateUserList);
@@ -1589,42 +1568,20 @@
         updateBadge(currentRoom);
       }
 
-async function restoreChatState(socket) {
-    const state = await loadChatState();
-    if (state) {
-        // ✅ First check if room was destroyed
-        try {
-            const res = await fetch(`${API_BASE}/destroyed_rooms`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.destroyed && data.destroyed.includes(state.room)) {
-                    console.log("🚫 Not restoring chat - room was destroyed");
-                    // Clean up local storage
-                    Storage.remove("chat_name");
-                    Storage.remove("chat_room");
-                    if (joinedRoomsByUser[state.username]) {
-                        joinedRoomsByUser[state.username] = joinedRoomsByUser[state.username].filter(r => r !== state.room);
-                        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-                    }
-                    return null;
-                }
-            }
-        } catch (err) {
-            console.warn("Failed to check destroyed rooms:", err);
-        }
+      async function restoreChatState(socket) {
+        const state = await loadChatState();
+        if (state) {
+          // 🔑 fetch stored FCM token
+          const fcmToken = localStorage.getItem("fcm_token") || null;
 
-        // Room is not destroyed, proceed with join
-        const fcmToken = localStorage.getItem("fcm_token") || null;
-        socket.emit("join", {
+          socket.emit("join", {
             room: state.room,
             sender: state.username,
             lastTs: state.lastTs,
-            fcmToken: fcmToken,
-        });
-        return state;
-    }
-    return null;
-}
+            fcmToken: fcmToken, // ✅ include token so backend registers
+          });
+        }
+      }
 
       // ======================================================
       // ======= Room Management(sendMessage) + Copy =========
