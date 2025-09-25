@@ -1192,6 +1192,7 @@
           if (data.room === currentRoom)
             document.getElementById("user-list").innerHTML = "";
         });
+        socket.on("room_destroyed_global", handleGlobalRoomDestroyed);
         socket.on("room_destroyed", handleRoomDestroyed);
         socket.on("clear", handleRoomCleared);
 
