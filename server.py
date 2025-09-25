@@ -432,9 +432,9 @@ async def destroy_room(room: str):
     # 1. Clear DB messages
     clear_room(room)
 
-    # 2. Mark destroyed
+    # 2. Mark destroyed (BOTH in memory AND database)
     DESTROYED_ROOMS.add(room)
-    add_destroyed_room(room)
+    add_destroyed_room(room)  # ✅ Persist to DB
 
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
@@ -826,7 +826,8 @@ async def startup_tasks():
 
     global FCM_TOKENS, DESTROYED_ROOMS
     FCM_TOKENS = load_fcm_tokens()
-    DESTROYED_ROOMS = get_destroyed_rooms()
+    DESTROYED_ROOMS = get_destroyed_rooms()  # ✅ This is synchronous now
+    
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
     print(f"💥 Loaded {len(DESTROYED_ROOMS)} destroyed rooms from DB")
 
