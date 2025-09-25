@@ -23,6 +23,8 @@ from firebase_admin import credentials, messaging
 # ---------------- Globals ----------------
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
+# If get_destroyed_rooms is synchronous:
+  # No await needed
 ROOM_USERS = {}  # { room: { username: sid } }
 LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
@@ -124,7 +126,7 @@ def add_destroyed_room(room: str):
     conn.commit()
     conn.close()
 
-def get_destroyed_rooms():
+async def get_destroyed_rooms():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT room FROM destroyed_rooms WHERE destroyed_at > datetime('now', '-7 days')")
@@ -826,10 +828,12 @@ async def startup_tasks():
 
     global FCM_TOKENS, DESTROYED_ROOMS
     FCM_TOKENS = load_fcm_tokens()
-    DESTROYED_ROOMS = get_destroyed_rooms()  # ✅ This is synchronous now
+    
+    # ✅ Fix: Await the async function
+    DESTROYED_ROOMS = await get_destroyed_rooms()
     
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
-    print(f"💥 Loaded {len(DESTROYED_ROOMS)} destroyed rooms from DB")
+    
 
     async def loop_cleanup():
         while True:
