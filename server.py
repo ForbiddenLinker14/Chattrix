@@ -437,10 +437,15 @@ async def join(sid, data):
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")  # 🔑 client should send token when joining
+    token = data.get("fcmToken")
+    manual = data.get("manual", False)  # 👈 client must set this when clicking Enter
 
-    # revive destroyed room → clear history
-    if room in DESTROYED_ROOMS:
+    # Block auto-rejoin for destroyed rooms
+    if room in DESTROYED_ROOMS and not manual:
+        return {"success": False, "message": "Room destroyed. Please rejoin manually."}
+
+    # If user explicitly re-joins, clear destroyed flag and allow
+    if room in DESTROYED_ROOMS and manual:
         DESTROYED_ROOMS.remove(room)
         ROOM_HISTORY.pop(room, None)
 

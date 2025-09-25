@@ -1138,6 +1138,7 @@
               sender: currentName,
               lastTs: lastPersistedTs || null,
               fcmToken: fcmToken,
+              manual: true
             },
             (ack) => {
               if (ack && ack.success) {
@@ -1171,23 +1172,42 @@
                 sender: currentName,
                 lastTs: lastPersistedTs || null,
                 fcmToken: fcmToken,
+                manual: false,
               },
               (ack) => {
-                if (ack && ack.success) {
-                  console.log("✅ Joined room on reconnect:", currentRoom);
-                  joinedRooms.add(currentRoom);
-                  sendActive(!document.hidden);
+  if (ack && ack.success) {
+    console.log("✅ Joined room on reconnect:", currentRoom);
+    joinedRooms.add(currentRoom);
+    sendActive(!document.hidden);
 
-                  // ✅ NEW: Fetch unread counts when reconnecting after being offline
-                  fetchUnreadCounts();
-                } else {
-                  console.warn("⚠️ Join failed on reconnect, retrying...");
-                  setTimeout(() => {
-                    socket.disconnect();
-                    socket.connect();
-                  }, 500);
-                }
-              }
+    // ✅ Fetch unread counts when reconnecting after being offline
+    fetchUnreadCounts();
+  } else {
+    if (ack && ack.message === "Room destroyed. Please rejoin manually.") {
+      console.warn(`🚫 Cannot auto-rejoin ${currentRoom}, it was destroyed.`);
+      // clean up storage
+      joinedRoomsByUser[currentName] =
+        (joinedRoomsByUser[currentName] || []).filter(r => r !== currentRoom);
+      localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+      currentRoom = "";
+      renderJoinedRooms();
+
+      // reset UI to intro screen
+      document.getElementById("chat-container").style.display = "none";
+      document.getElementById("input-area").style.display = "none";
+      document.getElementById("intro").style.display = "block";
+      document.getElementById("messages").innerHTML = "";
+      document.getElementById("user-list").innerHTML = "";
+      return;
+    }
+
+    console.warn("⚠️ Join failed on reconnect, retrying...");
+    setTimeout(() => {
+      socket.disconnect();
+      socket.connect();
+    }, 500);
+  }
+}
             );
           } else {
             restoreChatState(socket);
