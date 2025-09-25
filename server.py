@@ -389,7 +389,7 @@ async def destroy_room(room: str):
         del subscriptions[room]
         print(f"🛑 All webpush subscriptions cleared for room {room}")
 
-     # 🔥 Add room version (destruction timestamp)
+    # 🔥 Add room version (destruction timestamp) FIRST
     ROOM_VERSIONS[room] = datetime.now(timezone.utc).isoformat()
     print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
 
@@ -422,6 +422,9 @@ async def destroy_room(room: str):
     # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
+    # 🔥 CRITICAL FIX: Broadcast to ALL connected clients, not just room members
+    await sio.emit("room_destroyed_global", {"room": room})
+
     # --- NEW: also broadcast to all connected clients so clients
     # who have already left the room (but still have it in localStorage)
     # can remove it from their sidebar.
@@ -432,6 +435,7 @@ async def destroy_room(room: str):
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
 
+    print(f"💥 Room {room} destroyed. Global notification sent.")
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
 
