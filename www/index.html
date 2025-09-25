@@ -1166,7 +1166,8 @@ function joinRoom() {
   socket.on("room_destroyed", handleRoomDestroyed);
   socket.on("clear", handleRoomCleared);
 
-  socket.on("connect", () => {
+  socket.on("connect",async () => {
+    await syncDestroyedRooms();
     // if we just pressed Enter, skip auto-join (safeJoinWithRetry will handle it)
     if (manualJoin) {
       manualJoin = false; // reset flag
@@ -1199,10 +1200,10 @@ function joinRoom() {
               console.warn(`🚫 Cannot auto-rejoin ${currentRoom}, it was destroyed.`);
               // clean up storage
               joinedRoomsByUser[currentName] =
-                (joinedRoomsByUser[currentName] || []).filter(r => r !== currentRoom);
-              localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-              currentRoom = "";
-              renderJoinedRooms();
+    (joinedRoomsByUser[currentName] || []).filter(r => r !== currentRoom);
+  localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+  currentRoom = "";
+  renderJoinedRooms();
 
               // reset UI to intro screen
               document.getElementById("chat-container").style.display = "none";
@@ -1323,52 +1324,42 @@ function joinRoom() {
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
-      async function syncDestroyedRooms() {
-        try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-            cache: "no-store",
-          });
-          if (!res.ok) {
-            console.warn("syncDestroyedRooms: server returned", res.status);
-            return;
-          }
-          const data = await res.json();
-          const destroyed = data.destroyed || [];
+async function syncDestroyedRooms() {
+  try {
+    const res = await fetch("/destroyed_rooms", { cache: "no-store" });
+    if (!res.ok) {
+      console.warn("syncDestroyedRooms: server returned", res.status);
+      return;
+    }
 
-          if (destroyed.length && currentName) {
-            // ensure joinedRoomsByUser is loaded
-            joinedRoomsByUser =
-              joinedRoomsByUser ||
-              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    const data = await res.json();
+    const destroyed = data.destroyed || [];
 
-            // filter out destroyed rooms from local storage
-            joinedRoomsByUser[currentName] = (
-              joinedRoomsByUser[currentName] || []
-            ).filter((room) => !destroyed.includes(room));
+    if (joinedRoomsByUser[currentName]) {
+      joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
+        (room) => !destroyed.includes(room)
+      );
+      localStorage.setItem(
+        "joinedRoomsByUser",
+        JSON.stringify(joinedRoomsByUser)
+      );
+      renderJoinedRooms();
+    }
 
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
-            console.log(
-              "syncDestroyedRooms: removed destroyed rooms:",
-              destroyed
-            );
+    // Handle current room destruction
+    if (destroyed.includes(currentRoom)) {
+      currentRoom = "";
+      document.getElementById("chat-container").style.display = "none";
+      document.getElementById("input-area").style.display = "none";
+      document.getElementById("intro").style.display = "block";
+      document.getElementById("messages").innerHTML = "";
+      document.getElementById("user-list").innerHTML = "";
+    }
+  } catch (err) {
+    console.warn("Failed to sync destroyed rooms:", err);
+  }
+}
 
-            // ✅ If the currently open room was destroyed, reset to intro
-            if (destroyed.includes(currentRoom)) {
-              currentRoom = "";
-              document.getElementById("chat-container").style.display = "none";
-              document.getElementById("input-area").style.display = "none";
-              document.getElementById("intro").style.display = "block";
-              document.getElementById("messages").innerHTML = "";
-              document.getElementById("user-list").innerHTML = "";
-            }
-          }
-        } catch (err) {
-          console.warn("Failed to sync destroyed rooms:", err);
-        }
-      }
 
       window.addEventListener("DOMContentLoaded", async () => {
         joinedRoomsByUser = JSON.parse(
