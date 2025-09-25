@@ -445,57 +445,67 @@ async def destroy_room(room: str):
 # ---------------- Socket.IO Events ----------------
 @sio.event
 async def join(sid, data):
+    # Validate required fields
+    if not data.get("room") or not data.get("sender"):
+        return {"success": False, "error": "Room and sender are required"}
+    
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")  # 🔑 client should send token when joining
+    token = data.get("fcmToken")
     client_room_version = data.get("roomVersion")
 
-    # If client thinks room was destroyed, check if it's been recreated
-    if client_room_version and client_room_version != "initial":
-        current_version = ROOM_VERSIONS.get(room, "initial")
-        if client_room_version != current_version:
-            # Client has outdated version - room was destroyed and recreated
-            return {
-                "success": False, 
-                "error": "Room was destroyed and recreated. Please manually rejoin.",
-                "roomVersion": current_version
-            }
-
-    # revive destroyed room → clear history
+    # Handle destroyed room reactivation
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
+        # Create new room version
+        new_version = str(datetime.now(timezone.utc).timestamp())
+        ROOM_VERSIONS[room] = new_version
+        # Clear history for fresh start
         ROOM_HISTORY.pop(room, None)
+        print(f"🔄 Room {room} reactivated for {username}, version: {new_version}")
 
-    # ensure history exists, then add user
-    ROOM_HISTORY.setdefault(room, set()).add(username)
+    # Check if client has outdated room version
+    current_version = ROOM_VERSIONS.get(room, "initial")
+    if client_room_version and client_room_version != current_version:
+        return {
+            "success": False, 
+            "error": "Room was destroyed and recreated. Please manually rejoin.",
+            "roomVersion": current_version
+        }
 
+    # Initialize room structures
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
+    
+    ROOM_HISTORY.setdefault(room, set()).add(username)
 
-    # handle duplicate sessions
+    # Handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
         return {"success": True, "message": "Already in room"}
+    
     if old_sid and old_sid != sid:
         try:
             await sio.leave_room(old_sid, room)
-        except Exception:
-            pass
+            # Clean up old session
+            USER_STATUS.pop(old_sid, None)
+        except Exception as e:
+            print(f"Warning: Failed to remove old session: {e}")
 
-    # map user → sid and mark active immediately
+    # Add user to room
     ROOM_USERS[room][username] = sid
-    USER_STATUS[sid] = {"user": username, "active": True}
+    USER_STATUS[sid] = {"user": username, "room": room, "active": True}
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
-    # 🔑 register token in memory + DB
+    # Handle FCM token
     if token:
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # send missed messages
+    # Send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
@@ -518,7 +528,7 @@ async def join(sid, data):
                 to=sid,
             )
 
-    # broadcast system join
+    # Broadcast join message only for new joins (not reconnects)
     if not old_sid:
         await sio.emit(
             "message",
@@ -530,8 +540,6 @@ async def join(sid, data):
             room=room,
         )
 
-    # Return current room version to client
-    current_version = ROOM_VERSIONS.get(room, "initial")
     return {
         "success": True, 
         "roomVersion": current_version,

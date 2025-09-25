@@ -1093,9 +1093,13 @@
           return;
         }
 
-         // 🔥 Get stored room version
+        // ✅ FIX: When rejoining a previously destroyed room, mark it as active
     roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
-    const clientRoomVersion = roomVersions[currentRoom] || "initial";
+    if (roomVersions[currentRoom] && roomVersions[currentRoom].includes("T")) {
+        // Room was previously destroyed, now mark it as active
+        roomVersions[currentRoom] = "active";
+        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+    }
 
 
         Storage.set("chat_name", currentName);
@@ -1482,10 +1486,17 @@ function renderJoinedRooms() {
     
     list.innerHTML = "";
 
+    // ✅ FIX: Only filter rooms that are CURRENTLY marked as destroyed
     const rooms = (joinedRoomsByUser[currentName] || []).filter(room => {
-        // Only show rooms that aren't marked as destroyed
+        // If room is currently active, don't filter it out
+        if (joinedRooms.has(room) && room === currentRoom) {
+            return true;
+        }
+        
         const roomVersion = roomVersions[room] || "initial";
-        return roomVersion === "initial" || !roomVersion.includes("T"); // Simple check for destruction timestamp
+        // Only filter if room was destroyed AND we're not currently in it
+        return roomVersion === "initial" || roomVersion === "active" || 
+               (roomVersion.includes("T") && room !== currentRoom);
     });
 
     rooms.forEach((room) => {
@@ -2687,8 +2698,8 @@ function handleGlobalRoomDestroyed(data) {
         joinedRooms.delete(destroyedRoom);
     }
     
-    // Remove from user's joined rooms
-    if (currentName && joinedRoomsByUser[currentName]) {
+    // Remove from user's joined rooms ONLY if we're not currently in it
+    if (currentName && joinedRoomsByUser[currentName] && currentRoom !== destroyedRoom) {
         joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
             r => r !== destroyedRoom
         );
