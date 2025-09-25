@@ -35,6 +35,7 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
+ROOM_DESTROYED_AT = {}  # { room: timestamp }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -383,6 +384,10 @@ async def clear_messages(room: str):
 
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str):
+    # Mark destruction time
+    now = datetime.now(timezone.utc)
+    ROOM_DESTROYED_AT[room] = now
+
     # 0. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
@@ -415,20 +420,22 @@ async def destroy_room(room: str):
         room=room,
     )
     # notify everyone who was in the room (in-room clients)
-    await sio.emit("room_destroyed", {"room": room}, room=room)
+    await sio.emit("room_destroyed", {"room": room, "destroyed_at": now.isoformat()}, room=room)
 
     # --- NEW: also broadcast to all connected clients so clients
     # who have already left the room (but still have it in localStorage)
     # can remove it from their sidebar.
-    await sio.emit("room_destroyed", {"room": room})
+    await sio.emit("room_destroyed", {"room": room, "destroyed_at": now.isoformat()})
+
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
 
-    print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
-    return {"status": "ok"}
+    print(f"💥 Room {room} destroyed at {now} (history + FCM tokens wiped from memory + DB).")
+    return {"status": "ok", "destroyed_at": now.isoformat()}
+
 
 
 # ---------------- Socket.IO Events ----------------
@@ -438,8 +445,14 @@ async def join(sid, data):
     username = data["sender"]
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
+    last_joined = data.get("lastJoined")  # 🔑 new: client must send this
 
-    # revive destroyed room → clear history
+    # 🚫 reject if user is trying to rejoin a destroyed room with an old session
+    destroyed_at = ROOM_DESTROYED_AT.get(room)
+    if destroyed_at and (not last_joined or last_joined < destroyed_at.isoformat()):
+        return {"success": False, "message": "Room was destroyed, please rejoin."}
+
+    # revive destroyed room → clear history (only if no destroyed_at mismatch)
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
         ROOM_HISTORY.pop(room, None)
@@ -508,6 +521,7 @@ async def join(sid, data):
         )
 
     return {"success": True}
+
 
 
 @sio.event
