@@ -384,16 +384,17 @@ async def clear_messages(room: str):
 
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str):
-    # 0. Clear webpush subscriptions
+    # 0. 🔥 Update room version FIRST (this is critical)
+    destruction_time = datetime.now(timezone.utc).isoformat()
+    ROOM_VERSIONS[room] = destruction_time
+    print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
+
+    # 0b. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
         print(f"🛑 All webpush subscriptions cleared for room {room}")
 
-    # 🔥 Add room version (destruction timestamp) FIRST
-    ROOM_VERSIONS[room] = datetime.now(timezone.utc).isoformat()
-    print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
-
-    # 0b. Clear in-memory FCM tokens for this room
+    # 0c. Clear in-memory FCM tokens for this room
     for user in list(FCM_TOKENS.keys()):
         if room in FCM_TOKENS[user]:
             del FCM_TOKENS[user][room]
@@ -401,7 +402,7 @@ async def destroy_room(room: str):
         if not FCM_TOKENS[user]:
             del FCM_TOKENS[user]
 
-    # 0c. Clear persisted FCM tokens in DB
+    # 0d. Clear persisted FCM tokens in DB
     delete_fcm_tokens_for_room(room)
 
     # 1. Clear DB messages
@@ -413,30 +414,31 @@ async def destroy_room(room: str):
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
-    # 4. Notify clients + force disconnect
+    # 4. Notify ALL connected clients (not just room members)
+    # First notify room members
     await sio.emit(
         "clear",
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
-    # notify everyone who was in the room (in-room clients)
+    
+    # Notify everyone who was in the room
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
-    # 🔥 CRITICAL FIX: Broadcast to ALL connected clients, not just room members
-    await sio.emit("room_destroyed_global", {"room": room})
+    # 🔥 CRITICAL: Broadcast to ALL connected clients globally
+    await sio.emit("room_destroyed_global", {
+        "room": room, 
+        "destroyed_at": destruction_time
+    })
 
-    # --- NEW: also broadcast to all connected clients so clients
-    # who have already left the room (but still have it in localStorage)
-    # can remove it from their sidebar.
-    await sio.emit("room_destroyed", {"room": room})
+    # Force disconnect all clients from this room
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
 
-    print(f"💥 Room {room} destroyed. Global notification sent.")
-    print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
+    print(f"💥 Room {room} destroyed. Global notification sent to all clients.")
     return {"status": "ok"}
 
 
