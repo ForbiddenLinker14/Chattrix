@@ -1169,6 +1169,13 @@ function joinRoom() {
 
   socket.on("connect", () => {
     if (currentRoom && currentName) {
+      // 👇 First-time join should go through safeJoinWithRetry
+      if (!joinedRooms.has(currentRoom)) {
+        safeJoinWithRetry();
+        return;
+      }
+
+      // 👇 If already joined before, do normal reconnect without forceCreate
       const fcmToken = localStorage.getItem("fcm_token") || null;
 
       socket.emit(
