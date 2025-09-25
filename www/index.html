@@ -1079,176 +1079,242 @@
       // =============== Room Management ======================
       // ======================================================
       // ----------------- Join Room -----------------
-function joinRoom() {
-  currentName = document.getElementById("name").value.trim();
-  currentRoom = document.getElementById("room").value.trim();
+      function joinRoom() {
+        currentName = document.getElementById("name").value.trim();
+        currentRoom = document.getElementById("room").value.trim();
 
-  if (!currentName || !currentRoom) {
-    alert("Enter name and room first!");
-    return;
-  }
-
-  if (joinedRooms.has(currentRoom)) {
-    alert(`You are already in room "${currentRoom}"!`);
-    return;
-  }
-
-  // 🔑 Fetch lastJoined from localStorage
-  let lastJoined = localStorage.getItem(`lastJoined_${currentRoom}`) || null;
-
-  Storage.set("chat_name", currentName);
-  Storage.set("chat_room", currentRoom);
-
-  // UI setup
-  document.getElementById("chat-container").style.display = "flex";
-  document.getElementById("input-area").style.display = "flex";
-  document.getElementById("intro").style.display = "none";
-  document.getElementById("messages").style.display = "block";
-  document.getElementById("messages").innerHTML = "";
-  lastPersistedTs = null;
-  alreadyFetchingHistory = false;
-  document.getElementById("input").disabled = false;
-  document.getElementById("send").disabled = false;
-  document.getElementById("attach").disabled = false;
-  document.getElementById("user-list").innerHTML = "";
-
-  if (socket) {
-    socket.off();
-    socket.disconnect();
-  }
-
-  socket = io("https://realtime-chat-1mv3.onrender.com", {
-    path: "/socket.io",
-    transports: ["websocket"],
-  });
-
-  // Subscribe user when joining room
-  subscribeUser(currentName, currentRoom).catch((err) =>
-    console.warn("⚠️ Subscription failed in joinRoom:", err)
-  );
-
-  function safeJoinWithRetry(attempt = 1) {
-    if (!socket || !socket.connected) return;
-    if (joinedRooms.has(currentRoom)) return;
-
-    const fcmToken = localStorage.getItem("fcm_token") || null;
-
-    socket.emit(
-      "join",
-      {
-        room: currentRoom,
-        sender: currentName,
-        lastTs: lastPersistedTs || null,
-        fcmToken: fcmToken,
-        lastJoined: lastJoined,
-      },
-      (ack) => {
-        if (ack && ack.success) {
-          console.log("✅ Joined room:", currentRoom);
-          joinedRooms.add(currentRoom);
-          sendActive(!document.hidden);
-          localStorage.setItem(
-            `lastJoined_${currentRoom}`,
-            new Date().toISOString()
-          );
-        } else {
-          console.log("⚠️ Join failed, retrying...", attempt);
-          setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+        if (!currentName || !currentRoom) {
+          alert("Enter name and room first!");
+          return;
         }
-      }
+
+        if (joinedRooms.has(currentRoom)) {
+          alert(`You are already in room "${currentRoom}"!`);
+          return;
+        }
+
+        Storage.set("chat_name", currentName);
+        Storage.set("chat_room", currentRoom);
+
+        document.getElementById("chat-container").style.display = "flex";
+        document.getElementById("input-area").style.display = "flex";
+        document.getElementById("intro").style.display = "none";
+        document.getElementById("messages").style.display = "block";
+
+        document.getElementById("messages").innerHTML = "";
+        lastPersistedTs = null;
+        alreadyFetchingHistory = false;
+        document.getElementById("input").disabled = false;
+        document.getElementById("send").disabled = false;
+        document.getElementById("attach").disabled = false;
+        document.getElementById("user-list").innerHTML = "";
+
+        if (socket) {
+          socket.off();
+          socket.disconnect();
+        }
+
+        socket = io("https://realtime-chat-1mv3.onrender.com", {
+          path: "/socket.io",
+          transports: ["websocket"],
+        });
+
+        // 👉 Subscribe user when joining room (not when sending message)
+        subscribeUser(currentName, currentRoom).catch((err) =>
+          console.warn("⚠️ Subscription failed in joinRoom:", err)
+        );
+
+        function safeJoinWithRetry(attempt = 1) {
+          if (!socket || !socket.connected) return;
+          if (joinedRooms.has(currentRoom)) return;
+
+          // 🔑 fetch stored FCM token
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+
+          socket.emit(
+            "join",
+            {
+              room: currentRoom,
+              sender: currentName,
+              lastTs: lastPersistedTs || null,
+              fcmToken: fcmToken,
+            },
+            (ack) => {
+            if (ack && ack.success) {
+                console.log("✅ Joined room:", currentRoom);
+                joinedRooms.add(currentRoom);
+                sendActive(!document.hidden);
+            } else if (ack && ack.error === "Room has been destroyed") {
+                // ✅ Handle destroyed room case
+                console.log("❌ Room was destroyed:", ack.error);
+                alert("This room has been destroyed. Please create a new room.");
+                
+                // Clean up local storage
+                Storage.remove("chat_name");
+                Storage.remove("chat_room");
+                
+                // Reset UI to intro
+                document.getElementById("chat-container").style.display = "none";
+                document.getElementById("input-area").style.display = "none";
+                document.getElementById("intro").style.display = "block";
+                document.getElementById("messages").innerHTML = "";
+                
+                // Remove from joined rooms
+                if (joinedRoomsByUser[currentName]) {
+                    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== currentRoom);
+                    localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+                    renderJoinedRooms();
+                }
+            } else {
+                console.log("⚠️ Join failed, retrying...", attempt);
+                setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+            }
+        }
     );
-  }
-
-  // Socket event listeners
-  socket.on("connect", () => {
-    safeJoinWithRetry();
-    fetchUnreadCounts();
-  });
-
-  socket.on("users_update", updateUserList);
-  socket.on("left_room", (data) => {
-    if (data.room === currentRoom) document.getElementById("user-list").innerHTML = "";
-  });
-  socket.on("room_destroyed", handleRoomDestroyed);
-  socket.on("clear", handleRoomCleared);
-
-  socket.on("room_message_meta", (data) => {
-    try {
-      if (!currentName) return;
-      joinedRoomsByUser =
-        joinedRoomsByUser ||
-        JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-      const myRooms = joinedRoomsByUser[currentName] || [];
-      if (!myRooms.includes(data.room)) return;
-      if (data.room === currentRoom) return;
-
-      unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
-      saveUnread();
-      updateBadge(data.room);
-
-      const title = `Room ${data.room}`;
-      const body = `${data.sender}: ${data.text}`;
-      if ("Notification" in window && Notification.permission === "granted") {
-        try {
-          const n = new Notification(title, { body, tag: `room-${data.room}` });
-          n.onclick = () => {
-            window.focus();
-            switchRoom(data.room);
-            n.close();
-          };
-        } catch (e) {
-          console.warn("Notification failed:", e);
         }
-      } else {
-        const original = document.title;
-        document.title = `${data.room}: ${data.sender}`;
-        setTimeout(() => (document.title = original), 2500);
+
+        socket.on("users_update", updateUserList);
+        socket.on("left_room", (data) => {
+          if (data.room === currentRoom)
+            document.getElementById("user-list").innerHTML = "";
+        });
+        socket.on("room_destroyed", handleRoomDestroyed);
+        socket.on("clear", handleRoomCleared);
+
+        socket.on("connect", () => {
+          if (currentRoom && currentName) {
+            const fcmToken = localStorage.getItem("fcm_token") || null;
+
+            socket.emit(
+              "join",
+              {
+                room: currentRoom,
+                sender: currentName,
+                lastTs: lastPersistedTs || null,
+                fcmToken: fcmToken,
+              },
+              (ack) => {
+                if (ack && ack.success) {
+                  console.log("✅ Joined room on reconnect:", currentRoom);
+                  joinedRooms.add(currentRoom);
+                  sendActive(!document.hidden);
+
+                  // ✅ NEW: Fetch unread counts when reconnecting after being offline
+                  fetchUnreadCounts();
+                } else {
+                  console.warn("⚠️ Join failed on reconnect, retrying...");
+                  setTimeout(() => {
+                    socket.disconnect();
+                    socket.connect();
+                  }, 500);
+                }
+              }
+            );
+          } else {
+            restoreChatState(socket);
+          }
+        });
+
+        socket.on("room_message_meta", (data) => {
+          try {
+            // only act if we know our username and joinedRoomsByUser
+            if (!currentName) return;
+            joinedRoomsByUser =
+              joinedRoomsByUser ||
+              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+            const myRooms = joinedRoomsByUser[currentName] || [];
+            if (!myRooms.includes(data.room)) return; // ignore rooms we're not tracking
+
+            // if message belongs to the room we're currently viewing, let addMessage handle it
+            if (data.room === currentRoom) return;
+
+            // increment unread
+            unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
+            saveUnread();
+            updateBadge(data.room);
+
+            // show an in-page / desktop notification
+            const title = `Room ${data.room}`;
+            const body = `${data.sender}: ${data.text}`;
+            if (
+              "Notification" in window &&
+              Notification.permission === "granted"
+            ) {
+              try {
+                const n = new Notification(title, {
+                  body,
+                  tag: `room-${data.room}`,
+                });
+                n.onclick = () => {
+                  window.focus();
+                  switchRoom(data.room);
+                  n.close();
+                };
+              } catch (e) {
+                console.warn("Notification failed:", e);
+              }
+            } else {
+              // fallback: briefly flash document title (simple)
+              const original = document.title;
+              document.title = `${data.room}: ${data.sender}`;
+              setTimeout(() => (document.title = original), 2500);
+            }
+          } catch (err) {
+            console.warn("room_message_meta handler err:", err);
+          }
+        });
+
+        socket.on("message", addMessage);
+        socket.on("file", addFileMessage);
+
+        document.getElementById("send").onclick = sendMessage;
+        document.getElementById("input").onkeydown = (e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+          }
+        };
+
+        document.getElementById("attach").onclick = (e) => {
+          e.preventDefault();
+          document.getElementById("fileInput").click();
+        };
+
+        document.getElementById("fileInput").onchange = handleFileUpload;
+
+        // 👉 Add to Joined Rooms list
+        const joinedList = document.getElementById("joined-rooms");
+        if (
+          ![...joinedList.children].some(
+            (li) => li.dataset.room === currentRoom
+          )
+        ) {
+          const li = document.createElement("li");
+          li.textContent = currentRoom;
+          li.dataset.room = currentRoom;
+          li.style.padding = "6px 10px";
+          li.style.cursor = "pointer";
+          li.onclick = () => switchRoom(currentRoom);
+          joinedList.appendChild(li);
+        }
+
+        // 👉 Store joined rooms for this user (use global, no shadowing)
+        joinedRoomsByUser = JSON.parse(
+          localStorage.getItem("joinedRoomsByUser") || "{}"
+        );
+        if (!joinedRoomsByUser[currentName])
+          joinedRoomsByUser[currentName] = [];
+        if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+          joinedRoomsByUser[currentName].push(currentRoom);
+          localStorage.setItem(
+            "joinedRoomsByUser",
+            JSON.stringify(joinedRoomsByUser)
+          );
+        }
+
+        // refresh UI
+        renderJoinedRooms();
       }
-    } catch (err) {
-      console.warn("room_message_meta handler err:", err);
-    }
-  });
-
-  socket.on("message", addMessage);
-  socket.on("file", addFileMessage);
-
-  // UI event handlers
-  document.getElementById("send").onclick = sendMessage;
-  document.getElementById("input").onkeydown = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-  document.getElementById("attach").onclick = (e) => {
-    e.preventDefault();
-    document.getElementById("fileInput").click();
-  };
-  document.getElementById("fileInput").onchange = handleFileUpload;
-
-  // Add to joined rooms list in UI
-  const joinedList = document.getElementById("joined-rooms");
-  if (![...joinedList.children].some((li) => li.dataset.room === currentRoom)) {
-    const li = document.createElement("li");
-    li.textContent = currentRoom;
-    li.dataset.room = currentRoom;
-    li.style.padding = "6px 10px";
-    li.style.cursor = "pointer";
-    li.onclick = () => switchRoom(currentRoom);
-    joinedList.appendChild(li);
-  }
-
-  // Store joined rooms for this user
-  joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-  if (!joinedRoomsByUser[currentName]) joinedRoomsByUser[currentName] = [];
-  if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-    joinedRoomsByUser[currentName].push(currentRoom);
-    localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-  }
-
-  renderJoinedRooms();
-}
-
 
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
@@ -1523,20 +1589,42 @@ function joinRoom() {
         updateBadge(currentRoom);
       }
 
-      async function restoreChatState(socket) {
-        const state = await loadChatState();
-        if (state) {
-          // 🔑 fetch stored FCM token
-          const fcmToken = localStorage.getItem("fcm_token") || null;
+async function restoreChatState(socket) {
+    const state = await loadChatState();
+    if (state) {
+        // ✅ First check if room was destroyed
+        try {
+            const res = await fetch(`${API_BASE}/destroyed_rooms`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.destroyed && data.destroyed.includes(state.room)) {
+                    console.log("🚫 Not restoring chat - room was destroyed");
+                    // Clean up local storage
+                    Storage.remove("chat_name");
+                    Storage.remove("chat_room");
+                    if (joinedRoomsByUser[state.username]) {
+                        joinedRoomsByUser[state.username] = joinedRoomsByUser[state.username].filter(r => r !== state.room);
+                        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+                    }
+                    return null;
+                }
+            }
+        } catch (err) {
+            console.warn("Failed to check destroyed rooms:", err);
+        }
 
-          socket.emit("join", {
+        // Room is not destroyed, proceed with join
+        const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.emit("join", {
             room: state.room,
             sender: state.username,
             lastTs: state.lastTs,
-            fcmToken: fcmToken, // ✅ include token so backend registers
-          });
-        }
-      }
+            fcmToken: fcmToken,
+        });
+        return state;
+    }
+    return null;
+}
 
       // ======================================================
       // ======= Room Management(sendMessage) + Copy =========
