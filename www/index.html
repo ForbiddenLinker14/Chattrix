@@ -2663,36 +2663,40 @@ function joinRoom() {
         });
       }
 
-      function handleRoomDestroyed(data) {
-        const destroyedRoom = data.room;
-        console.log("💥 Room destroyed:", destroyedRoom);
+function handleRoomDestroyed(data) {
+  const destroyedRoom = data.room;
+  console.log("💥 Room destroyed:", destroyedRoom);
 
-        // Remove from memory + localStorage
-        if (joinedRooms.has(destroyedRoom)) {
-          joinedRooms.delete(destroyedRoom);
-        }
-        if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== destroyedRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
-        }
+  // Remove from memory + localStorage
+  if (joinedRooms.has(destroyedRoom)) {
+    joinedRooms.delete(destroyedRoom);
+  }
+  if (joinedRoomsByUser[currentName]) {
+    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
+      (r) => r !== destroyedRoom
+    );
+    localStorage.setItem(
+      "joinedRoomsByUser",
+      JSON.stringify(joinedRoomsByUser)
+    );
+  }
 
-        // If current room is destroyed, reset UI
-        if (currentRoom === destroyedRoom) {
-          currentRoom = "";
-          document.getElementById("messages").innerHTML = "";
-          document.getElementById("user-list").innerHTML = "";
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-        }
+  // If current room is destroyed, reset UI
+  if (currentRoom === destroyedRoom) {
+    currentRoom = "";
+    document.getElementById("messages").innerHTML = "";
+    document.getElementById("user-list").innerHTML = "";
+    document.getElementById("chat-container").style.display = "none";
+    document.getElementById("input-area").style.display = "none";
+    document.getElementById("intro").style.display = "block";
 
-        renderJoinedRooms();
-      }
+    // 👇 Reset manual join flag to avoid wrong behavior on reconnect
+    manualJoin = false;
+  }
+
+  renderJoinedRooms();
+}
+
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
@@ -2797,84 +2801,88 @@ function joinRoom() {
         }
       };
 
-      async function leaveRoom() {
-        if (!currentRoom) {
-          alert("You are not in a room!");
-          return;
-        }
+async function leaveRoom() {
+  if (!currentRoom) {
+    alert("You are not in a room!");
+    return;
+  }
 
-        const leftRoom = currentRoom;
+  const leftRoom = currentRoom;
 
-        // 🔑 Unregister FCM token for this room
-        const savedToken = localStorage.getItem("fcm_token");
-        if (savedToken) {
-          try {
-            await fetch("/api/unregister-fcm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                token: savedToken,
-                user: currentName,
-                room: currentRoom,
-              }),
-            });
-            console.log(
-              `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
-            );
-          } catch (err) {
-            console.error("❌ Failed to unregister FCM token:", err);
-          }
-        }
-
-        // 🛑 Unsubscribe from WebPush for this room
-        try {
-          await unsubscribeUser(currentName, currentRoom);
-        } catch (err) {
-          console.error("❌ Failed to unsubscribe WebPush:", err);
-        }
-
-        // 🔌 Leave socket room (with reason flag)
-        socket.emit("leave", {
+  // 🔑 Unregister FCM token for this room
+  const savedToken = localStorage.getItem("fcm_token");
+  if (savedToken) {
+    try {
+      await fetch("/api/unregister-fcm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: savedToken,
+          user: currentName,
           room: currentRoom,
-          sender: currentName,
-          reason: "leave", // ✅ added
-        });
-        console.log(`🚪 Left room ${currentRoom}`);
+        }),
+      });
+      console.log(
+        `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
+      );
+    } catch (err) {
+      console.error("❌ Failed to unregister FCM token:", err);
+    }
+  }
 
-        // 🖥️ Reset UI
-        document.getElementById("input").disabled = true;
-        document.getElementById("send").disabled = true;
-        document.getElementById("attach").disabled = true;
+  // 🛑 Unsubscribe from WebPush for this room
+  try {
+    await unsubscribeUser(currentName, currentRoom);
+  } catch (err) {
+    console.error("❌ Failed to unsubscribe WebPush:", err);
+  }
 
-        addMessage({
-          sender: "System",
-          text: `YOU LEFT FROM ROOM ${leftRoom}`,
-          ts: new Date().toISOString(),
-        });
+  // 🔌 Leave socket room (with reason flag)
+  socket.emit("leave", {
+    room: currentRoom,
+    sender: currentName,
+    reason: "leave", // ✅ added
+  });
+  console.log(`🚪 Left room ${currentRoom}`);
 
-        lastPersistedTs = null;
+  // 🖥️ Reset UI
+  document.getElementById("input").disabled = true;
+  document.getElementById("send").disabled = true;
+  document.getElementById("attach").disabled = true;
 
-        // ❌ Remove from joined rooms set and sidebar
-        joinedRooms.delete(currentRoom);
-        if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== currentRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
-        }
-        renderJoinedRooms(); // ✅ refresh sidebar
+  addMessage({
+    sender: "System",
+    text: `YOU LEFT FROM ROOM ${leftRoom}`,
+    ts: new Date().toISOString(),
+  });
 
-        currentRoom = "";
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
-        document.getElementById("user-list").innerHTML = "";
-        document.getElementById("chat-container").style.display = "block";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("messages").style.display = "block";
-      }
+  lastPersistedTs = null;
+
+  // ❌ Remove from joined rooms set and sidebar
+  joinedRooms.delete(currentRoom);
+  if (joinedRoomsByUser[currentName]) {
+    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(
+      (r) => r !== currentRoom
+    );
+    localStorage.setItem(
+      "joinedRoomsByUser",
+      JSON.stringify(joinedRoomsByUser)
+    );
+  }
+  renderJoinedRooms(); // ✅ refresh sidebar
+
+  currentRoom = "";
+  Storage.remove("chat_name");
+  Storage.remove("chat_room");
+  document.getElementById("user-list").innerHTML = "";
+  document.getElementById("chat-container").style.display = "block";
+  document.getElementById("input-area").style.display = "none";
+  document.getElementById("messages").style.display = "block";
+
+  // 👇 Reset manual join flag so future reconnects work normally
+  manualJoin = false;
+}
+
 
       // ======================================================
       // =============== Event Listeners ======================
