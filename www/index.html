@@ -1112,7 +1112,8 @@
         document.getElementById("input").disabled = false;
         document.getElementById("send").disabled = false;
         document.getElementById("attach").disabled = false;
-        document.getElementById("user-list").innerHTML = "";
+        document.getElementById("joined-rooms").innerHTML = "";
+      
 
         if (socket) {
           socket.off();
@@ -1191,6 +1192,7 @@
         socket.on("left_room", (data) => {
           if (data.room === currentRoom)
             document.getElementById("user-list").innerHTML = "";
+          document.getElementById("joined-rooms").innerHTML = "";
         });
         socket.on("room_destroyed", handleRoomDestroyed);
         socket.on("clear", handleRoomCleared);
@@ -1373,6 +1375,7 @@
               document.getElementById("intro").style.display = "block";
               document.getElementById("messages").innerHTML = "";
               document.getElementById("user-list").innerHTML = "";
+              document.getElementById("joined-rooms").innerHTML = "";
             }
           }
         } catch (err) {
@@ -2701,6 +2704,7 @@ function handleRoomDestroyed(data) {
         currentRoom = "";
         document.getElementById("messages").innerHTML = "";
         document.getElementById("user-list").innerHTML = "";
+        document.getElementById("joined-rooms").innerHTML = "";
         document.getElementById("chat-container").style.display = "none";
         document.getElementById("input-area").style.display = "none";
         document.getElementById("intro").style.display = "block";
@@ -2802,6 +2806,7 @@ function handleRoomDestroyed(data) {
           joinedRooms.delete(currentRoom);
           currentRoom = "";
           document.getElementById("user-list").innerHTML = "";
+          document.getElementById("joined-rooms").innerHTML = "";
           document.getElementById("chat-container").style.display = "none";
           document.getElementById("input-area").style.display = "none";
           document.getElementById("intro").style.display = "block";
@@ -2886,6 +2891,7 @@ function handleRoomDestroyed(data) {
         Storage.remove("chat_name");
         Storage.remove("chat_room");
         document.getElementById("user-list").innerHTML = "";
+        document.getElementById("joined-rooms").innerHTML = "";
         document.getElementById("chat-container").style.display = "block";
         document.getElementById("input-area").style.display = "none";
         document.getElementById("messages").style.display = "block";
