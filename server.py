@@ -35,6 +35,7 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
+ROOM_VERSIONS = {}  # { room: version_timestamp }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -388,6 +389,10 @@ async def destroy_room(room: str):
         del subscriptions[room]
         print(f"🛑 All webpush subscriptions cleared for room {room}")
 
+     # 🔥 Add room version (destruction timestamp)
+    ROOM_VERSIONS[room] = datetime.now(timezone.utc).isoformat()
+    print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
+
     # 0b. Clear in-memory FCM tokens for this room
     for user in list(FCM_TOKENS.keys()):
         if room in FCM_TOKENS[user]:
@@ -438,6 +443,18 @@ async def join(sid, data):
     username = data["sender"]
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
+    client_room_version = data.get("roomVersion")
+
+    # If client thinks room was destroyed, check if it's been recreated
+    if client_room_version and client_room_version != "initial":
+        current_version = ROOM_VERSIONS.get(room, "initial")
+        if client_room_version != current_version:
+            # Client has outdated version - room was destroyed and recreated
+            return {
+                "success": False, 
+                "error": "Room was destroyed and recreated. Please manually rejoin.",
+                "roomVersion": current_version
+            }
 
     # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
@@ -507,7 +524,13 @@ async def join(sid, data):
             room=room,
         )
 
-    return {"success": True}
+    # Return current room version to client
+    current_version = ROOM_VERSIONS.get(room, "initial")
+    return {
+        "success": True, 
+        "roomVersion": current_version,
+        "message": "Joined room successfully"
+    }
 
 
 @sio.event
@@ -1199,6 +1222,12 @@ async def get_destroyed_rooms():
     Clients call this on startup to remove stale rooms from localStorage.
     """
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
+
+
+@app.get("/room_version/{room}")
+async def get_room_version(room: str):
+    version = ROOM_VERSIONS.get(room, "initial")
+    return {"room": room, "version": version}
 
 
 # serve /icons/*

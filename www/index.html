@@ -1027,6 +1027,7 @@
       let roomTimestamps = {}; // Store the last timestamp per room
       let joinedRoomsByUser = {}; // Persist joined rooms per user
       let unreadCounts = {}; // { roomId: n }
+      let roomVersions = {}; // { roomId: version }
 
       // ======================================================
       // =============== Utility Functions ====================
@@ -1078,7 +1079,6 @@
       // ======================================================
       // =============== Room Management ======================
       // ======================================================
-      // ----------------- Join Room -----------------
       function joinRoom() {
         currentName = document.getElementById("name").value.trim();
         currentRoom = document.getElementById("room").value.trim();
@@ -1092,6 +1092,11 @@
           alert(`You are already in room "${currentRoom}"!`);
           return;
         }
+
+         // 🔥 Get stored room version
+    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
+    const clientRoomVersion = roomVersions[currentRoom] || "initial";
+
 
         Storage.set("chat_name", currentName);
         Storage.set("chat_room", currentRoom);
@@ -1138,18 +1143,48 @@
               sender: currentName,
               lastTs: lastPersistedTs || null,
               fcmToken: fcmToken,
+              roomVersion: clientRoomVersion, // 🔥 Send client's known version
             },
             (ack) => {
               if (ack && ack.success) {
                 console.log("✅ Joined room:", currentRoom);
+                  // 🔥 Update stored room version with server's version
+                if (ack.roomVersion) {
+                    roomVersions[currentRoom] = ack.roomVersion;
+                    localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                }
                 joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
-              } else {
+              } else if (ack && ack.error) {
+                // 🔥 Handle room version mismatch
+                console.error("❌ Join failed:", ack.error);
+                
+                if (ack.error.includes("destroyed and recreated")) {
+                    alert(`Room "${currentRoom}" was destroyed and recreated. Please manually rejoin.`);
+                    
+                    // Clear the auto-rejoin data
+                    Storage.remove("chat_room");
+                    document.getElementById("room").value = "";
+                    
+                    // Update local version
+                    if (ack.roomVersion) {
+                        roomVersions[currentRoom] = ack.roomVersion;
+                        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                    }
+                    
+                    // Show intro
+                    document.getElementById("chat-container").style.display = "none";
+                    document.getElementById("input-area").style.display = "none";
+                    document.getElementById("intro").style.display = "block";
+                } else {
+                    alert(ack.error);
+                }
+            } else {
                 console.log("⚠️ Join failed, retrying...", attempt);
                 setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
-              }
             }
-          );
+        }
+    );
         }
 
         socket.on("users_update", updateUserList);
@@ -2638,36 +2673,41 @@
         });
       }
 
-      function handleRoomDestroyed(data) {
-        const destroyedRoom = data.room;
-        console.log("💥 Room destroyed:", destroyedRoom);
+function handleRoomDestroyed(data) {
+    const destroyedRoom = data.room;
+    console.log("💥 Room destroyed:", destroyedRoom);
 
-        // Remove from memory + localStorage
-        if (joinedRooms.has(destroyedRoom)) {
-          joinedRooms.delete(destroyedRoom);
-        }
-        if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
+    // 🔥 Update room version in localStorage
+    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
+    roomVersions[destroyedRoom] = new Date().toISOString(); // Use current timestamp as version
+    localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+
+    // Remove from memory + localStorage
+    if (joinedRooms.has(destroyedRoom)) {
+        joinedRooms.delete(destroyedRoom);
+    }
+    if (joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[
             currentName
-          ].filter((r) => r !== destroyedRoom);
-          localStorage.setItem(
+        ].filter((r) => r !== destroyedRoom);
+        localStorage.setItem(
             "joinedRoomsByUser",
             JSON.stringify(joinedRoomsByUser)
-          );
-        }
+        );
+    }
 
-        // If current room is destroyed, reset UI
-        if (currentRoom === destroyedRoom) {
-          currentRoom = "";
-          document.getElementById("messages").innerHTML = "";
-          document.getElementById("user-list").innerHTML = "";
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-        }
+    // If current room is destroyed, reset UI
+    if (currentRoom === destroyedRoom) {
+        currentRoom = "";
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("user-list").innerHTML = "";
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+    }
 
-        renderJoinedRooms();
-      }
+    renderJoinedRooms();
+}
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
@@ -2881,19 +2921,54 @@
       // ======================================================
       // =============== Initialization =======================
       // ======================================================
-      window.addEventListener("load", async () => {
-        await requestNotificationPermission();
-        const savedName = Storage.get("chat_name");
-        const savedRoom = Storage.get("chat_room");
+window.addEventListener("load", async () => {
+    await requestNotificationPermission();
+    const savedName = Storage.get("chat_name");
+    const savedRoom = Storage.get("chat_room");
 
-        if (savedName && savedRoom) {
-          document.getElementById("name").value = savedName;
-          document.getElementById("room").value = savedRoom;
-          joinRoom({ preserveMessages: true });
-        } else {
-          document.getElementById("intro").style.display = "block";
+    // 🔥 Check room version before auto-rejoining
+    if (savedName && savedRoom) {
+        // Fetch current room version from server
+        try {
+            const response = await fetch(`https://realtime-chat-1mv3.onrender.com/room_version/${encodeURIComponent(savedRoom)}`);
+            if (response.ok) {
+                const data = await response.json();
+                const serverVersion = data.version;
+                
+                roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
+                const clientVersion = roomVersions[savedRoom] || "initial";
+                
+                // Only auto-rejoin if versions match
+                if (clientVersion === serverVersion) {
+                    document.getElementById("name").value = savedName;
+                    document.getElementById("room").value = savedRoom;
+                    joinRoom({ preserveMessages: true });
+                } else {
+                    // Versions don't match - room was destroyed and recreated
+                    console.log("🚫 Room version mismatch - requiring manual rejoin");
+                    document.getElementById("intro").style.display = "block";
+                    
+                    // Update client's version
+                    roomVersions[savedRoom] = serverVersion;
+                    localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                }
+            } else {
+                // If server error, proceed with normal join (will handle version check in joinRoom)
+                document.getElementById("name").value = savedName;
+                document.getElementById("room").value = savedRoom;
+                joinRoom({ preserveMessages: true });
+            }
+        } catch (error) {
+            // If network error, proceed with normal join
+            console.warn("Failed to check room version:", error);
+            document.getElementById("name").value = savedName;
+            document.getElementById("room").value = savedRoom;
+            joinRoom({ preserveMessages: true });
         }
-      });
+    } else {
+        document.getElementById("intro").style.display = "block";
+    }
+});
 
       document.getElementById("chat-title").addEventListener("click", () => {
         const savedName = Storage.get("chat_name");
