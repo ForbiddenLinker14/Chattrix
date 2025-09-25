@@ -439,10 +439,18 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # revive destroyed room → clear history
-    if room in DESTROYED_ROOMS:
+    # 🚫 If room was destroyed and client did not explicitly force a re-create
+    if room in DESTROYED_ROOMS and not data.get("forceCreate"):
+        return {
+            "success": False,
+            "message": "Room was destroyed. Please create a new one."
+        }
+
+    # ✅ If client *does* want to force re-create, treat as fresh room
+    if room in DESTROYED_ROOMS and data.get("forceCreate"):
         DESTROYED_ROOMS.remove(room)
         ROOM_HISTORY.pop(room, None)
+        ROOM_USERS.pop(room, None)
 
     # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -508,6 +516,7 @@ async def join(sid, data):
         )
 
     return {"success": True}
+
 
 
 @sio.event

@@ -1138,6 +1138,7 @@
               sender: currentName,
               lastTs: lastPersistedTs || null,
               fcmToken: fcmToken,
+              forceCreate: true,
             },
             (ack) => {
               if (ack && ack.success) {
