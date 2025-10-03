@@ -72,12 +72,16 @@ if not firebase_admin._apps:  # <-- check before init
 # ---------------- Helpers for FCM tokens ----------------
 def load_destroyed_rooms():
     """Load permanently destroyed rooms from DB"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT room FROM destroyed_rooms")
-    rows = c.fetchall()
-    conn.close()
-    return set(row[0] for row in rows)
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT room FROM destroyed_rooms")
+        rows = c.fetchall()
+        conn.close()
+        return set(row[0] for row in rows)
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet (will be created by init_db)
+        return set()
 
 def save_destroyed_room(room: str):
     """Save destroyed room to DB"""
@@ -831,9 +835,11 @@ async def disconnect(sid):
 async def startup_tasks():
     init_db()
 
-    global FCM_TOKENS
+    global FCM_TOKENS, DESTROYED_ROOMS  # ✅ Add DESTROYED_ROOMS here
     FCM_TOKENS = load_fcm_tokens()
+    DESTROYED_ROOMS = load_destroyed_rooms()  # ✅ MOVE THIS HERE
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
+    print(f"🚫 Loaded {len(DESTROYED_ROOMS)} permanently destroyed rooms from DB")
 
     async def loop_cleanup():
         while True:
@@ -1263,6 +1269,16 @@ async def get_room_status(room: str):
         "exists": not is_destroyed and has_active_users
     })
 
+
+@app.post("/revive-room/{room}")
+async def revive_room(room: str):
+    """Manually revive a destroyed room (for testing)"""
+    if room in DESTROYED_ROOMS:
+        DESTROYED_ROOMS.remove(room)
+        remove_destroyed_room(room)
+        return {"status": "ok", "message": f"Room {room} revived"}
+    else:
+        return {"status": "error", "message": "Room not found in destroyed rooms"}
 
 # serve /icons/*
 app.mount(
