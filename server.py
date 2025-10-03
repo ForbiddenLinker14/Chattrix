@@ -71,7 +71,7 @@ if not firebase_admin._apps:  # <-- check before init
 
 # ---------------- Helpers for FCM tokens ----------------
 def load_destroyed_rooms():
-    """Load permanently destroyed rooms from DB"""
+    """Load all permanently destroyed rooms from DB"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -80,26 +80,24 @@ def load_destroyed_rooms():
         conn.close()
         return set(row[0] for row in rows)
     except sqlite3.OperationalError:
-        # Table doesn't exist yet (will be created by init_db)
+        # Table doesn't exist yet
         return set()
 
+
 def save_destroyed_room(room: str):
-    """Save destroyed room to DB with timestamp"""
+    """Save destroyed room to DB with current timestamp"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
-    # Get creation time if exists, otherwise use current time
-    creation_time = get_room_creation_time(room) or datetime.now(timezone.utc).isoformat()
-    
     c.execute(
-        "INSERT OR REPLACE INTO destroyed_rooms (room, destroyed_at, created_at) VALUES (?, ?, ?)",
-        (room, datetime.now(timezone.utc).isoformat(), creation_time)
+        "INSERT OR REPLACE INTO destroyed_rooms (room, destroyed_at) VALUES (?, ?)",
+        (room, datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()
 
+
 def remove_destroyed_room(room: str):
-    """Remove room from destroyed_rooms table"""
+    """Remove room from destroyed_rooms (when recreated)"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("DELETE FROM destroyed_rooms WHERE room = ?", (room,))
@@ -107,68 +105,36 @@ def remove_destroyed_room(room: str):
     conn.close()
 
 
-# Add this function to track room creation
-def track_room_creation(room: str):
-    """Track when a room is first created"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Check if room already exists in destroyed_rooms (for recreation case)
-    c.execute("SELECT created_at FROM destroyed_rooms WHERE room = ?", (room,))
-    existing = c.fetchone()
-    
-    if not existing:
-        # First time this room is being tracked
-        c.execute(
-            "INSERT OR REPLACE INTO destroyed_rooms (room, destroyed_at, created_at) VALUES (?, ?, ?)",
-            (room, "", datetime.now(timezone.utc).isoformat())  # Empty destroyed_at means active
-        )
-    else:
-        # Room was previously destroyed, update created_at for recreation
-        c.execute(
-            "UPDATE destroyed_rooms SET created_at = ?, destroyed_at = ? WHERE room = ?",
-            (datetime.now(timezone.utc).isoformat(), "", room)
-        )
-    
-    conn.commit()
-    conn.close()
+def cleanup_old_destroyed_rooms():
+    """Remove destroyed rooms that are older than 7 days"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
 
-# Add this function to get room creation time
-def get_room_creation_time(room: str) -> str | None:
-    """Get when a room was first created"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT created_at FROM destroyed_rooms WHERE room = ?", (room,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else None
+        # Calculate cutoff time (7 days ago)
+        cutoff_time = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
 
-def get_destruction_time(room: str) -> str | None:
-    """Get when a room was destroyed"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT destroyed_at FROM destroyed_rooms WHERE room = ?", (room,))
-    result = c.fetchone()
-    conn.close()
-    return result[0] if result else None
+        # Delete old destroyed rooms
+        c.execute("DELETE FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
+        deleted_count = c.changes
 
-def is_room_destroyed(room: str) -> bool:
-    """Check if room is destroyed (DB + memory check)"""
-    if room in DESTROYED_ROOMS:
-        return True
-    
-    # Double check DB
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT destroyed_at FROM destroyed_rooms WHERE room = ? AND destroyed_at != ''", (room,))
-    result = c.fetchone()
-    conn.close()
-    
-    if result:
-        DESTROYED_ROOMS.add(room)  # Sync memory with DB
-        return True
-    
-    return False
+        conn.commit()
+        conn.close()
+
+        # Also update in-memory set
+        global DESTROYED_ROOMS
+        # Reload from DB to sync with what was deleted
+        DESTROYED_ROOMS = load_destroyed_rooms()
+
+        if deleted_count > 0:
+            print(f"🧹 Cleaned up {deleted_count} destroyed rooms older than 7 days")
+
+        return deleted_count
+
+    except Exception as e:
+        print(f"❌ Error cleaning up destroyed rooms: {e}")
+        return 0
+
 
 def load_fcm_tokens():
     conn = sqlite3.connect(DB_PATH)
@@ -323,7 +289,7 @@ def clear_room(room):
     conn.commit()
     conn.close()
 
-    
+
 # ---------------- DB ----------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -358,18 +324,20 @@ def init_db():
         )
         """
     )
-    
+
     # ✅ ADD THIS: Destroyed rooms table
-    c.execute("""
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS destroyed_rooms (
             room TEXT PRIMARY KEY,
-            destroyed_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            destroyed_at TEXT NOT NULL
         )
-    """)
+    """
+    )
 
     conn.commit()
     conn.close()
+
 
 # Load destroyed rooms on startup (add this after init_db() in startup)
 DESTROYED_ROOMS = load_destroyed_rooms()
@@ -527,7 +495,6 @@ async def destroy_room(room: str):
         room=room,
     )
 
-    
     # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
@@ -553,43 +520,10 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # ✅ Enhanced destroyed room check - allow recreation after some time
-    if room in DESTROYED_ROOMS:
-        destruction_time = get_destruction_time(room)
-        if destruction_time:
-            destroyed_at = datetime.fromisoformat(destruction_time)
-            time_ago = datetime.now(timezone.utc) - destroyed_at
-            hours_ago = time_ago.total_seconds() / 3600
-            
-            # 🔥 NEW: Auto-revive rooms after 24 hours
-            if hours_ago > 24:
-                print(f"🔄 Auto-reviving room {room} after {hours_ago:.1f} hours")
-                DESTROYED_ROOMS.remove(room)
-                remove_destroyed_room(room)
-                # Continue with normal join process
-            else:
-                await sio.emit("room_permanently_destroyed", {
-                    "room": room, 
-                    "destroyed_at": destruction_time,
-                    "hours_ago": round(hours_ago, 1),
-                    "message": f"Room was permanently destroyed {round(hours_ago, 1)} hours ago"
-                }, to=sid)
-                return {"success": False, "error": "Room was permanently destroyed"}
-        else:
-            await sio.emit("room_permanently_destroyed", {
-                "room": room,
-                "message": "Room was permanently destroyed"
-            }, to=sid)
-            return {"success": False, "error": "Room was permanently destroyed"}
-
-    # ✅ Track room creation when first user joins
-    if room not in ROOM_USERS or not ROOM_USERS[room]:
-        track_room_creation(room)
-
     # ✅ Check if room was permanently destroyed - REJECT JOIN
-    # if room in DESTROYED_ROOMS:
-    #     await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
-    #     return {"success": False, "error": "Room was permanently destroyed"}
+    if room in DESTROYED_ROOMS:
+        await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
+        return {"success": False, "error": "Room was permanently destroyed"}
 
     # revive destroyed room → clear history
     # if room in DESTROYED_ROOMS:
@@ -936,30 +870,37 @@ async def disconnect(sid):
 async def startup_tasks():
     init_db()
 
-    global FCM_TOKENS, DESTROYED_ROOMS  # ✅ Add DESTROYED_ROOMS here
+    global FCM_TOKENS, DESTROYED_ROOMS
     FCM_TOKENS = load_fcm_tokens()
-     # ✅ Enhanced destroyed rooms loading
     DESTROYED_ROOMS = load_destroyed_rooms()
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
     print(f"🚫 Loaded {len(DESTROYED_ROOMS)} permanently destroyed rooms from DB")
 
-    # Log destruction times for monitoring
-    for room in DESTROYED_ROOMS:
-        destruction_time = get_destruction_time(room)
-        if destruction_time:
-            destroyed_at = datetime.fromisoformat(destruction_time)
-            time_ago = datetime.now(timezone.utc) - destroyed_at
-            print(f"   - Room '{room}' destroyed {round(time_ago.total_seconds() / 3600, 1)} hours ago")
+    # Clean up old destroyed rooms on startup
+    cleaned = cleanup_old_destroyed_rooms()
+    if cleaned > 0:
+        print(f"✅ Cleaned {cleaned} old destroyed rooms on startup")
 
     async def loop_cleanup():
         while True:
-            deleted = cleanup_old_messages()
-            if deleted > 0:
+            # Clean up old messages (existing functionality)
+            deleted_messages = cleanup_old_messages()
+            if deleted_messages > 0:
                 await sio.emit(
                     "cleanup",
-                    {"message": f"{deleted} old messages (48h+) were removed."},
+                    {
+                        "message": f"{deleted_messages} old messages (48h+) were removed."
+                    },
                 )
-            await asyncio.sleep(3600)
+
+            # Clean up old destroyed rooms (every 24 hours)
+            deleted_rooms = cleanup_old_destroyed_rooms()
+            if deleted_rooms > 0:
+                print(
+                    f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
+                )
+
+            await asyncio.sleep(3600)  # Run every hour
 
     async def ping_self():
         url = "https://realtime-chat-1mv3.onrender.com"
@@ -1367,84 +1308,36 @@ async def get_destroyed_rooms():
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
-@app.get("/debug/destroyed-rooms")
-async def debug_destroyed_rooms():
-    """Debug endpoint to see all destroyed rooms with details"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT room, destroyed_at, created_at FROM destroyed_rooms WHERE destroyed_at != ''")
-    rows = c.fetchall()
-    conn.close()
-    
-    destroyed_rooms = []
-    for room, destroyed_at, created_at in rows:
-        destroyed_rooms.append({
-            "room": room,
-            "destroyed_at": destroyed_at,
-            "created_at": created_at
-        })
-    
-    return JSONResponse({
-        "destroyed_rooms": destroyed_rooms,
-        "count": len(destroyed_rooms)
-    })
-
 @app.get("/room-status/{room}")
 async def get_room_status(room: str):
     """Check if a room exists and is not destroyed."""
     is_destroyed = room in DESTROYED_ROOMS
     has_active_users = room in ROOM_USERS and len(ROOM_USERS[room]) > 0
-    
-    return JSONResponse({
-        "room": room,
-        "destroyed": is_destroyed,
-        "exists": not is_destroyed and has_active_users
-    })
 
-@app.get("/room-destruction-info/{room}")
-async def get_room_destruction_info(room: str):
-    """Get detailed information about room destruction"""
-    if room not in DESTROYED_ROOMS:
-        return JSONResponse({"error": "Room not found or not destroyed"}, status_code=404)
-    
-    destruction_time = get_destruction_time(room)
-    if not destruction_time:
-        return JSONResponse({"error": "Destruction time not available"}, status_code=404)
-    
-    destroyed_at = datetime.fromisoformat(destruction_time)
-    now = datetime.now(timezone.utc)
-    hours_ago = (now - destroyed_at).total_seconds() / 3600
-    
-    return JSONResponse({
-        "room": room,
-        "destroyed_at": destruction_time,
-        "hours_ago": round(hours_ago, 1),
-        "destroyed_at_local": destroyed_at.astimezone().isoformat(),  # Local timezone
-        "message": f"Room was permanently destroyed {round(hours_ago, 1)} hours ago"
-    })
+    return JSONResponse(
+        {
+            "room": room,
+            "destroyed": is_destroyed,
+            "exists": not is_destroyed and has_active_users,
+        }
+    )
+
 
 @app.post("/revive-room/{room}")
 async def revive_room(room: str):
-    """Manually revive a destroyed room"""
-    if room not in DESTROYED_ROOMS:
-        return JSONResponse({"error": "Room not found in destroyed rooms"}, status_code=404)
-    
-    # Remove from destroyed rooms
-    DESTROYED_ROOMS.remove(room)
-    
-    # Remove from database
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM destroyed_rooms WHERE room = ?", (room,))
-    conn.commit()
-    conn.close()
-    
-    print(f"✅ Room {room} revived and removed from destroyed rooms")
-    
-    return JSONResponse({
-        "status": "success", 
-        "message": f"Room {room} has been revived. You can now join it."
-    })
+    """Manually revive a destroyed room (for testing)"""
+    if room in DESTROYED_ROOMS:
+        DESTROYED_ROOMS.remove(room)
+        remove_destroyed_room(room)
+        return {"status": "ok", "message": f"Room {room} revived"}
+    else:
+        return {"status": "error", "message": "Room not found in destroyed rooms"}
+
+
+# serve /icons/*
+app.mount(
+    "/icons", StaticFiles(directory=os.path.join(BASE_DIR, "icons")), name="icons"
+)
 
 
 # serve manifest.json
