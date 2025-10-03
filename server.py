@@ -407,6 +407,11 @@ async def destroy_room(room: str):
 
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
+    
+    # 🔥 NEW: Clear ROOM_HISTORY for this room to prevent auto-rejoin
+    if room in ROOM_HISTORY:
+        del ROOM_HISTORY[room]
+        print(f"🧹 Removed room {room} from ROOM_HISTORY")
 
     # 4. Notify clients + force disconnect
     await sio.emit(
