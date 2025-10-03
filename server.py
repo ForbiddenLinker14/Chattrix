@@ -106,32 +106,69 @@ def remove_destroyed_room(room: str):
 
 
 def cleanup_old_destroyed_rooms():
-    """Remove destroyed rooms that are older than 2 minutes"""
+    """Remove destroyed rooms that are older than 7 days and clean up all related data"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        
-        # First, count how many rooms will be deleted
+
+        # First, get the rooms that will be deleted
         cutoff_time = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
-        c.execute("SELECT COUNT(*) FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
-        count_before = c.fetchone()[0]
-        
-        if count_before > 0:
-            # Delete old destroyed rooms
-            c.execute("DELETE FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
+        c.execute(
+            "SELECT room FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,)
+        )
+        rooms_to_delete = [row[0] for row in c.fetchall()]
+
+        if rooms_to_delete:
+            # Delete old destroyed rooms from DB
+            c.execute(
+                "DELETE FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,)
+            )
             conn.commit()
-            print(f"🧹 Cleaned up {count_before} destroyed rooms older than 2 minutes")
+
+            # Clean up all related data for these rooms
+            for room in rooms_to_delete:
+                # Clear from all in-memory data structures
+                ROOM_HISTORY.pop(room, None)
+                ROOM_USERS.pop(room, None)
+
+                # Clear FCM tokens from memory
+                for user in list(FCM_TOKENS.keys()):
+                    FCM_TOKENS[user].pop(room, None)
+                    if not FCM_TOKENS[user]:
+                        del FCM_TOKENS[user]
+
+                # Clear WebPush subscriptions
+                subscriptions.pop(room, None)
+
+                # Clear various caches
+                room_last_seen_keys = [
+                    key for key in USER_LAST_SEEN.keys() if key[1] == room
+                ]
+                for key in room_last_seen_keys:
+                    USER_LAST_SEEN.pop(key, None)
+
+                room_message_keys = [
+                    key for key in LAST_MESSAGE.keys() if key[0] == room
+                ]
+                for key in room_message_keys:
+                    LAST_MESSAGE.pop(key, None)
+
+                print(f"🧹 Completely cleaned up room: {room}")
+
+            print(
+                f"✅ Cleaned up {len(rooms_to_delete)} destroyed rooms and all related data"
+            )
         else:
             print("✅ No old destroyed rooms to clean up")
-        
+
         conn.close()
-        
+
         # Also update in-memory set
         global DESTROYED_ROOMS
         DESTROYED_ROOMS = load_destroyed_rooms()
-        
-        return count_before
-        
+
+        return len(rooms_to_delete)
+
     except Exception as e:
         print(f"❌ Error cleaning up destroyed rooms: {e}")
         return 0
@@ -526,10 +563,59 @@ async def join(sid, data):
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
-    # revive destroyed room → clear history
-    # if room in DESTROYED_ROOMS:
-    #     DESTROYED_ROOMS.remove(room)
-    #     ROOM_HISTORY.pop(room, None)
+    # 🔥 NEW: Complete cleanup for revived rooms
+    has_history = room in ROOM_HISTORY and len(ROOM_HISTORY[room]) > 0
+    has_active_users = room in ROOM_USERS and len(ROOM_USERS[room]) > 0
+
+    if has_history and not has_active_users:
+        # This room is being revived after destruction - CLEAN EVERYTHING
+        print(f"🔄 Room {room} revived - performing complete cleanup")
+
+        # 1. Clear user history
+        ROOM_HISTORY[room] = set()
+
+        # 2. Clear messages from database
+        clear_room(room)
+
+        # 3. Clear FCM tokens for this room
+        delete_fcm_tokens_for_room(room)
+
+        # 4. Clear WebPush subscriptions for this room
+        if room in subscriptions:
+            del subscriptions[room]
+            print(f"🛑 Cleared WebPush subscriptions for room {room}")
+
+        # 5. Clear in-memory FCM tokens
+        for user in list(FCM_TOKENS.keys()):
+            if room in FCM_TOKENS[user]:
+                del FCM_TOKENS[user][room]
+                print(f"🧹 Removed FCM tokens for {user} in room {room}")
+            if not FCM_TOKENS[user]:
+                del FCM_TOKENS[user]
+
+        # 6. Clear any remaining user status for this room
+        users_to_remove = []
+        for user_sid, status in USER_STATUS.items():
+            if status.get("user") and room in ROOM_HISTORY:
+                # This user was previously in this room, remove their status
+                users_to_remove.append(user_sid)
+
+        for user_sid in users_to_remove:
+            USER_STATUS.pop(user_sid, None)
+
+        # 7. Clear last seen timestamps for this room
+        room_last_seen_keys = [key for key in USER_LAST_SEEN.keys() if key[1] == room]
+        for key in room_last_seen_keys:
+            USER_LAST_SEEN.pop(key, None)
+
+        # 8. Clear last message cache for this room
+        room_message_keys = [key for key in LAST_MESSAGE.keys() if key[0] == room]
+        for key in room_message_keys:
+            LAST_MESSAGE.pop(key, None)
+
+        print(f"✅ Complete cleanup done for room {room}")
+        # Reset last_ts to ensure no old messages are loaded
+        last_ts = None
 
     # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -559,7 +645,7 @@ async def join(sid, data):
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # send missed messages
+    # send missed messages (will be empty after cleanup)
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
@@ -901,7 +987,7 @@ async def startup_tasks():
                     f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
                 )
 
-            await asyncio.sleep(300)  # Run every 5 minutes
+            await asyncio.sleep(60)  # Run every 1 minutes
 
     async def ping_self():
         url = "https://realtime-chat-1mv3.onrender.com"
