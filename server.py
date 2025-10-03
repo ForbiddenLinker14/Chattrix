@@ -110,27 +110,28 @@ def cleanup_old_destroyed_rooms():
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-
-        # Calculate cutoff time (7 days ago)
+        
+        # First, count how many rooms will be deleted
         cutoff_time = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-
-        # Delete old destroyed rooms
-        c.execute("DELETE FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
-        deleted_count = c.changes
-
-        conn.commit()
+        c.execute("SELECT COUNT(*) FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
+        count_before = c.fetchone()[0]
+        
+        if count_before > 0:
+            # Delete old destroyed rooms
+            c.execute("DELETE FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
+            conn.commit()
+            print(f"🧹 Cleaned up {count_before} destroyed rooms older than 7 days")
+        else:
+            print("✅ No old destroyed rooms to clean up")
+        
         conn.close()
-
+        
         # Also update in-memory set
         global DESTROYED_ROOMS
-        # Reload from DB to sync with what was deleted
         DESTROYED_ROOMS = load_destroyed_rooms()
-
-        if deleted_count > 0:
-            print(f"🧹 Cleaned up {deleted_count} destroyed rooms older than 7 days")
-
-        return deleted_count
-
+        
+        return count_before
+        
     except Exception as e:
         print(f"❌ Error cleaning up destroyed rooms: {e}")
         return 0
@@ -1306,21 +1307,6 @@ async def get_destroyed_rooms():
     Clients call this on startup to remove stale rooms from localStorage.
     """
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
-
-
-@app.get("/room-status/{room}")
-async def get_room_status(room: str):
-    """Check if a room exists and is not destroyed."""
-    is_destroyed = room in DESTROYED_ROOMS
-    has_active_users = room in ROOM_USERS and len(ROOM_USERS[room]) > 0
-
-    return JSONResponse(
-        {
-            "room": room,
-            "destroyed": is_destroyed,
-            "exists": not is_destroyed and has_active_users,
-        }
-    )
 
 
 @app.post("/revive-room/{room}")
