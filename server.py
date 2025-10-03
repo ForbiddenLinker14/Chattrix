@@ -485,10 +485,18 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # ✅ Check if room was permanently destroyed - REJECT JOIN
+    # ✅ Allow recreation of destroyed rooms if they're empty
     if room in DESTROYED_ROOMS:
-        await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
-        return {"success": False, "error": "Room was permanently destroyed"}
+        # Check if room has no active users (meaning it's truly available for recreation)
+        if room not in ROOM_USERS or not ROOM_USERS[room]:
+            # Room can be recreated - remove from destroyed list
+            DESTROYED_ROOMS.remove(room)
+            remove_destroyed_room(room)
+            print(f"🔄 Room {room} recreated by {username}")
+        else:
+            # Room is still in use by someone else - reject join
+            await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
+            return {"success": False, "error": "Room was permanently destroyed"}
 
     # revive destroyed room → clear history
     # if room in DESTROYED_ROOMS:
