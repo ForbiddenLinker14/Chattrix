@@ -106,13 +106,13 @@ def remove_destroyed_room(room: str):
 
 
 def cleanup_old_destroyed_rooms():
-    """Remove destroyed rooms that are older than 7 days"""
+    """Remove destroyed rooms that are older than 2 minutes"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
         # First, count how many rooms will be deleted
-        cutoff_time = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        cutoff_time = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
         c.execute("SELECT COUNT(*) FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
         count_before = c.fetchone()[0]
         
@@ -120,7 +120,7 @@ def cleanup_old_destroyed_rooms():
             # Delete old destroyed rooms
             c.execute("DELETE FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,))
             conn.commit()
-            print(f"🧹 Cleaned up {count_before} destroyed rooms older than 7 days")
+            print(f"🧹 Cleaned up {count_before} destroyed rooms older than 2 minutes")
         else:
             print("✅ No old destroyed rooms to clean up")
         
@@ -894,14 +894,14 @@ async def startup_tasks():
                     },
                 )
 
-            # Clean up old destroyed rooms (every 24 hours)
+            # Clean up old destroyed rooms (every 5 minutes)
             deleted_rooms = cleanup_old_destroyed_rooms()
             if deleted_rooms > 0:
                 print(
                     f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
                 )
 
-            await asyncio.sleep(3600)  # Run every hour
+            await asyncio.sleep(300)  # Run every 5 minutes
 
     async def ping_self():
         url = "https://realtime-chat-1mv3.onrender.com"
