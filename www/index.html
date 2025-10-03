@@ -1079,32 +1079,32 @@
       // ======================================================
       // =============== Room Management ======================
       // ======================================================
-      function joinRoom() {
-        currentName = document.getElementById("name").value.trim();
-        currentRoom = document.getElementById("room").value.trim();
+   function joinRoom() {
+    currentName = document.getElementById("name").value.trim();
+    currentRoom = document.getElementById("room").value.trim();
 
-        if (!currentName || !currentRoom) {
-          alert("Enter name and room first!");
-          return;
-        }
-
-        if (joinedRooms.has(currentRoom)) {
-          alert(`You are already in room "${currentRoom}"!`);
-          return;
-        }
-
-        // ✅ FIX: When rejoining a previously destroyed room, mark it as active
-    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
-    if (roomVersions[currentRoom] && roomVersions[currentRoom].includes("T")) {
-        // Room was previously destroyed, now mark it as active
-        roomVersions[currentRoom] = "active";
-        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+    if (!currentName || !currentRoom) {
+        alert("Enter name and room first!");
+        return;
     }
 
+    if (joinedRooms.has(currentRoom)) {
+        alert(`You are already in room "${currentRoom}"!`);
+        return;
+    }
 
-        Storage.set("chat_name", currentName);
-        Storage.set("chat_room", currentRoom);
+    // ✅ FIX: When rejoining a previously destroyed room, clear the destroyed flag
+    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
+    if (roomVersions[currentRoom] && roomVersions[currentRoom].includes("T")) {
+        // Room was previously destroyed - DELETE the version to allow fresh join
+        delete roomVersions[currentRoom];
+        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+        console.log("🔄 Cleared destroyed flag for room:", currentRoom);
+    }
 
+    Storage.set("chat_name", currentName);
+    Storage.set("chat_room", currentRoom);
+    
         document.getElementById("chat-container").style.display = "flex";
         document.getElementById("input-area").style.display = "flex";
         document.getElementById("intro").style.display = "none";
@@ -1359,7 +1359,7 @@ async function syncDestroyedRooms() {
                     joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== room);
                 }
                 
-                // Mark room version as destroyed
+                // 🔥 CRITICAL: Mark room version as destroyed using timestamp
                 roomVersions[room] = new Date().toISOString();
             });
             

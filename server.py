@@ -388,7 +388,8 @@ async def destroy_room(room: str):
     destruction_time = datetime.now(timezone.utc).isoformat()
     ROOM_VERSIONS[room] = destruction_time
     print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
-
+    
+    # ... rest of your existing destroy_room code remains the same ...
     # 0b. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
@@ -428,7 +429,7 @@ async def destroy_room(room: str):
     # 🔥 CRITICAL: Broadcast to ALL connected clients globally
     await sio.emit("room_destroyed_global", {
         "room": room, 
-        "destroyed_at": destruction_time
+        "destroyed_at": destruction_time  # 🔥 Send destruction time as new version
     })
 
     # Force disconnect all clients from this room
