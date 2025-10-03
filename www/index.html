@@ -2696,6 +2696,7 @@
           }
         });
 
+        // ✅ Remove users who left the room (not in data.users anymore)
         existing.forEach((li) => {
           li.classList.add("fade-out");
           setTimeout(() => li.remove(), 300);
