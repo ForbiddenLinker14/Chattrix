@@ -99,7 +99,7 @@ def save_destroyed_room(room: str):
     conn.close()
 
 def remove_destroyed_room(room: str):
-    """Remove room from destroyed_rooms (when recreated)"""
+    """Remove room from destroyed_rooms table"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("DELETE FROM destroyed_rooms WHERE room = ?", (room,))
@@ -553,28 +553,34 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-        # ✅ Enhanced destroyed room check with timestamp info
+    # ✅ Enhanced destroyed room check - allow recreation after some time
     if room in DESTROYED_ROOMS:
-        # Get destruction time for informative message
         destruction_time = get_destruction_time(room)
         if destruction_time:
             destroyed_at = datetime.fromisoformat(destruction_time)
             time_ago = datetime.now(timezone.utc) - destroyed_at
             hours_ago = time_ago.total_seconds() / 3600
             
-            await sio.emit("room_permanently_destroyed", {
-                "room": room, 
-                "destroyed_at": destruction_time,
-                "hours_ago": round(hours_ago, 1),
-                "message": f"Room was permanently destroyed {round(hours_ago, 1)} hours ago"
-            }, to=sid)
+            # 🔥 NEW: Auto-revive rooms after 24 hours
+            if hours_ago > 24:
+                print(f"🔄 Auto-reviving room {room} after {hours_ago:.1f} hours")
+                DESTROYED_ROOMS.remove(room)
+                remove_destroyed_room(room)
+                # Continue with normal join process
+            else:
+                await sio.emit("room_permanently_destroyed", {
+                    "room": room, 
+                    "destroyed_at": destruction_time,
+                    "hours_ago": round(hours_ago, 1),
+                    "message": f"Room was permanently destroyed {round(hours_ago, 1)} hours ago"
+                }, to=sid)
+                return {"success": False, "error": "Room was permanently destroyed"}
         else:
             await sio.emit("room_permanently_destroyed", {
                 "room": room,
                 "message": "Room was permanently destroyed"
             }, to=sid)
-        
-        return {"success": False, "error": "Room was permanently destroyed"}
+            return {"success": False, "error": "Room was permanently destroyed"}
 
     # ✅ Track room creation when first user joins
     if room not in ROOM_USERS or not ROOM_USERS[room]:
@@ -1361,6 +1367,28 @@ async def get_destroyed_rooms():
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
+@app.get("/debug/destroyed-rooms")
+async def debug_destroyed_rooms():
+    """Debug endpoint to see all destroyed rooms with details"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("SELECT room, destroyed_at, created_at FROM destroyed_rooms WHERE destroyed_at != ''")
+    rows = c.fetchall()
+    conn.close()
+    
+    destroyed_rooms = []
+    for room, destroyed_at, created_at in rows:
+        destroyed_rooms.append({
+            "room": room,
+            "destroyed_at": destroyed_at,
+            "created_at": created_at
+        })
+    
+    return JSONResponse({
+        "destroyed_rooms": destroyed_rooms,
+        "count": len(destroyed_rooms)
+    })
+
 @app.get("/room-status/{room}")
 async def get_room_status(room: str):
     """Check if a room exists and is not destroyed."""
@@ -1397,18 +1425,26 @@ async def get_room_destruction_info(room: str):
 
 @app.post("/revive-room/{room}")
 async def revive_room(room: str):
-    """Manually revive a destroyed room (for testing)"""
-    if room in DESTROYED_ROOMS:
-        DESTROYED_ROOMS.remove(room)
-        remove_destroyed_room(room)
-        return {"status": "ok", "message": f"Room {room} revived"}
-    else:
-        return {"status": "error", "message": "Room not found in destroyed rooms"}
-
-# serve /icons/*
-app.mount(
-    "/icons", StaticFiles(directory=os.path.join(BASE_DIR, "icons")), name="icons"
-)
+    """Manually revive a destroyed room"""
+    if room not in DESTROYED_ROOMS:
+        return JSONResponse({"error": "Room not found in destroyed rooms"}, status_code=404)
+    
+    # Remove from destroyed rooms
+    DESTROYED_ROOMS.remove(room)
+    
+    # Remove from database
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM destroyed_rooms WHERE room = ?", (room,))
+    conn.commit()
+    conn.close()
+    
+    print(f"✅ Room {room} revived and removed from destroyed rooms")
+    
+    return JSONResponse({
+        "status": "success", 
+        "message": f"Room {room} has been revived. You can now join it."
+    })
 
 
 # serve manifest.json
