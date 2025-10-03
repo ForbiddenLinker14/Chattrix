@@ -442,6 +442,7 @@ async def destroy_room(room: str):
     clear_room(room)
 
     # 2. Mark destroyed
+    save_destroyed_room(room)
     DESTROYED_ROOMS.add(room)
 
     # 3. Remove user mapping
@@ -480,15 +481,15 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-     # Check if room was permanently destroyed
+    # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
     # revive destroyed room → clear history
-    if room in DESTROYED_ROOMS:
-        DESTROYED_ROOMS.remove(room)
-        ROOM_HISTORY.pop(room, None)
+    # if room in DESTROYED_ROOMS:
+    #     DESTROYED_ROOMS.remove(room)
+    #     ROOM_HISTORY.pop(room, None)
 
     # ensure history exists, then add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
