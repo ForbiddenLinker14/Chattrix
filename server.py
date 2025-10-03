@@ -455,7 +455,18 @@ async def join(sid, data):
     token = data.get("fcmToken")
     client_room_version = data.get("roomVersion")
 
-    # Handle destroyed room reactivation
+    # 🔥 CRITICAL FIX: Check room version FIRST
+    current_version = ROOM_VERSIONS.get(room, "initial")
+    
+    # If client has outdated room version, reject the join IMMEDIATELY
+    if client_room_version and client_room_version != current_version:
+        return {
+            "success": False, 
+            "error": "Room was destroyed and recreated. Please manually rejoin.",
+            "roomVersion": current_version
+        }
+
+    # 🔥 Only AFTER version check, handle destroyed room reactivation
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
         # Create new room version
@@ -464,16 +475,10 @@ async def join(sid, data):
         # Clear history for fresh start
         ROOM_HISTORY.pop(room, None)
         print(f"🔄 Room {room} reactivated for {username}, version: {new_version}")
+        # Update current_version since we just changed it
+        current_version = new_version
 
-    # Check if client has outdated room version
-    current_version = ROOM_VERSIONS.get(room, "initial")
-    if client_room_version and client_room_version != current_version:
-        return {
-            "success": False, 
-            "error": "Room was destroyed and recreated. Please manually rejoin.",
-            "roomVersion": current_version
-        }
-
+    # Rest of your code remains the same...
     # Initialize room structures
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
