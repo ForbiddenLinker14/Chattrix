@@ -421,14 +421,15 @@ async def destroy_room(room: str):
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
-
+    
     # Notify everyone who was in the room
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
     # 🔥 CRITICAL: Broadcast to ALL connected clients globally
-    await sio.emit(
-        "room_destroyed_global", {"room": room, "destroyed_at": destruction_time}
-    )
+    await sio.emit("room_destroyed_global", {
+        "room": room, 
+        "destroyed_at": destruction_time
+    })
 
     # Force disconnect all clients from this room
     namespace = "/"
@@ -447,7 +448,7 @@ async def join(sid, data):
     # Validate required fields
     if not data.get("room") or not data.get("sender"):
         return {"success": False, "error": "Room and sender are required"}
-
+    
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
@@ -468,22 +469,22 @@ async def join(sid, data):
     current_version = ROOM_VERSIONS.get(room, "initial")
     if client_room_version and client_room_version != current_version:
         return {
-            "success": False,
+            "success": False, 
             "error": "Room was destroyed and recreated. Please manually rejoin.",
-            "roomVersion": current_version,
+            "roomVersion": current_version
         }
 
     # Initialize room structures
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
-
+    
     ROOM_HISTORY.setdefault(room, set()).add(username)
 
     # Handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
         return {"success": True, "message": "Already in room"}
-
+    
     if old_sid and old_sid != sid:
         try:
             await sio.leave_room(old_sid, room)
@@ -540,9 +541,9 @@ async def join(sid, data):
         )
 
     return {
-        "success": True,
+        "success": True, 
         "roomVersion": current_version,
-        "message": "Joined room successfully",
+        "message": "Joined room successfully"
     }
 
 
@@ -744,11 +745,14 @@ async def leave(sid, data):
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         del ROOM_USERS[room][username]
+        # 🔥 NEW: Remove from ROOM_HISTORY to ensure they disappear from user list
+        if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
+            ROOM_HISTORY[room].remove(username)
         if not ROOM_USERS[room]:
             del ROOM_USERS[room]
 
     await sio.leave_room(sid, room)
-    await broadcast_users(room)
+    await broadcast_users(room)  # This will now properly update without the left user
     await sio.emit("left_room", {"room": room}, to=sid)
 
     # 🛑 Only cleanup tokens/subscriptions on a *real leave*
@@ -787,9 +791,6 @@ async def leave(sid, data):
             },
             room=room,
         )
-
-    # ✅ Always refresh user list for others so they instantly see user removed
-    await broadcast_users(room)
 
 
 @sio.event
