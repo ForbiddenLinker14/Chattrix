@@ -382,6 +382,10 @@ async def clear_messages(room: str):
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
 
+# Add this global variable near the top with other globals
+ROOM_VERSIONS = {}  # { room: version_timestamp }
+
+# Update the destroy_room function
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str):
     # 0. 🔥 Update room version FIRST (this is critical)
@@ -389,7 +393,6 @@ async def destroy_room(room: str):
     ROOM_VERSIONS[room] = destruction_time
     print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
     
-    # ... rest of your existing destroy_room code remains the same ...
     # 0b. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
@@ -442,8 +445,7 @@ async def destroy_room(room: str):
     print(f"💥 Room {room} destroyed. Global notification sent to all clients.")
     return {"status": "ok"}
 
-
-# ---------------- Socket.IO Events ----------------
+# Update the join event handler
 @sio.event
 async def join(sid, data):
     # Validate required fields

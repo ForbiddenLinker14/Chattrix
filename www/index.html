@@ -1079,32 +1079,32 @@
       // ======================================================
       // =============== Room Management ======================
       // ======================================================
-      function joinRoom() {
-        currentName = document.getElementById("name").value.trim();
-        currentRoom = document.getElementById("room").value.trim();
+   function joinRoom() {
+    currentName = document.getElementById("name").value.trim();
+    currentRoom = document.getElementById("room").value.trim();
 
-        if (!currentName || !currentRoom) {
-          alert("Enter name and room first!");
-          return;
-        }
-
-        if (joinedRooms.has(currentRoom)) {
-          alert(`You are already in room "${currentRoom}"!`);
-          return;
-        }
-
-        // ✅ FIX: When rejoining a previously destroyed room, mark it as active
-    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
-    if (roomVersions[currentRoom] && roomVersions[currentRoom].includes("T")) {
-        // Room was previously destroyed, now mark it as active
-        roomVersions[currentRoom] = "active";
-        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+    if (!currentName || !currentRoom) {
+        alert("Enter name and room first!");
+        return;
     }
 
+    if (joinedRooms.has(currentRoom)) {
+        alert(`You are already in room "${currentRoom}"!`);
+        return;
+    }
 
-        Storage.set("chat_name", currentName);
-        Storage.set("chat_room", currentRoom);
+    // ✅ FIX: When rejoining a previously destroyed room, clear the destroyed flag
+    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
+    if (roomVersions[currentRoom] && roomVersions[currentRoom].includes("T")) {
+        // Room was previously destroyed - DELETE the version to allow fresh join
+        delete roomVersions[currentRoom];
+        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+        console.log("🔄 Cleared destroyed flag for room:", currentRoom);
+    }
 
+    Storage.set("chat_name", currentName);
+    Storage.set("chat_room", currentRoom);
+    
         document.getElementById("chat-container").style.display = "flex";
         document.getElementById("input-area").style.display = "flex";
         document.getElementById("intro").style.display = "none";
@@ -1359,7 +1359,7 @@ async function syncDestroyedRooms() {
                     joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== room);
                 }
                 
-                // Mark room version as destroyed
+                // 🔥 CRITICAL: Mark room version as destroyed using timestamp
                 roomVersions[room] = new Date().toISOString();
             });
             
@@ -2729,6 +2729,25 @@ function handleGlobalRoomDestroyed(data) {
     });
 }
 
+function handleDestroyedRoomUI(room) {
+    // Clean up destroyed room from all storage
+    if (joinedRooms.has(room)) joinedRooms.delete(room);
+    if (joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== room);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+    }
+    Storage.remove("chat_room");
+    
+    // Reset UI
+    currentRoom = "";
+    document.getElementById("room").value = "";
+    document.getElementById("chat-container").style.display = "none";
+    document.getElementById("input-area").style.display = "none";
+    document.getElementById("intro").style.display = "block";
+    
+    renderJoinedRooms();
+}
+
 function handleRoomDestroyed(data) {
     const destroyedRoom = data.room;
     console.log("💥 Room destroyed (local):", destroyedRoom);
@@ -2987,41 +3006,28 @@ window.addEventListener("load", async () => {
     // 🔥 SYNC DESTROYED ROOMS BEFORE ANYTHING ELSE
     await syncDestroyedRooms();
 
-    // Only proceed if we have a valid room that wasn't just destroyed
+    // SIMPLIFIED AUTO-JOIN LOGIC
     if (currentName && savedRoom) {
-        // Check if the room still exists and version matches
-        try {
-            const response = await fetch(`https://realtime-chat-1mv3.onrender.com/room_version/${encodeURIComponent(savedRoom)}`);
-            if (response.ok) {
-                const data = await response.json();
-                const serverVersion = data.version;
-                const clientVersion = roomVersions[savedRoom] || "initial";
-                
-                if (clientVersion === serverVersion && serverVersion !== "initial") {
-                    // Room exists and versions match - safe to join
-                    document.getElementById("name").value = currentName;
-                    document.getElementById("room").value = savedRoom;
-                    joinRoom();
-                } else {
-                    // Room was destroyed or version mismatch
-                    console.log("🚫 Room destroyed or version mismatch");
-                    handleDestroyedRoomUI(savedRoom);
-                }
-            } else {
-                // Room doesn't exist on server
-                console.log("🚫 Room not found on server");
-                handleDestroyedRoomUI(savedRoom);
-            }
-        } catch (error) {
-            console.warn("Failed to check room status:", error);
-            // On error, be safe and don't auto-join
+        // Check if room was previously marked as destroyed locally
+        const roomVersion = roomVersions[savedRoom] || "initial";
+        
+        if (roomVersion.includes("T")) {
+            // Room was previously destroyed - don't auto-join
+            console.log("🚫 Room was previously destroyed, skipping auto-join");
             handleDestroyedRoomUI(savedRoom);
+        } else {
+            // Room is active or initial state - safe to auto-join
+            console.log("✅ Auto-joining room:", savedRoom);
+            document.getElementById("name").value = currentName;
+            document.getElementById("room").value = savedRoom;
+            joinRoom();
         }
     } else {
         // No saved room, show intro
         document.getElementById("intro").style.display = "block";
     }
 });
+
 
 function handleDestroyedRoomUI(room) {
     // Clean up destroyed room from all storage
