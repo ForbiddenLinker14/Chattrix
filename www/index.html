@@ -1079,7 +1079,7 @@
       // =============== Room Management ======================
       // ======================================================
       // ----------------- Join Room -----------------
-      function joinRoom() {
+      async function joinRoom() {
         currentName = document.getElementById("name").value.trim();
         currentRoom = document.getElementById("room").value.trim();
 
@@ -1087,6 +1087,15 @@
           alert("Enter name and room first!");
           return;
         }
+
+         // ✅ Check room status before attempting to join
+    const canJoin = await checkRoomStatus(currentRoom);
+    if (!canJoin) {
+        // Room is destroyed, clear storage
+        Storage.remove("chat_name");
+        Storage.remove("chat_room");
+        return;
+    }
 
         if (joinedRooms.has(currentRoom)) {
           alert(`You are already in room "${currentRoom}"!`);
@@ -1320,6 +1329,36 @@ socket.on("room_permanently_destroyed", (data) => {
         renderJoinedRooms();
       }
 
+
+      async function checkRoomStatus(room) {
+    try {
+        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
+        if (response.ok) {
+            const roomStatus = await response.json();
+            
+            if (roomStatus.destroyed) {
+                // Get detailed destruction info
+                const destroyedResponse = await fetch(`${API_BASE}/room-destruction-info/${encodeURIComponent(room)}`);
+                if (destroyedResponse.ok) {
+                    const destructionInfo = await destroyedResponse.json();
+                    console.log(`💥 Room ${room} was destroyed at: ${destructionInfo.destroyed_at}`);
+                    
+                    // Show informative message to user
+                    if (destructionInfo.hours_ago) {
+                        alert(`This room was permanently destroyed ${Math.round(destructionInfo.hours_ago)} hours ago. Please create a new room.`);
+                    } else {
+                        alert('This room was permanently destroyed. Please create a new room.');
+                    }
+                }
+                return false;
+            }
+            return roomStatus.exists;
+        }
+    } catch (err) {
+        console.warn("Failed to check room status:", err);
+    }
+    return true; // Default to allowing join if check fails
+}
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
