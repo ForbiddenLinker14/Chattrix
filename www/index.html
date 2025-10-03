@@ -1079,7 +1079,7 @@
       // ======================================================
       // =============== Room Management ======================
       // ======================================================
-   function joinRoom() {
+function joinRoom() {
     currentName = document.getElementById("name").value.trim();
     currentRoom = document.getElementById("room").value.trim();
 
@@ -1105,134 +1105,147 @@
     Storage.set("chat_name", currentName);
     Storage.set("chat_room", currentRoom);
     
-        document.getElementById("chat-container").style.display = "flex";
-        document.getElementById("input-area").style.display = "flex";
-        document.getElementById("intro").style.display = "none";
-        document.getElementById("messages").style.display = "block";
+    document.getElementById("chat-container").style.display = "flex";
+    document.getElementById("input-area").style.display = "flex";
+    document.getElementById("intro").style.display = "none";
+    document.getElementById("messages").style.display = "block";
 
-        document.getElementById("messages").innerHTML = "";
-        lastPersistedTs = null;
-        alreadyFetchingHistory = false;
-        document.getElementById("input").disabled = false;
-        document.getElementById("send").disabled = false;
-        document.getElementById("attach").disabled = false;
-        document.getElementById("user-list").innerHTML = "";
+    document.getElementById("messages").innerHTML = "";
+    lastPersistedTs = null;
+    alreadyFetchingHistory = false;
+    document.getElementById("input").disabled = false;
+    document.getElementById("send").disabled = false;
+    document.getElementById("attach").disabled = false;
+    document.getElementById("user-list").innerHTML = "";
 
-        if (socket) {
-          socket.off();
-          socket.disconnect();
-        }
+    if (socket) {
+        socket.off();
+        socket.disconnect();
+    }
 
-        socket = io("https://realtime-chat-1mv3.onrender.com", {
-          path: "/socket.io",
-          transports: ["websocket"],
-        });
+    socket = io("https://realtime-chat-1mv3.onrender.com", {
+        path: "/socket.io",
+        transports: ["websocket"],
+    });
 
-        // 👉 Subscribe user when joining room (not when sending message)
-        subscribeUser(currentName, currentRoom).catch((err) =>
-          console.warn("⚠️ Subscription failed in joinRoom:", err)
-        );
+    // 👉 Subscribe user when joining room (not when sending message)
+    subscribeUser(currentName, currentRoom).catch((err) =>
+        console.warn("⚠️ Subscription failed in joinRoom:", err)
+    );
 
-        function safeJoinWithRetry(attempt = 1) {
-          if (!socket || !socket.connected) return;
-          if (joinedRooms.has(currentRoom)) return;
+    function safeJoinWithRetry(attempt = 1) {
+        if (!socket || !socket.connected) return;
+        if (joinedRooms.has(currentRoom)) return;
 
-          // 🔑 fetch stored FCM token
-          const fcmToken = localStorage.getItem("fcm_token") || null;
+        // 🔑 fetch stored FCM token
+        const fcmToken = localStorage.getItem("fcm_token") || null;
+        
+        // 🔥 Get client's known room version
+        const clientRoomVersion = roomVersions[currentRoom] || "initial";
 
-          socket.emit(
+        socket.emit(
             "join",
             {
-              room: currentRoom,
-              sender: currentName,
-              lastTs: lastPersistedTs || null,
-              fcmToken: fcmToken,
-              roomVersion: clientRoomVersion, // 🔥 Send client's known version
-            },
-            (ack) => {
-              if (ack && ack.success) {
-                console.log("✅ Joined room:", currentRoom);
-                  // 🔥 Update stored room version with server's version
-                if (ack.roomVersion) {
-                    roomVersions[currentRoom] = ack.roomVersion;
-                    localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
-                }
-                joinedRooms.add(currentRoom);
-                sendActive(!document.hidden);
-              } else if (ack && ack.error) {
-                // 🔥 Handle room version mismatch
-                console.error("❌ Join failed:", ack.error);
-                
-                if (ack.error.includes("destroyed and recreated")) {
-                    alert(`Room "${currentRoom}" was destroyed and recreated. Please manually rejoin.`);
-                    
-                    // Clear the auto-rejoin data
-                    Storage.remove("chat_room");
-                    document.getElementById("room").value = "";
-                    
-                    // Update local version
-                    if (ack.roomVersion) {
-                        roomVersions[currentRoom] = ack.roomVersion;
-                        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
-                    }
-                    
-                    // Show intro
-                    document.getElementById("chat-container").style.display = "none";
-                    document.getElementById("input-area").style.display = "none";
-                    document.getElementById("intro").style.display = "block";
-                } else {
-                    alert(ack.error);
-                }
-            } else {
-                console.log("⚠️ Join failed, retrying...", attempt);
-                setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
-            }
-        }
-    );
-        }
-
-        socket.on("users_update", updateUserList);
-        socket.on("left_room", (data) => {
-          if (data.room === currentRoom)
-            document.getElementById("user-list").innerHTML = "";
-        });
-        socket.on("room_destroyed_global", handleGlobalRoomDestroyed);
-        socket.on("room_destroyed", handleRoomDestroyed);
-        socket.on("clear", handleRoomCleared);
-
-        socket.on("connect", () => {
-          if (currentRoom && currentName) {
-            const fcmToken = localStorage.getItem("fcm_token") || null;
-
-            socket.emit(
-              "join",
-              {
                 room: currentRoom,
                 sender: currentName,
                 lastTs: lastPersistedTs || null,
                 fcmToken: fcmToken,
-              },
-              (ack) => {
+                roomVersion: clientRoomVersion, // 🔥 Send client's known version
+            },
+            (ack) => {
                 if (ack && ack.success) {
-                  console.log("✅ Joined room on reconnect:", currentRoom);
-                  joinedRooms.add(currentRoom);
-                  sendActive(!document.hidden);
-
-                  // ✅ NEW: Fetch unread counts when reconnecting after being offline
-                  fetchUnreadCounts();
+                    console.log("✅ Joined room:", currentRoom);
+                    // 🔥 Update stored room version with server's version
+                    if (ack.roomVersion) {
+                        roomVersions[currentRoom] = ack.roomVersion;
+                        localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                    }
+                    joinedRooms.add(currentRoom);
+                    sendActive(!document.hidden);
+                } else if (ack && ack.error) {
+                    // 🔥 Handle room version mismatch
+                    console.error("❌ Join failed:", ack.error);
+                    
+                    if (ack.error.includes("destroyed and recreated")) {
+                        alert(`Room "${currentRoom}" was destroyed and recreated. Please manually rejoin.`);
+                        
+                        // Clear the auto-rejoin data
+                        Storage.remove("chat_room");
+                        document.getElementById("room").value = "";
+                        
+                        // Update local version
+                        if (ack.roomVersion) {
+                            roomVersions[currentRoom] = ack.roomVersion;
+                            localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                        }
+                        
+                        // Show intro
+                        document.getElementById("chat-container").style.display = "none";
+                        document.getElementById("input-area").style.display = "none";
+                        document.getElementById("intro").style.display = "block";
+                    } else {
+                        alert(ack.error);
+                    }
                 } else {
-                  console.warn("⚠️ Join failed on reconnect, retrying...");
-                  setTimeout(() => {
-                    socket.disconnect();
-                    socket.connect();
-                  }, 500);
+                    console.log("⚠️ Join failed, retrying...", attempt);
+                    setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
                 }
-              }
+            }
+        );
+    }
+
+    socket.on("users_update", updateUserList);
+    socket.on("left_room", (data) => {
+        if (data.room === currentRoom)
+            document.getElementById("user-list").innerHTML = "";
+    });
+    socket.on("room_destroyed_global", handleGlobalRoomDestroyed);
+    socket.on("room_destroyed", handleRoomDestroyed);
+    socket.on("clear", handleRoomCleared);
+
+    socket.on("connect", () => {
+        if (currentRoom && currentName) {
+            const fcmToken = localStorage.getItem("fcm_token") || null;
+            
+            // 🔥 Get client's known room version for reconnect too
+            const clientRoomVersion = roomVersions[currentRoom] || "initial";
+
+            socket.emit(
+                "join",
+                {
+                    room: currentRoom,
+                    sender: currentName,
+                    lastTs: lastPersistedTs || null,
+                    fcmToken: fcmToken,
+                    roomVersion: clientRoomVersion, // 🔥 Send version on reconnect too
+                },
+                (ack) => {
+                    if (ack && ack.success) {
+                        console.log("✅ Joined room on reconnect:", currentRoom);
+                        joinedRooms.add(currentRoom);
+                        sendActive(!document.hidden);
+
+                        // ✅ Update room version on successful reconnect
+                        if (ack.roomVersion) {
+                            roomVersions[currentRoom] = ack.roomVersion;
+                            localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                        }
+
+                        // ✅ NEW: Fetch unread counts when reconnecting after being offline
+                        fetchUnreadCounts();
+                    } else {
+                        console.warn("⚠️ Join failed on reconnect, retrying...");
+                        setTimeout(() => {
+                            socket.disconnect();
+                            socket.connect();
+                        }, 500);
+                    }
+                }
             );
-          } else {
+        } else {
             restoreChatState(socket);
-          }
-        });
+        }
+    });
 
         socket.on("room_message_meta", (data) => {
           try {
