@@ -1348,6 +1348,70 @@ function joinRoom() {
         renderJoinedRooms();
       }
 
+      // Add this function to check room version before auto-join
+async function checkRoomVersionBeforeJoin(room) {
+    try {
+        const response = await fetch(`${API_BASE}/room_version/${encodeURIComponent(room)}`);
+        if (!response.ok) return "initial"; // fallback
+        
+        const data = await response.json();
+        return data.version || "initial";
+    } catch (err) {
+        console.warn("Failed to check room version:", err);
+        return "initial";
+    }
+}
+
+// Update the auto-join logic in the load event listener:
+window.addEventListener("load", async () => {
+    await requestNotificationPermission();
+    
+    // Load user data FIRST
+    currentName = Storage.get("chat_name") || "";
+    const savedRoom = Storage.get("chat_room");
+    joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+    roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
+    
+    // 🔥 SYNC DESTROYED ROOMS BEFORE ANYTHING ELSE
+    await syncDestroyedRooms();
+
+    // ENHANCED AUTO-JOIN LOGIC WITH VERSION CHECK
+    if (currentName && savedRoom) {
+        // Check if room was previously marked as destroyed locally
+        const localVersion = roomVersions[savedRoom] || "initial";
+        
+        if (localVersion.includes("T")) {
+            // Room was previously destroyed - don't auto-join
+            console.log("🚫 Room was previously destroyed, skipping auto-join");
+            handleDestroyedRoomUI(savedRoom);
+        } else {
+            // 🔥 CRITICAL FIX: Check server version BEFORE auto-joining
+            const serverVersion = await checkRoomVersionBeforeJoin(savedRoom);
+            const clientVersion = roomVersions[savedRoom] || "initial";
+            
+            if (serverVersion !== clientVersion) {
+                // Version mismatch - room was destroyed and recreated
+                console.log("🚫 Room version mismatch, skipping auto-join");
+                
+                // Update local version to match server
+                roomVersions[savedRoom] = serverVersion;
+                localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                
+                handleDestroyedRoomUI(savedRoom);
+            } else {
+                // Room is active and versions match - safe to auto-join
+                console.log("✅ Auto-joining room:", savedRoom);
+                document.getElementById("name").value = currentName;
+                document.getElementById("room").value = savedRoom;
+                joinRoom();
+            }
+        }
+    } else {
+        // No saved room, show intro
+        document.getElementById("intro").style.display = "block";
+    }
+});
+
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
