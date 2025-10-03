@@ -1348,6 +1348,22 @@ function joinRoom() {
         renderJoinedRooms();
       }
 
+      // Add this function to check room version before auto-join
+// Add this function (keep it as is)
+async function checkRoomVersionBeforeJoin(room) {
+    try {
+        const response = await fetch(`${API_BASE}/room_version/${encodeURIComponent(room)}`);
+        if (!response.ok) return "initial";
+        const data = await response.json();
+        return data.version || "initial";
+    } catch (err) {
+        console.warn("Failed to check room version:", err);
+        return "initial";
+    }
+}
+
+
+
       // ======================================================
       // ========== syncDestroyedRooms(Joined Room) ===========
       // ======================================================
@@ -3007,33 +3023,61 @@ async function leaveRoom() {
       // ======================================================
       // =============== Initialization =======================
       // ======================================================
+// Update the load event listener to handle async properly
 window.addEventListener("load", async () => {
     await requestNotificationPermission();
     
-    // Load user data FIRST
+    // Load user data
     currentName = Storage.get("chat_name") || "";
     const savedRoom = Storage.get("chat_room");
     joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
     roomVersions = JSON.parse(localStorage.getItem('roomVersions') || '{}');
     
-    // 🔥 SYNC DESTROYED ROOMS BEFORE ANYTHING ELSE
+    // Sync destroyed rooms
     await syncDestroyedRooms();
 
-    // SIMPLIFIED AUTO-JOIN LOGIC
+    // If we have a saved room, check version BEFORE any socket connection
     if (currentName && savedRoom) {
-        // Check if room was previously marked as destroyed locally
-        const roomVersion = roomVersions[savedRoom] || "initial";
+        const localVersion = roomVersions[savedRoom] || "initial";
         
-        if (roomVersion.includes("T")) {
-            // Room was previously destroyed - don't auto-join
-            console.log("🚫 Room was previously destroyed, skipping auto-join");
+        if (localVersion.includes("T")) {
+            console.log("🚫 Room was previously destroyed locally, skipping auto-join");
             handleDestroyedRoomUI(savedRoom);
         } else {
-            // Room is active or initial state - safe to auto-join
-            console.log("✅ Auto-joining room:", savedRoom);
-            document.getElementById("name").value = currentName;
-            document.getElementById("room").value = savedRoom;
-            joinRoom();
+            console.log("🔍 Checking server room version before auto-join...");
+            
+            // 🔥 CRITICAL: Check server version BEFORE creating socket
+            const serverVersion = await checkRoomVersionBeforeJoin(savedRoom);
+            const clientVersion = roomVersions[savedRoom] || "initial";
+            
+            console.log(`📊 Version check - Server: ${serverVersion}, Client: ${clientVersion}`);
+            
+            if (serverVersion !== clientVersion && serverVersion !== "initial") {
+                console.log("🚫 Room version mismatch, skipping auto-join");
+                
+                // Update local version and prevent auto-join
+                roomVersions[savedRoom] = serverVersion;
+                localStorage.setItem('roomVersions', JSON.stringify(roomVersions));
+                
+                handleDestroyedRoomUI(savedRoom);
+                
+                // Show user what happened
+                document.getElementById("intro").style.display = "block";
+                document.getElementById("intro").innerHTML += `
+                    <div style="background: #f44336; color: white; padding: 10px; margin: 10px 0; border-radius: 5px;">
+                        Room "${savedRoom}" was destroyed and recreated while you were offline. 
+                        Please manually rejoin if needed.
+                    </div>
+                `;
+            } else {
+                // Versions match - safe to proceed with auto-join
+                console.log("✅ Room versions match, proceeding with auto-join");
+                document.getElementById("name").value = currentName;
+                document.getElementById("room").value = savedRoom;
+                
+                // Now create socket and join room
+                joinRoom();
+            }
         }
     } else {
         // No saved room, show intro
