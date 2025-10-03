@@ -35,7 +35,6 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
-ROOM_VERSIONS = {}  # { room: version_timestamp }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -382,23 +381,14 @@ async def clear_messages(room: str):
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
 
-# Add this global variable near the top with other globals
-ROOM_VERSIONS = {}  # { room: version_timestamp }
-
-# Update the destroy_room function
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str):
-    # 0. 🔥 Update room version FIRST (this is critical)
-    destruction_time = datetime.now(timezone.utc).isoformat()
-    ROOM_VERSIONS[room] = destruction_time
-    print(f"🔥 Room {room} version updated to: {ROOM_VERSIONS[room]}")
-    
-    # 0b. Clear webpush subscriptions
+    # 0. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
         print(f"🛑 All webpush subscriptions cleared for room {room}")
 
-    # 0c. Clear in-memory FCM tokens for this room
+    # 0b. Clear in-memory FCM tokens for this room
     for user in list(FCM_TOKENS.keys()):
         if room in FCM_TOKENS[user]:
             del FCM_TOKENS[user][room]
@@ -406,7 +396,7 @@ async def destroy_room(room: str):
         if not FCM_TOKENS[user]:
             del FCM_TOKENS[user]
 
-    # 0d. Clear persisted FCM tokens in DB
+    # 0c. Clear persisted FCM tokens in DB
     delete_fcm_tokens_for_room(room)
 
     # 1. Clear DB messages
@@ -418,77 +408,106 @@ async def destroy_room(room: str):
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
-    # 4. Notify ALL connected clients (not just room members)
-    # First notify room members
+    # 4. Notify clients + force disconnect
     await sio.emit(
         "clear",
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
-    
-    # Notify everyone who was in the room
+    # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
-    # 🔥 CRITICAL: Broadcast to ALL connected clients globally
-    await sio.emit("room_destroyed_global", {
-        "room": room, 
-        "destroyed_at": destruction_time  # 🔥 Send destruction time as new version
-    })
-
-    # Force disconnect all clients from this room
+    # --- NEW: also broadcast to all connected clients so clients
+    # who have already left the room (but still have it in localStorage)
+    # can remove it from their sidebar.
+    await sio.emit("room_destroyed", {"room": room})
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
 
-    print(f"💥 Room {room} destroyed. Global notification sent to all clients.")
+    print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}
 
+
+# ---------------- Socket.IO Events ----------------
 @sio.event
 async def join(sid, data):
-    # Validate required fields
-    if not data.get("room") or not data.get("sender"):
-        return {"success": False, "error": "Room and sender are required"}
-    
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")
-    client_room_version = data.get("roomVersion")
+    token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # 🔥 CRITICAL FIX: Check room version FIRST
-    current_version = ROOM_VERSIONS.get(room, "initial")
-    
-    # If client has outdated room version, reject the join IMMEDIATELY
-    if client_room_version and client_room_version != current_version:
-        print(f"🚫 Room version mismatch for {room}: client={client_room_version}, server={current_version}")
-        return {
-            "success": False, 
-            "error": "Room was destroyed and recreated. Please manually rejoin.",
-            "roomVersion": current_version
-        }
-
-    # 🔥 Only AFTER version check, handle destroyed room reactivation
+    # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
         DESTROYED_ROOMS.remove(room)
-        # Create new room version
-        new_version = str(datetime.now(timezone.utc).timestamp())
-        ROOM_VERSIONS[room] = new_version
-        # Clear history for fresh start
         ROOM_HISTORY.pop(room, None)
-        print(f"🔄 Room {room} reactivated for {username}, version: {new_version}")
-        # Update current_version since we just changed it
-        current_version = new_version
 
-    # Rest of your existing join logic...
-    # [Keep all your existing join code here]
-    
-    return {
-        "success": True, 
-        "roomVersion": current_version,
-        "message": "Joined room successfully"
-    }
+    # ensure history exists, then add user
+    ROOM_HISTORY.setdefault(room, set()).add(username)
+
+    if room not in ROOM_USERS:
+        ROOM_USERS[room] = {}
+
+    # handle duplicate sessions
+    old_sid = ROOM_USERS[room].get(username)
+    if old_sid == sid:
+        return {"success": True, "message": "Already in room"}
+    if old_sid and old_sid != sid:
+        try:
+            await sio.leave_room(old_sid, room)
+        except Exception:
+            pass
+
+    # map user → sid and mark active immediately
+    ROOM_USERS[room][username] = sid
+    USER_STATUS[sid] = {"user": username, "active": True}
+
+    await sio.enter_room(sid, room)
+    await broadcast_users(room)
+
+    # 🔑 register token in memory + DB
+    if token:
+        register_fcm_token(username, room, token)
+        save_fcm_token(username, room, token)
+
+    # send missed messages
+    for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
+        if last_ts and ts <= last_ts:
+            continue
+        if filename:
+            await sio.emit(
+                "file",
+                {
+                    "sender": sender_,
+                    "filename": filename,
+                    "mimetype": mimetype,
+                    "data": filedata,
+                    "ts": ts,
+                },
+                to=sid,
+            )
+        else:
+            await sio.emit(
+                "message",
+                {"sender": sender_, "text": text, "ts": ts},
+                to=sid,
+            )
+
+    # broadcast system join
+    if not old_sid:
+        await sio.emit(
+            "message",
+            {
+                "sender": "System",
+                "text": f"{username} joined!",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=room,
+        )
+
+    return {"success": True}
 
 
 @sio.event
@@ -1183,12 +1202,6 @@ async def get_destroyed_rooms():
     Clients call this on startup to remove stale rooms from localStorage.
     """
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
-
-
-@app.get("/room_version/{room}")
-async def get_room_version(room: str):
-    version = ROOM_VERSIONS.get(room, "initial")
-    return {"room": room, "version": version}
 
 
 # serve /icons/*
