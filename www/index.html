@@ -1152,6 +1152,31 @@
           );
         }
 
+        // Add this socket event listener in your joinRoom function
+socket.on("room_permanently_destroyed", (data) => {
+    console.log(`💥 Room ${data.room} was permanently destroyed`);
+    
+    // Clear local storage
+    Storage.remove("chat_name");
+    Storage.remove("chat_room");
+    
+    // Remove from joined rooms
+    if (joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== data.room);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+    }
+    
+    // Reset UI
+    document.getElementById("chat-container").style.display = "none";
+    document.getElementById("input-area").style.display = "none";
+    document.getElementById("intro").style.display = "block";
+    document.getElementById("messages").innerHTML = "";
+    document.getElementById("user-list").innerHTML = "";
+    
+    currentRoom = "";
+    renderJoinedRooms();
+});
+
         socket.on("users_update", updateUserList);
         socket.on("left_room", (data) => {
           if (data.room === currentRoom)
@@ -2885,18 +2910,18 @@ window.addEventListener("load", async () => {
     const savedRoom = Storage.get("chat_room");
 
     if (savedName && savedRoom) {
-        // ✅ NEW: Check if room was destroyed before auto-joining
+        // ✅ NEW: Check if room exists and is not permanently destroyed
         try {
             const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`);
             if (response.ok) {
                 const roomStatus = await response.json();
                 
                 if (roomStatus.destroyed) {
-                    // Room was destroyed - clear storage and show intro
+                    // Room was permanently destroyed - clear storage
                     Storage.remove("chat_name");
                     Storage.remove("chat_room");
                     
-                    // Also remove from joined rooms
+                    // Remove from joined rooms
                     joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
                     if (joinedRoomsByUser[savedName]) {
                         joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
@@ -2904,7 +2929,7 @@ window.addEventListener("load", async () => {
                     }
                     
                     document.getElementById("intro").style.display = "block";
-                    console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
+                    console.log(`⚠️ Room ${savedRoom} was permanently destroyed, preventing auto-join`);
                     return;
                 }
             }

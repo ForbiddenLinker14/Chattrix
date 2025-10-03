@@ -69,47 +69,36 @@ if not firebase_admin._apps:  # <-- check before init
     firebase_admin.initialize_app(cred)
 
 
-# ---------------- DB ----------------
-def init_db():
+# ---------------- Helpers for FCM tokens ----------------
+def load_destroyed_rooms():
+    """Load permanently destroyed rooms from DB"""
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    c.execute("SELECT room FROM destroyed_rooms")
+    rows = c.fetchall()
+    conn.close()
+    return set(row[0] for row in rows)
 
-    # Messages table
+def save_destroyed_room(room: str):
+    """Save destroyed room to DB"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
     c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            text TEXT,
-            filename TEXT,
-            mimetype TEXT,
-            filedata TEXT,
-            ts TEXT NOT NULL
-        )
-        """
+        "INSERT OR REPLACE INTO destroyed_rooms (room, destroyed_at) VALUES (?, ?)",
+        (room, datetime.now(timezone.utc).isoformat())
     )
+    conn.commit()
+    conn.close()
 
-    # FCM tokens table (with UNIQUE user)
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS fcm_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user TEXT NOT NULL,
-    room TEXT NOT NULL,
-    token TEXT NOT NULL,
-    ts TEXT NOT NULL,
-    UNIQUE(user, room, token)
-);
-  """
-    )
-
+def remove_destroyed_room(room: str):
+    """Remove room from destroyed_rooms (when recreated)"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM destroyed_rooms WHERE room = ?", (room,))
     conn.commit()
     conn.close()
 
 
-# ---------------- Helpers for FCM tokens ----------------
-# ---------------- Helpers for FCM tokens ----------------
 def load_fcm_tokens():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -263,6 +252,56 @@ def clear_room(room):
     conn.commit()
     conn.close()
 
+    
+# ---------------- DB ----------------
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Messages table
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            text TEXT,
+            filename TEXT,
+            mimetype TEXT,
+            filedata TEXT,
+            ts TEXT NOT NULL
+        )
+        """
+    )
+
+    # FCM tokens table
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fcm_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user TEXT NOT NULL,
+            room TEXT NOT NULL,
+            token TEXT NOT NULL,
+            ts TEXT NOT NULL,
+            UNIQUE(user, room, token)
+        )
+        """
+    )
+    
+    # ✅ ADD THIS: Destroyed rooms table
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS destroyed_rooms (
+            room TEXT PRIMARY KEY,
+            destroyed_at TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+# Load destroyed rooms on startup (add this after init_db() in startup)
+DESTROYED_ROOMS = load_destroyed_rooms()
+
 
 # ---------------- FastAPI + Socket.IO ----------------
 app = FastAPI()
@@ -414,6 +453,8 @@ async def destroy_room(room: str):
         {"room": room, "message": "Room destroyed. All messages cleared."},
         room=room,
     )
+
+    
     # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
@@ -438,6 +479,11 @@ async def join(sid, data):
     username = data["sender"]
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
+
+     # Check if room was permanently destroyed
+    if room in DESTROYED_ROOMS:
+        await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
+        return {"success": False, "error": "Room was permanently destroyed"}
 
     # revive destroyed room → clear history
     if room in DESTROYED_ROOMS:
@@ -1208,8 +1254,6 @@ async def get_destroyed_rooms():
 async def get_room_status(room: str):
     """Check if a room exists and is not destroyed."""
     is_destroyed = room in DESTROYED_ROOMS
-    
-    # Also check if room has any active users (optional)
     has_active_users = room in ROOM_USERS and len(ROOM_USERS[room]) > 0
     
     return JSONResponse({
