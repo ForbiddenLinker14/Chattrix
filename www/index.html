@@ -2879,35 +2879,47 @@
       // ======================================================
       // =============== Initialization =======================
       // ======================================================
-      window.addEventListener("load", async () => {
-        await requestNotificationPermission();
-        const savedName = Storage.get("chat_name");
-        const savedRoom = Storage.get("chat_room");
+window.addEventListener("load", async () => {
+    await requestNotificationPermission();
+    const savedName = Storage.get("chat_name");
+    const savedRoom = Storage.get("chat_room");
 
-        if (savedName && savedRoom) {
-          document.getElementById("name").value = savedName;
-          document.getElementById("room").value = savedRoom;
-          joinRoom({ preserveMessages: true });
-        } else {
-          document.getElementById("intro").style.display = "block";
+    if (savedName && savedRoom) {
+        // ✅ NEW: Check if room was destroyed before auto-joining
+        try {
+            const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`);
+            if (response.ok) {
+                const roomStatus = await response.json();
+                
+                if (roomStatus.destroyed) {
+                    // Room was destroyed - clear storage and show intro
+                    Storage.remove("chat_name");
+                    Storage.remove("chat_room");
+                    
+                    // Also remove from joined rooms
+                    joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+                    if (joinedRoomsByUser[savedName]) {
+                        joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
+                        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+                    }
+                    
+                    document.getElementById("intro").style.display = "block";
+                    console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.warn("Failed to check room status, proceeding with join:", err);
         }
-      });
 
-      document.getElementById("chat-title").addEventListener("click", () => {
-        const savedName = Storage.get("chat_name");
-        const savedRoom = Storage.get("chat_room");
-
-        if (savedName && savedRoom) {
-          document.getElementById("name").value = savedName;
-          document.getElementById("room").value = savedRoom;
-          joinRoom();
-        } else {
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("messages").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-        }
-      });
+        // Room is safe to join
+        document.getElementById("name").value = savedName;
+        document.getElementById("room").value = savedRoom;
+        joinRoom({ preserveMessages: true });
+    } else {
+        document.getElementById("intro").style.display = "block";
+    }
+});
 
       // ======================================================
       // =============== Capacitor Push Notifications =========

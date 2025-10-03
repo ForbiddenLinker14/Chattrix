@@ -1204,6 +1204,21 @@ async def get_destroyed_rooms():
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
+@app.get("/room-status/{room}")
+async def get_room_status(room: str):
+    """Check if a room exists and is not destroyed."""
+    is_destroyed = room in DESTROYED_ROOMS
+    
+    # Also check if room has any active users (optional)
+    has_active_users = room in ROOM_USERS and len(ROOM_USERS[room]) > 0
+    
+    return JSONResponse({
+        "room": room,
+        "destroyed": is_destroyed,
+        "exists": not is_destroyed and has_active_users
+    })
+
+
 # serve /icons/*
 app.mount(
     "/icons", StaticFiles(directory=os.path.join(BASE_DIR, "icons")), name="icons"
