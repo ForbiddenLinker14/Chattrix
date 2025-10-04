@@ -941,9 +941,7 @@ async def startup_tasks():
             deleted_rooms = cleanup_old_destroyed_rooms()
             if deleted_rooms > 0:
                 print(
-                    print(
-                        f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
-                    )
+                    f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
                 )
             else:
                 print(f"✅ No old destroyed rooms to clean up")
