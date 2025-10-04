@@ -427,6 +427,7 @@ async def broadcast_users(room):
         sid = ROOM_USERS.get(room, {}).get(username)
         active = False
         if sid:
+            # Check if this user is connected and active
             active = USER_STATUS.get(sid, {}).get("active", False)
         users.append({"name": username, "active": active})
 
@@ -932,24 +933,38 @@ async def leave(sid, data):
 @sio.event
 async def disconnect(sid):
     USER_STATUS.pop(sid, None)
+    
+    # Find which room and user this sid belongs to
+    disconnected_user = None
+    disconnected_room = None
+    
     for room, users in list(ROOM_USERS.items()):
         for username, user_sid in list(users.items()):
             if user_sid == sid:
-                if ROOM_USERS[room].get(username) != sid:
-                    continue
+                disconnected_user = username
+                disconnected_room = room
+                # Remove from active users but keep in ROOM_HISTORY
                 del users[username]
                 if not users:
                     del ROOM_USERS[room]
-                await broadcast_users(room)
-                await sio.emit(
-                    "message",
-                    {
-                        "sender": "System",
-                        "text": f"{username} disconnected.",
-                        "ts": datetime.now(timezone.utc).isoformat(),
-                    },
-                    room=room,
-                )
+                break
+        if disconnected_user:
+            break
+    
+    # Broadcast updated user list to the room
+    if disconnected_room:
+        await broadcast_users(disconnected_room)
+        
+        # Only show disconnect message if user was actually in a room
+        await sio.emit(
+            "message",
+            {
+                "sender": "System",
+                "text": f"{disconnected_user} disconnected.",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=disconnected_room,
+        )
 
 
 # ---------------- Startup ----------------
