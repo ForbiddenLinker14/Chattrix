@@ -928,8 +928,6 @@ async def startup_tasks():
 
     async def loop_cleanup():
         while True:
-            current_time = datetime.now().strftime("%H:%M:%S")
-            print(f"⏰ Running periodic cleanup at {current_time}...")
             deleted_messages = cleanup_old_messages()
             if deleted_messages > 0:
                 await sio.emit(
@@ -944,11 +942,11 @@ async def startup_tasks():
             if deleted_rooms > 0:
                 print(
                     print(
-                        f"[{current_time}] ✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
+                        f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
                     )
                 )
             else:
-                print(f"[{current_time}] ✅ No old destroyed rooms to clean up")
+                print(f"✅ No old destroyed rooms to clean up")
 
             await asyncio.sleep(60)  # Run every 1 minutes
 
@@ -968,7 +966,6 @@ async def startup_tasks():
 
 
 # ---------------- Subscribe / Push test ----------------
-# ---------------- Subscribe ----------------
 @app.post("/api/subscribe")
 async def subscribe(request: Request):
     body = await request.json()
