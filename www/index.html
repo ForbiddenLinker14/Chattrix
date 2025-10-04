@@ -1088,24 +1088,21 @@
           return;
         }
 
-              // ✅ Check if room is destroyed before joining
-    try {
-        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(currentRoom)}`);
-        if (response.ok) {
-            const roomStatus = await response.json();
-            
-            if (roomStatus.destroyed) {
-                // Room is still destroyed - show countdown again
-                showDestroyedRoomAlert(currentRoom, roomStatus.destroyed_at);
-                return;
-            }
-        }
-    } catch (err) {
-        console.warn("Failed to check room status, proceeding with join:", err);
+          // ✅ NEW: Check if room is destroyed before joining
+  try {
+    const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(currentRoom)}`);
+    if (response.ok) {
+      const roomStatus = await response.json();
+      
+      if (roomStatus.destroyed) {
+        // Room is destroyed - show countdown alert
+        showDestroyedRoomAlert(currentRoom, roomStatus.destroyed_at);
+        return;
+      }
     }
-
-    // ✅ Reset any previous destroyed room state
-    closeDestroyedRoomAlert();
+  } catch (err) {
+    console.warn("Failed to check room status, proceeding with join:", err);
+  }
 
         if (joinedRooms.has(currentRoom)) {
           alert(`You are already in room "${currentRoom}"!`);
@@ -1424,56 +1421,38 @@ function showDestroyedRoomAlert(room, destroyedAt) {
   startCountdown(remainingSeconds, room);
 }
 
-// ✅ NEW: Improved countdown completion
+// ✅ NEW: Start countdown timer
 function startCountdown(seconds, room) {
-    let timeLeft = seconds;
-    const countdownEl = document.getElementById("destroyed-room-countdown");
-    const countdownInterval = setInterval(() => {
-        timeLeft--;
-        if (countdownEl) {
-            countdownEl.textContent = `${timeLeft}s`;
-        }
-        
-        if (timeLeft <= 0) {
-            clearInterval(countdownInterval);
-            closeDestroyedRoomAlert();
-            
-            // ✅ Auto-retry joining with better error handling
-            setTimeout(() => {
-                console.log("🔄 Auto-retrying to join room after countdown...");
-                joinRoom().catch(err => {
-                    console.error("❌ Auto-join failed:", err);
-                    // If auto-join fails, keep the join button enabled for manual retry
-                });
-            }, 500); // Small delay to ensure cleanup is complete
-        }
-    }, 1000);
+  let timeLeft = seconds;
+  const countdownEl = document.getElementById("destroyed-room-countdown");
+  const countdownInterval = setInterval(() => {
+    timeLeft--;
+    if (countdownEl) {
+      countdownEl.textContent = `${timeLeft}s`;
+    }
     
-    // Store interval ID for cleanup
-    window.destroyedRoomCountdown = countdownInterval;
+    if (timeLeft <= 0) {
+      clearInterval(countdownInterval);
+      closeDestroyedRoomAlert();
+      // Auto-retry joining
+      joinRoom();
+    }
+  }, 30000);
+  
+  // Store interval ID for cleanup
+  window.destroyedRoomCountdown = countdownInterval;
 }
 
 // ✅ NEW: Close alert
-// ✅ NEW: Improved Close Alert Function
 function closeDestroyedRoomAlert() {
-    const alert = document.getElementById("destroyed-room-alert");
-    if (alert) {
-        alert.remove();
-    }
-    if (window.destroyedRoomCountdown) {
-        clearInterval(window.destroyedRoomCountdown);
-        window.destroyedRoomCountdown = null;
-    }
-    
-    // ✅ Reset any input states
-    document.getElementById("input").disabled = false;
-    document.getElementById("send").disabled = false;
-    document.getElementById("attach").disabled = false;
-    
-    // ✅ Ensure chat UI is visible
-    document.getElementById("chat-container").style.display = "flex";
-    document.getElementById("input-area").style.display = "flex";
-    document.getElementById("intro").style.display = "none";
+  const alert = document.getElementById("destroyed-room-alert");
+  if (alert) {
+    alert.remove();
+  }
+  if (window.destroyedRoomCountdown) {
+    clearInterval(window.destroyedRoomCountdown);
+    window.destroyedRoomCountdown = null;
+  }
 }
 
       // ======================================================
