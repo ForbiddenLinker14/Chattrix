@@ -173,12 +173,12 @@ def cleanup_old_destroyed_rooms():
     except Exception as e:
         print(f"❌ Error cleaning up destroyed rooms: {e}")
         return 0
-
+    
 
 async def cleanup_old_destroyed_rooms_async():
     """Async wrapper with locking to prevent multiple simultaneous cleanups"""
     async with CLEANUP_LOCK:
-        # If lock is already acquired, skip this cleanup
+        # Check if another cleanup is already running
         if CLEANUP_LOCK.locked():
             return 0
         return cleanup_old_destroyed_rooms()
@@ -931,7 +931,7 @@ async def startup_tasks():
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
     print(f"🚫 Loaded {len(DESTROYED_ROOMS)} permanently destroyed rooms from DB")
 
-    # Clean up old destroyed rooms on startup
+    # Clean up old destroyed rooms on startup (direct call without lock for first run)
     cleaned = cleanup_old_destroyed_rooms()
     if cleaned > 0:
         print(f"✅ Cleaned {cleaned} old destroyed rooms on startup")
@@ -942,17 +942,20 @@ async def startup_tasks():
             deleted_messages = cleanup_old_messages()
             if deleted_messages > 0:
                 await sio.emit(
-                "cleanup",
-                {
-                    "message": f"{deleted_messages} old messages (48h+) were removed."
-                },)
+                    "cleanup",
+                    {
+                        "message": f"{deleted_messages} old messages (48h+) were removed."
+                    },
+                )
 
-        # Clean up old destroyed rooms with locking
-        deleted_rooms = await cleanup_old_destroyed_rooms_async()
-        if deleted_rooms > 0:
-            print(f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days")
+            # Clean up old destroyed rooms with locking to prevent duplicates
+            deleted_rooms = await cleanup_old_destroyed_rooms_async()
+            if deleted_rooms > 0:
+                print(
+                    f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
+                )
 
-        await asyncio.sleep(60)  # Run every 1 minute
+            await asyncio.sleep(60)  # Run every 1 minutes
 
     async def ping_self():
         url = "https://realtime-chat-1mv3.onrender.com"
