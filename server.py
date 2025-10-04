@@ -544,6 +544,9 @@ async def destroy_room(room: str):
         sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
+    
+    # ✅ NEW: Broadcast to ALL connected clients to clear this room from storage
+    await sio.emit("clear_room_from_storage", {"room": room})
 
     print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
     return {"status": "ok"}

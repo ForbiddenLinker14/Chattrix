@@ -1061,6 +1061,40 @@
         socket.on("left_room", (data) => { if (data.room === currentRoom) document.getElementById("user-list").innerHTML = ""; });
         socket.on("room_destroyed", handleRoomDestroyed);
         socket.on("clear", handleRoomCleared);
+
+        // ✅ NEW: Listen for room storage clear command
+socket.on("clear_room_from_storage", (data) => {
+    const roomToClear = data.room;
+    
+    // Clear from localStorage
+    const savedRoom = Storage.get("chat_room");
+    if (savedRoom === roomToClear) {
+        Storage.remove("chat_name");
+        Storage.remove("chat_room");
+    }
+    
+    // Clear from joinedRoomsByUser
+    const currentName = Storage.get("chat_name") || currentName;
+    if (currentName && joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== roomToClear);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+    }
+    
+    // If currently in this room, leave it
+    if (currentRoom === roomToClear) {
+        currentRoom = "";
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("user-list").innerHTML = "";
+    }
+    
+    // Update UI
+    renderJoinedRooms();
+    console.log(`🧹 Cleared room ${roomToClear} from storage`);
+});
+
         socket.on("connect", () => {
           if (currentRoom && currentName) {
             const fcmToken = localStorage.getItem("fcm_token") || null;
@@ -1994,34 +2028,37 @@
       // ======================================================
       // =============== Initialization =======================
       // ======================================================
-      window.addEventListener("load", async () => {
-        await requestNotificationPermission();
-        const savedName = Storage.get("chat_name");
-        const savedRoom = Storage.get("chat_room");
-        if (savedName && savedRoom) {
-          try {
-            const roomStatus = await checkRoomStatus(savedRoom);
-            if (roomStatus.destroyed) {
-              showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
-              Storage.remove("chat_name"); Storage.remove("chat_room");
-              joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-              if (joinedRoomsByUser[savedName]) {
-                joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter((r) => r !== savedRoom);
-                localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-              }
-              document.getElementById("intro").style.display = "block";
-              return;
-            }
-            document.getElementById("name").value = savedName;
-            document.getElementById("room").value = savedRoom;
-            joinRoom({ preserveMessages: true });
-          } catch (err) {
-            document.getElementById("name").value = savedName;
-            document.getElementById("room").value = savedRoom;
-            joinRoom({ preserveMessages: true });
-          }
-        } else document.getElementById("intro").style.display = "block";
-      });
+window.addEventListener("load", async () => {
+  await requestNotificationPermission();
+  const savedName = Storage.get("chat_name");
+  const savedRoom = Storage.get("chat_room");
+  
+  if (savedName && savedRoom) {
+    try {
+      // ✅ Check current destruction status only
+      const roomStatus = await checkRoomStatus(savedRoom);
+      if (roomStatus.destroyed) {
+        showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
+        // Don't clear storage here - let the broadcast handle it
+        document.getElementById("intro").style.display = "block";
+        return;
+      }
+      
+      // If room is not destroyed, proceed with auto-join
+      document.getElementById("name").value = savedName;
+      document.getElementById("room").value = savedRoom;
+      joinRoom({ preserveMessages: true });
+      
+    } catch (err) {
+      // If status check fails, still try to join
+      document.getElementById("name").value = savedName;
+      document.getElementById("room").value = savedRoom;
+      joinRoom({ preserveMessages: true });
+    }
+  } else {
+    document.getElementById("intro").style.display = "block";
+  }
+});
 
       // ======================================================
       // =============== Capacitor Push Notifications =========
