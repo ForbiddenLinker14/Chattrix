@@ -23,6 +23,7 @@ from firebase_admin import credentials, messaging
 # ---------------- Globals ----------------
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
+CLEANUP_LOCK = asyncio.Lock()
 ROOM_USERS = {}  # { room: { username: sid } }
 LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
@@ -172,6 +173,15 @@ def cleanup_old_destroyed_rooms():
     except Exception as e:
         print(f"❌ Error cleaning up destroyed rooms: {e}")
         return 0
+
+
+async def cleanup_old_destroyed_rooms_async():
+    """Async wrapper with locking to prevent multiple simultaneous cleanups"""
+    async with CLEANUP_LOCK:
+        # If lock is already acquired, skip this cleanup
+        if CLEANUP_LOCK.locked():
+            return 0
+        return cleanup_old_destroyed_rooms()
 
 
 def load_fcm_tokens():
@@ -932,20 +942,17 @@ async def startup_tasks():
             deleted_messages = cleanup_old_messages()
             if deleted_messages > 0:
                 await sio.emit(
-                    "cleanup",
-                    {
-                        "message": f"{deleted_messages} old messages (48h+) were removed."
-                    },
-                )
+                "cleanup",
+                {
+                    "message": f"{deleted_messages} old messages (48h+) were removed."
+                },)
 
-            # Clean up old destroyed rooms (every 5 minutes)
-            deleted_rooms = cleanup_old_destroyed_rooms()
-            if deleted_rooms > 0:
-                print(
-                    f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
-                )
+        # Clean up old destroyed rooms with locking
+        deleted_rooms = await cleanup_old_destroyed_rooms_async()
+        if deleted_rooms > 0:
+            print(f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days")
 
-            await asyncio.sleep(60)  # Run every 1 minutes
+        await asyncio.sleep(60)  # Run every 1 minute
 
     async def ping_self():
         url = "https://realtime-chat-1mv3.onrender.com"
