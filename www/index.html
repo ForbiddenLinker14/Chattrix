@@ -1145,7 +1145,7 @@
           return;
         }
 
-        // ✅ Check if room is in destroyed rooms list
+       // ✅ ADD THIS CHECK - Prevent joining destroyed rooms
   if (window.destroyedRooms && window.destroyedRooms.includes(currentRoom)) {
     showDestroyedRoomAlert(currentRoom);
     return;
@@ -2813,7 +2813,24 @@
         }
       };
 
-      // ======================================================
+// ======================================================
+// =============== Load Destroyed Rooms ================
+// ======================================================
+async function loadDestroyedRooms() {
+  try {
+    const response = await fetch(`${API_BASE}/destroyed_rooms`);
+    if (response.ok) {
+      const data = await response.json();
+      window.destroyedRooms = data.destroyed || [];
+      console.log("🚫 Loaded destroyed rooms:", window.destroyedRooms);
+    }
+  } catch (err) {
+    console.warn("Failed to load destroyed rooms:", err);
+    window.destroyedRooms = [];
+  }
+}
+
+// ======================================================
 // =============== Destroyed Room Alert ================
 // ======================================================
 function showDestroyedRoomAlert(room) {
@@ -2864,6 +2881,7 @@ function showDestroyedRoomAlert(room) {
   `;
   
   const countdown = document.createElement("div");
+  countdown.id = "countdown-timer";
   countdown.style.cssText = `
     font-size: 1.1em;
     margin: 15px 0;
@@ -2927,23 +2945,6 @@ function showDestroyedRoomAlert(room) {
     }
   };
   window.addEventListener("keydown", handleKeydown);
-}
-
-// ======================================================
-// =============== Load Destroyed Rooms ================
-// ======================================================
-async function loadDestroyedRooms() {
-  try {
-    const response = await fetch(`${API_BASE}/destroyed_rooms`);
-    if (response.ok) {
-      const data = await response.json();
-      window.destroyedRooms = data.destroyed || [];
-      console.log("🚫 Loaded destroyed rooms:", window.destroyedRooms);
-    }
-  } catch (err) {
-    console.warn("Failed to load destroyed rooms:", err);
-    window.destroyedRooms = [];
-  }
 }
 
       window.destroyRoom = async function destroyRoom() {
