@@ -23,7 +23,6 @@ from firebase_admin import credentials, messaging
 # ---------------- Globals ----------------
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
-CLEANUP_LOCK = asyncio.Lock()
 ROOM_USERS = {}  # { room: { username: sid } }
 LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
@@ -107,12 +106,12 @@ def remove_destroyed_room(room: str):
 
 
 def cleanup_old_destroyed_rooms():
-    """Remove destroyed rooms that are older than 7 days and clean up all related data"""
+    """Remove destroyed rooms that are older than 2 minutes (for testing) and clean up all related data"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
-        # First, get the rooms that will be deleted
+        # First, get the rooms that will be deleted (2 minutes for testing)
         cutoff_time = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
         c.execute(
             "SELECT room FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,)
@@ -173,15 +172,6 @@ def cleanup_old_destroyed_rooms():
     except Exception as e:
         print(f"❌ Error cleaning up destroyed rooms: {e}")
         return 0
-    
-
-async def cleanup_old_destroyed_rooms_async():
-    """Async wrapper with locking to prevent multiple simultaneous cleanups"""
-    async with CLEANUP_LOCK:
-        # Check if another cleanup is already running
-        if CLEANUP_LOCK.locked():
-            return 0
-        return cleanup_old_destroyed_rooms()
 
 
 def load_fcm_tokens():
@@ -888,10 +878,10 @@ async def leave(sid, data):
 @sio.event
 async def disconnect(sid):
     USER_STATUS.pop(sid, None)
-    
+
     disconnected_user = None
     disconnected_room = None
-    
+
     for room, users in list(ROOM_USERS.items()):
         for username, user_sid in list(users.items()):
             if user_sid == sid:
@@ -904,11 +894,11 @@ async def disconnect(sid):
                 break
         if disconnected_user:
             break
-    
+
     # Broadcast updated user list to show user as offline
     if disconnected_room:
         await broadcast_users(disconnected_room)
-        
+
         await sio.emit(
             "message",
             {
@@ -931,14 +921,15 @@ async def startup_tasks():
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
     print(f"🚫 Loaded {len(DESTROYED_ROOMS)} permanently destroyed rooms from DB")
 
-    # Clean up old destroyed rooms on startup (direct call without lock for first run)
+    # Clean up old destroyed rooms on startup
     cleaned = cleanup_old_destroyed_rooms()
     if cleaned > 0:
         print(f"✅ Cleaned {cleaned} old destroyed rooms on startup")
 
     async def loop_cleanup():
         while True:
-            # Clean up old messages (existing functionality)
+            current_time = datetime.now().strftime("%H:%M:%S")
+            print(f"⏰ Running periodic cleanup at {current_time}...")
             deleted_messages = cleanup_old_messages()
             if deleted_messages > 0:
                 await sio.emit(
@@ -948,12 +939,16 @@ async def startup_tasks():
                     },
                 )
 
-            # Clean up old destroyed rooms with locking to prevent duplicates
-            deleted_rooms = await cleanup_old_destroyed_rooms_async()
+            # Clean up old destroyed rooms (every 5 minutes)
+            deleted_rooms = cleanup_old_destroyed_rooms()
             if deleted_rooms > 0:
                 print(
-                    f"✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
+                    print(
+                        f"[{current_time}] ✅ Auto-cleaned {deleted_rooms} destroyed rooms older than 7 days"
+                    )
                 )
+            else:
+                print(f"[{current_time}] ✅ No old destroyed rooms to clean up")
 
             await asyncio.sleep(60)  # Run every 1 minutes
 
