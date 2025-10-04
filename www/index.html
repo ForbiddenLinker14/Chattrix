@@ -4,692 +4,663 @@
 
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <script
-      async
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
-      crossorigin="anonymous"
-    ></script>
 
-    <link
-      href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css"
-      rel="stylesheet"
-    />
-    <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
+<head>
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
+    crossorigin="anonymous"></script>
 
-    <link
-      href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css"
-      rel="stylesheet"
-    />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <link href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
+  <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
 
-    <meta
-      name="google-site-verification"
-      content="lvrePtNXjs6Q-t-SX8DeUld6iPEPqAFfLrUTcY_U2o4"
-    />
-    <link rel="icon" href="/icons/favicon.ico" type="image/png" />
-    <meta charset="utf-8" />
-    <link rel="manifest" href="/manifest.json" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover, height=device-height"
-    />
-    <title>💬 Chattrix</title>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="theme-color" content="#000000" />
+  <meta name="google-site-verification" content="lvrePtNXjs6Q-t-SX8DeUld6iPEPqAFfLrUTcY_U2o4" />
+  <link rel="icon" href="/icons/favicon.ico" type="image/png" />
+  <meta charset="utf-8" />
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, height=device-height" />
+  <title>💬 Chattrix</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
-    <style>
-      html,
-      body {
-        height: 100%;
-        /* Hide scrollbar (cross-browser) */
-        scrollbar-width: none;
-        /* Firefox */
-        -ms-overflow-style: none;
-        /* IE/Edge */
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#000000" />
+
+  <style>
+    html,
+    body {
+      height: 100%;
+      /* Hide scrollbar (cross-browser) */
+      scrollbar-width: none;
+      /* Firefox */
+      -ms-overflow-style: none;
+      /* IE/Edge */
+    }
+
+    html::-webkit-scrollbar {
+      display: none;
+      /* Chrome, Safari, Opera */
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+      height: 100vh;
+      /* lock app to viewport */
+      overflow: auto;
+      /* page itself never scrolls on desktop */
+      background: #100e09;
+      color: #eaeaea;
+      /* Hide scrollbar (cross-browser) */
+      scrollbar-width: none;
+      /* Firefox */
+      -ms-overflow-style: none;
+      /* IE/Edge */
+    }
+
+    /* Landing page wrapper (intro + footer) */
+    #intro-wrapper {
+      max-width: 1000px;
+      margin: auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      width: 260px;
+      background: #1a1812;
+      padding: 15px;
+      border-right: 1px solid #333;
+      box-sizing: border-box;
+      transition: transform 0.4s ease-in-out;
+      position: relative;
+      z-index: 2;
+      color: #eaeaea;
+
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      /* fixed column height */
+    }
+
+    #sidebar.hidden {
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      transform: translateX(-100%);
+    }
+
+    #sidebar input[type="text"] {
+      width: 100%;
+      margin-bottom: 12px;
+      padding: 8px 2px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #fff;
+      background: linear-gradient(145deg, #0d0d0d, #1a1a1a);
+      box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.6),
+        inset -2px -2px 5px rgba(50, 50, 50, 0.6);
+      transition: all 0.3s;
+    }
+
+    #sidebar input[type="text"]::placeholder {
+      color: #888;
+    }
+
+    #sidebar input[type="text"]:hover {
+      background: linear-gradient(145deg, #1c1c1c, #2a2a2a);
+    }
+
+    #sidebar input[type="text"]:focus {
+      outline: none;
+      background: linear-gradient(145deg, #222, #333);
+      box-shadow: 0 0 6px #25d366, inset 2px 2px 6px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Chat container */
+    #chat-container {
+      flex: 1 1 0;
+      display: flex;
+      flex-direction: column;
+      background: #100e09;
+      min-height: 0;
+      /* overflow: hidden; */
+      /* allow internal scrollers */
+    }
+
+    /* Arrows */
+    #show-arrow,
+    #toggle-arrow {
+      font-size: 18px;
+      cursor: pointer;
+      background: #256e4c;
+      color: #eaeaea;
+      padding: 4px 10px;
+      border-radius: 4px;
+      user-select: none;
+      transition: background 0.3s;
+    }
+
+    #toggle-arrow {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 3;
+    }
+
+    #show-arrow {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 5;
+      display: none;
+    }
+
+    #toggle-arrow:hover,
+    #show-arrow:hover {
+      background: #25d366;
+    }
+
+    /* Messages */
+    #messages {
+      flex: 1 1 0;
+      padding: 15px;
+      overflow-y: auto;
+      background: #100e09;
+      scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      min-height: 0;
+      overscroll-behavior: contain;
+      /* wheel doesn’t bubble to page */
+    }
+
+    #messages::-webkit-scrollbar {
+      display: none;
+    }
+
+    .msg {
+      margin: 5px 0;
+      padding: 10px 14px;
+      border-radius: 12px;
+      max-width: 70%;
+      word-wrap: break-word;
+      font-size: 14px;
+    }
+
+    .msg.me {
+      background: #032f30;
+      color: #f1f1f1;
+      margin-left: auto;
+      text-align: right;
+    }
+
+    .msg.other {
+      background: #0b4561;
+      color: #f1f1f1;
+      margin-right: auto;
+      text-align: left;
+    }
+
+    .msg.system {
+      display: block;
+      width: 100% !important;
+      max-width: 100% !important;
+      text-align: center;
+      color: #daedf7;
+      font-style: italic;
+      margin: 10px 0;
+      box-sizing: border-box;
+    }
+
+    /* Input area */
+    #input-area {
+      display: flex;
+      border-top: 1px solid #333;
+      background: #1a1812;
+    }
+
+    #input {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      font-size: 16px;
+      background: #100e09;
+      color: #eaeaea;
+    }
+
+    #input::placeholder {
+      color: #777;
+    }
+
+    #attach {
+      padding: 10px 15px;
+      border: none;
+      background: #2c3e50;
+      color: white;
+      cursor: pointer;
+      font-size: 18px;
+    }
+
+    #attach:hover {
+      background: #34495e;
+    }
+
+    #send {
+      padding: 10px 20px;
+      border: none;
+      background: #27ae60;
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    #send:hover {
+      background: #2ecc71;
+    }
+
+    /* Sidebar buttons */
+    #sidebar button {
+      margin-top: 5px;
+      padding: 8px;
+      border: none;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    #sidebar button:hover {
+      opacity: 0.9;
+    }
+
+    #sidebar button:nth-child(3) {
+      background: #e67e22;
+      color: #fff;
+    }
+
+    #sidebar button:nth-child(4) {
+      background: #c0392b;
+      color: #fff;
+    }
+
+    #sidebar button:nth-child(5) {
+      background: #e74c3c;
+      color: #fff;
+    }
+
+    .username {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .image-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+
+    .image-wrapper img {
+      max-width: 220px;
+      border-radius: 8px;
+      display: block;
+    }
+
+    .download-icon {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 4px;
+      border-radius: 4px;
+      text-decoration: none;
+      color: white;
+      z-index: 10;
+    }
+
+    .download-icon:hover {
+      background: rgba(0, 179, 84, 0.7);
+    }
+
+    .timestamp {
+      font-size: 12px;
+      color: #ccc;
+      margin-top: 4px;
+    }
+
+    .image-wrapper video {
+      max-width: 220px;
+      border-radius: 8px;
+      display: block;
+      z-index: 1;
+    }
+
+    /* ===== Users panel & list (critical) ===== */
+    #users-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #f3f4f6;
+      margin: 15px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #333;
+    }
+
+    #users-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      /* always expand in sidebar */
+      min-height: 0;
+      /* allow user-list to shrink/scroll */
+    }
+
+    #user-list {
+      flex: 1;
+      min-height: 0;
+      /* 👈 critical fix */
+      overflow-y: auto;
+      /* list scrolls, not body */
+      overscroll-behavior: contain;
+
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      background: #100e09;
+      border: 1px solid #333;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+
+      scrollbar-width: thin;
+      scrollbar-color: #4b5563 #1a1813;
+
+      /* HIDE scrollbar but keep scroll */
+      scrollbar-width: none;
+      /* Firefox */
+      -ms-overflow-style: none;
+      /* IE/Edge */
+    }
+
+    #user-list::-webkit-scrollbar {
+      display: none;
+      /* Chrome, Safari */
+    }
+
+    #user-list li {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      font-size: 14px;
+      color: #e5e7eb;
+      transition: background 0.2s;
+      border-bottom: 1px solid #222;
+    }
+
+    #user-list li:hover {
+      background: #1a1813;
+      cursor: default;
+    }
+
+    /* Animations */
+    #user-list li.fade-in {
+      animation: fadeIn 0.4s ease forwards;
+    }
+
+    #user-list li.fade-out {
+      animation: fadeOut 0.3s ease forwards;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(5px);
       }
 
-      html::-webkit-scrollbar {
-        display: none;
-        /* Chrome, Safari, Opera */
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeOut {
+      from {
+        opacity: 1;
+        transform: translateY(0);
       }
 
+      to {
+        opacity: 0;
+        transform: translateY(-3px);
+      }
+    }
+
+    #user-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #user-list::-webkit-scrollbar-track {
+      background: #1a1813;
+      border-radius: 10px;
+    }
+
+    #user-list::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 10px;
+      border: 1px solid #1a1813;
+    }
+
+    #user-list::-webkit-scrollbar-thumb:hover {
+      background: #6b7280;
+    }
+
+    /* Responsive mobile */
+    @media (max-width: 768px) {
       body {
-        font-family: Arial, sans-serif;
-        margin: 0;
-        display: flex;
-        height: 100vh;
-        /* lock app to viewport */
+        flex-direction: column;
         overflow: auto;
-        /* page itself never scrolls on desktop */
-        background: #100e09;
-        color: #eaeaea;
-        /* Hide scrollbar (cross-browser) */
-        scrollbar-width: none;
-        /* Firefox */
-        -ms-overflow-style: none;
-        /* IE/Edge */
       }
 
-      /* Landing page wrapper (intro + footer) */
-      #intro-wrapper {
-        max-width: 1000px;
-        margin: auto;
-        padding: 20px;
-        line-height: 1.6;
-      }
-
-      /* Sidebar */
       #sidebar {
-        width: 260px;
-        background: #1a1812;
-        padding: 15px;
-        border-right: 1px solid #333;
-        box-sizing: border-box;
-        transition: transform 0.4s ease-in-out;
-        position: relative;
-        z-index: 2;
-        color: #eaeaea;
-
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        /* fixed column height */
-      }
-
-      #sidebar.hidden {
-        position: absolute;
-        left: 0;
-        top: 0;
-        height: 100%;
-        transform: translateX(-100%);
-      }
-
-      #sidebar input[type="text"] {
         width: 100%;
-        margin-bottom: 12px;
-        padding: 8px 2px;
-        border: none;
-        border-radius: 8px;
-        font-size: 14px;
-        color: #fff;
-        background: linear-gradient(145deg, #0d0d0d, #1a1a1a);
-        box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.6),
-          inset -2px -2px 5px rgba(50, 50, 50, 0.6);
-        transition: all 0.3s;
-      }
-
-      #sidebar input[type="text"]::placeholder {
-        color: #888;
-      }
-
-      #sidebar input[type="text"]:hover {
-        background: linear-gradient(145deg, #1c1c1c, #2a2a2a);
-      }
-
-      #sidebar input[type="text"]:focus {
-        outline: none;
-        background: linear-gradient(145deg, #222, #333);
-        box-shadow: 0 0 6px #25d366, inset 2px 2px 6px rgba(0, 0, 0, 0.7);
-      }
-
-      /* Chat container */
-      #chat-container {
-        flex: 1 1 0;
-        display: flex;
-        flex-direction: column;
-        background: #100e09;
-        min-height: 0;
-        /* overflow: hidden; */
-        /* allow internal scrollers */
-      }
-
-      /* Arrows */
-      #show-arrow,
-      #toggle-arrow {
-        font-size: 18px;
-        cursor: pointer;
-        background: #256e4c;
-        color: #eaeaea;
-        padding: 4px 10px;
-        border-radius: 4px;
-        user-select: none;
-        transition: background 0.3s;
-      }
-
-      #toggle-arrow {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        z-index: 3;
-      }
-
-      #show-arrow {
-        position: fixed;
-        top: 10px;
-        left: 10px;
-        z-index: 5;
-        display: none;
-      }
-
-      #toggle-arrow:hover,
-      #show-arrow:hover {
-        background: #25d366;
-      }
-
-      /* Messages */
-      #messages {
-        flex: 1 1 0;
-        padding: 15px;
-        overflow-y: auto;
-        background: #100e09;
-        scroll-behavior: smooth;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-        min-height: 0;
-        overscroll-behavior: contain;
-        /* wheel doesn’t bubble to page */
-      }
-
-      #messages::-webkit-scrollbar {
-        display: none;
-      }
-
-      .msg {
-        margin: 5px 0;
-        padding: 10px 14px;
-        border-radius: 12px;
-        max-width: 70%;
-        word-wrap: break-word;
-        font-size: 14px;
-      }
-
-      .msg.me {
-        background: #032f30;
-        color: #f1f1f1;
-        margin-left: auto;
-        text-align: right;
-      }
-
-      .msg.other {
-        background: #0b4561;
-        color: #f1f1f1;
-        margin-right: auto;
-        text-align: left;
-      }
-
-      .msg.system {
-        display: block;
-        width: 100% !important;
-        max-width: 100% !important;
-        text-align: center;
-        color: #daedf7;
-        font-style: italic;
-        margin: 10px 0;
-        box-sizing: border-box;
-      }
-
-      /* Input area */
-      #input-area {
-        display: flex;
-        border-top: 1px solid #333;
-        background: #1a1812;
-      }
-
-      #input {
-        flex: 1;
-        padding: 10px;
-        border: none;
-        font-size: 16px;
-        background: #100e09;
-        color: #eaeaea;
-      }
-
-      #input::placeholder {
-        color: #777;
-      }
-
-      #attach {
-        padding: 10px 15px;
-        border: none;
-        background: #2c3e50;
-        color: white;
-        cursor: pointer;
-        font-size: 18px;
-      }
-
-      #attach:hover {
-        background: #34495e;
-      }
-
-      #send {
-        padding: 10px 20px;
-        border: none;
-        background: #27ae60;
-        color: white;
-        cursor: pointer;
-        font-size: 16px;
-      }
-
-      #send:hover {
-        background: #2ecc71;
-      }
-
-      /* Sidebar buttons */
-      #sidebar button {
-        margin-top: 5px;
-        padding: 8px;
-        border: none;
-        cursor: pointer;
-        border-radius: 6px;
-        font-size: 14px;
-      }
-
-      #sidebar button:hover {
-        opacity: 0.9;
-      }
-
-      #sidebar button:nth-child(3) {
-        background: #e67e22;
-        color: #fff;
-      }
-
-      #sidebar button:nth-child(4) {
-        background: #c0392b;
-        color: #fff;
-      }
-
-      #sidebar button:nth-child(5) {
-        background: #e74c3c;
-        color: #fff;
-      }
-
-      .username {
-        font-weight: bold;
-        margin-bottom: 4px;
-      }
-
-      .image-wrapper {
-        position: relative;
-        display: inline-block;
-      }
-
-      .image-wrapper img {
-        max-width: 220px;
-        border-radius: 8px;
-        display: block;
-      }
-
-      .download-icon {
-        position: absolute;
-        top: 6px;
-        right: 6px;
-        background: rgba(0, 0, 0, 0.5);
-        padding: 4px;
-        border-radius: 4px;
-        text-decoration: none;
-        color: white;
-        z-index: 10;
-      }
-
-      .download-icon:hover {
-        background: rgba(0, 179, 84, 0.7);
-      }
-
-      .timestamp {
-        font-size: 12px;
-        color: #ccc;
-        margin-top: 4px;
-      }
-
-      .image-wrapper video {
-        max-width: 220px;
-        border-radius: 8px;
-        display: block;
-        z-index: 1;
-      }
-
-      /* ===== Users panel & list (critical) ===== */
-      #users-title {
-        font-size: 16px;
-        font-weight: bold;
-        color: #f3f4f6;
-        margin: 15px 0 10px;
-        padding-bottom: 6px;
+        border-right: none;
         border-bottom: 1px solid #333;
+        height: auto;
       }
 
+      /* Force list height cap on mobile */
       #users-panel {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        /* always expand in sidebar */
-        min-height: 0;
-        /* allow user-list to shrink/scroll */
+        flex: none;
+        max-height: 200px;
       }
 
       #user-list {
-        flex: 1;
-        min-height: 0;
-        /* 👈 critical fix */
+        max-height: 200px;
         overflow-y: auto;
-        /* list scrolls, not body */
-        overscroll-behavior: contain;
-
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        background: #100e09;
-        border: 1px solid #333;
-        border-radius: 12px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
-
-        scrollbar-width: thin;
-        scrollbar-color: #4b5563 #1a1813;
-
-        /* HIDE scrollbar but keep scroll */
-        scrollbar-width: none;
-        /* Firefox */
-        -ms-overflow-style: none;
-        /* IE/Edge */
       }
+    }
 
-      #user-list::-webkit-scrollbar {
-        display: none;
-        /* Chrome, Safari */
-      }
+    /* Gradient text title */
+    .chat-title {
+      font-size: 1.2em;
+      cursor: pointer;
+      display: inline-block;
+      color: #43e97b;
+      /* initial solid green */
+      transition: color 0.3s ease;
+    }
 
-      #user-list li {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 6px 10px;
-        font-size: 14px;
-        color: #e5e7eb;
-        transition: background 0.2s;
-        border-bottom: 1px solid #222;
-      }
-
-      #user-list li:hover {
-        background: #1a1813;
-        cursor: default;
-      }
-
-      /* Animations */
-      #user-list li.fade-in {
-        animation: fadeIn 0.4s ease forwards;
-      }
-
-      #user-list li.fade-out {
-        animation: fadeOut 0.3s ease forwards;
-      }
-
-      @keyframes fadeIn {
-        from {
-          opacity: 0;
-          transform: translateY(5px);
-        }
-
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      @keyframes fadeOut {
-        from {
-          opacity: 1;
-          transform: translateY(0);
-        }
-
-        to {
-          opacity: 0;
-          transform: translateY(-3px);
-        }
-      }
-
-      #user-list::-webkit-scrollbar {
-        width: 6px;
-      }
-
-      #user-list::-webkit-scrollbar-track {
-        background: #1a1813;
-        border-radius: 10px;
-      }
-
-      #user-list::-webkit-scrollbar-thumb {
-        background: #4b5563;
-        border-radius: 10px;
-        border: 1px solid #1a1813;
-      }
-
-      #user-list::-webkit-scrollbar-thumb:hover {
-        background: #6b7280;
-      }
-
-      /* Responsive mobile */
-      @media (max-width: 768px) {
-        body {
-          flex-direction: column;
-          overflow: auto;
-        }
-
-        #sidebar {
-          width: 100%;
-          border-right: none;
-          border-bottom: 1px solid #333;
-          height: auto;
-        }
-
-        /* Force list height cap on mobile */
-        #users-panel {
-          flex: none;
-          max-height: 200px;
-        }
-
-        #user-list {
-          max-height: 200px;
-          overflow-y: auto;
-        }
-      }
-
-      /* Gradient text title */
-      .chat-title {
-        font-size: 1.2em;
-        cursor: pointer;
-        display: inline-block;
-        color: #43e97b;
-        /* initial solid green */
-        transition: color 0.3s ease;
-      }
-
-      /* On hover: switch to gradient shimmer */
-      .chat-title:hover {
-        background: linear-gradient(
-          90deg,
+    /* On hover: switch to gradient shimmer */
+    .chat-title:hover {
+      background: linear-gradient(90deg,
           #4facfe,
           #00f2fe,
           #43e97b,
           #38f9d7,
-          #4facfe
-        );
-        background-size: 300% auto;
-        background-clip: text;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: gradientMove 3s linear infinite;
+          #4facfe);
+      background-size: 300% auto;
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: gradientMove 3s linear infinite;
+    }
+
+    @keyframes gradientMove {
+      0% {
+        background-position: 0% center;
       }
 
-      @keyframes gradientMove {
-        0% {
-          background-position: 0% center;
-        }
-
-        100% {
-          background-position: 100% center;
-        }
+      100% {
+        background-position: 100% center;
       }
+    }
 
-      /* Add this CSS to hide elements immediately */
-      #chat-container,
-      #input-area,
-      #messages {
-        display: none;
-      }
+    /* Add this CSS to hide elements immediately */
+    #chat-container,
+    #input-area,
+    #messages {
+      display: none;
+    }
 
-      /* Show intro by default */
-      #intro {
-        display: block;
-      }
+    /* Show intro by default */
+    #intro {
+      display: block;
+    }
 
-      /*after join flick fix */
-      #intro,
-      #chat-container,
-      #input-area,
-      #messages {
-        display: none;
-        /* all hidden until JS decides */
-      }
+    /*after join flick fix */
+    #intro,
+    #chat-container,
+    #input-area,
+    #messages {
+      display: none;
+      /* all hidden until JS decides */
+    }
 
-      .cropper-bg {
-        background: transparent !important;
-      }
-      .room-badge {
-        float: right;
-        background: #e74c3c;
-        color: #fff;
-        padding: 2px 6px;
-        border-radius: 12px;
-        font-size: 12px;
-        min-width: 20px;
-        text-align: center;
-        display: none;
-      }
+    .cropper-bg {
+      background: transparent !important;
+    }
 
-      #joined-rooms-title {
-        font-size: 16px;
-        font-weight: bold;
-        color: #f3f4f6;
-        margin: 15px 0 10px;
-        padding-bottom: 6px;
-        border-bottom: 1px solid #333;
-      }
+    .room-badge {
+      float: right;
+      background: #e74c3c;
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 12px;
+      font-size: 12px;
+      min-width: 20px;
+      text-align: center;
+      display: none;
+    }
 
-      #joined-rooms {
-        flex: 1;
-        min-height: 0; /* 👈 allows shrinking inside flex */
-        overflow-y: auto; /* scrollable like users */
-        overscroll-behavior: contain;
+    #joined-rooms-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #f3f4f6;
+      margin: 15px 0 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #333;
+    }
 
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        background: #100e09;
-        border: 1px solid #333;
-        border-radius: 12px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    #joined-rooms {
+      flex: 1;
+      min-height: 0;
+      /* 👈 allows shrinking inside flex */
+      overflow-y: auto;
+      /* scrollable like users */
+      overscroll-behavior: contain;
 
-        /* scrollbar hidden but still scrollable */
-        scrollbar-width: none; /* Firefox */
-        -ms-overflow-style: none; /* IE/Edge */
-      }
-      #joined-rooms::-webkit-scrollbar {
-        display: none; /* Chrome, Safari */
-      }
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      background: #100e09;
+      border: 1px solid #333;
+      border-radius: 12px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 
-      #joined-rooms li {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 6px 10px;
-        font-size: 14px;
-        color: #e5e7eb;
-        transition: background 0.2s;
-        border-bottom: 1px solid #222;
-        cursor: pointer;
-      }
+      /* scrollbar hidden but still scrollable */
+      scrollbar-width: none;
+      /* Firefox */
+      -ms-overflow-style: none;
+      /* IE/Edge */
+    }
 
-      #joined-rooms li:hover {
-        background: #1a1813;
-      }
+    #joined-rooms::-webkit-scrollbar {
+      display: none;
+      /* Chrome, Safari */
+    }
 
-      #joined-rooms li.active {
-        background: #256e4c; /* green highlight */
-        color: #fff;
-        font-weight: bold;
-      }
-    </style>
-  </head>
+    #joined-rooms li {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 10px;
+      font-size: 14px;
+      color: #e5e7eb;
+      transition: background 0.2s;
+      border-bottom: 1px solid #222;
+      cursor: pointer;
+    }
 
-  <body>
-    <div id="show-arrow" onclick="toggleSidebar()">»</div>
+    #joined-rooms li:hover {
+      background: #1a1813;
+    }
 
-    <div id="sidebar">
-      <div id="toggle-arrow" onclick="toggleSidebar()">«</div>
-      <h2
-        id="chat-title"
-        class="chat-title"
-        style="font-size: 1.2em; cursor: pointer"
-      >
-        💬 Chattrix
-      </h2>
+    #joined-rooms li.active {
+      background: #256e4c;
+      /* green highlight */
+      color: #fff;
+      font-weight: bold;
+    }
+  </style>
+</head>
 
-      <label>Your Name:</label>
-      <input id="name" type="text" placeholder="Your Name" />
-      <label>Room ID:</label>
+<body>
+  <div id="show-arrow" onclick="toggleSidebar()">»</div>
 
-      <!-- Ad just above input -->
-      <ins
-        class="adsbygoogle"
-        style="display: block; margin: 15px auto"
-        data-ad-client="ca-pub-7006477250957433"
-        data-ad-slot="9476713306"
-        data-ad-format="auto"
-        data-full-width-responsive="true"
-      ></ins>
-      <script>
-        (adsbygoogle = window.adsbygoogle || []).push({});
-      </script>
+  <div id="sidebar">
+    <div id="toggle-arrow" onclick="toggleSidebar()">«</div>
+    <h2 id="chat-title" class="chat-title" style="font-size: 1.2em; cursor: pointer">
+      💬 Chattrix
+    </h2>
 
-      <input id="room" type="text" placeholder="Unique Personal Id" />
-      <button onclick="joinRoom()" style="width: 100%">Enter</button>
-      <button
-        onclick="leaveRoom()"
-        style="width: 100%; background: #ff9800; color: white"
-      >
-        Leave Room
-      </button>
-      <button
-        onclick="clearRoom()"
-        style="width: 100%; background: #f44336; color: white"
-      >
-        Clear Room
-      </button>
-      <button
-        onclick="destroyRoom()"
-        style="width: 100%; background: #eb3c06; color: white"
-      >
-        Destroy Room
-      </button>
+    <label>Your Name:</label>
+    <input id="name" type="text" placeholder="Your Name" />
+    <label>Room ID:</label>
 
-      <div id="users-title">👥 Users</div>
-      <div id="users-panel">
-        <ul id="user-list"></ul>
-      </div>
+    <!-- Ad just above input -->
+    <ins class="adsbygoogle" style="display: block; margin: 15px auto" data-ad-client="ca-pub-7006477250957433"
+      data-ad-slot="9476713306" data-ad-format="auto" data-full-width-responsive="true"></ins>
+    <script>
+      (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
 
-      <div id="joined-rooms-title">📂 Joined Rooms</div>
-      <ul id="joined-rooms"></ul>
+    <input id="room" type="text" placeholder="Unique Personal Id" />
+    <button onclick="joinRoom()" style="width: 100%">Enter</button>
+    <button onclick="leaveRoom()" style="width: 100%; background: #ff9800; color: white">
+      Leave Room
+    </button>
+    <button onclick="clearRoom()" style="width: 100%; background: #f44336; color: white">
+      Clear Room
+    </button>
+    <button onclick="destroyRoom()" style="width: 100%; background: #eb3c06; color: white">
+      Destroy Room
+    </button>
+
+    <div id="users-title">👥 Users</div>
+    <div id="users-panel">
+      <ul id="user-list"></ul>
     </div>
 
-    <!-- Intro Section -->
-    <div
-      id="intro"
-      style="
+    <div id="joined-rooms-title">📂 Joined Rooms</div>
+    <ul id="joined-rooms"></ul>
+  </div>
+
+  <!-- Intro Section -->
+  <div id="intro" style="
         padding: 20px;
         background: #100e09;
         color: #eaeaea;
@@ -697,133 +668,119 @@
         margin: auto;
         line-height: 1.6;
         text-align: center;
-      "
-    >
-      <header
-        style="
+      ">
+    <header style="
           background: #1a1812;
           padding: 20px;
           border-bottom: 1px solid #333;
-        "
-      >
-        <h1 style="color: #25d366; margin: 0; text-align: center">
-          Welcome to Chattrix – Connect Instantly With Friends
-        </h1>
-      </header>
+        ">
+      <h1 style="color: #25d366; margin: 0; text-align: center">
+        Welcome to Chattrix – Connect Instantly With Friends
+      </h1>
+    </header>
 
-      <p>
-        <strong>Chattrix</strong> is a fast, secure, and easy-to-use chat
-        platform where you can connect with your friends, family, or team
-        instantly. Whether you’re on desktop or mobile, our chat app keeps you
-        connected anytime, anywhere.
-      </p>
+    <p>
+      <strong>Chattrix</strong> is a fast, secure, and easy-to-use chat
+      platform where you can connect with your friends, family, or team
+      instantly. Whether you’re on desktop or mobile, our chat app keeps you
+      connected anytime, anywhere.
+    </p>
 
-      <p>
-        Unlike traditional messaging apps, Chattrix runs directly in your
-        browser, with no downloads required. Just enter your name, pick a room,
-        and start chatting instantly!
-      </p>
+    <p>
+      Unlike traditional messaging apps, Chattrix runs directly in your
+      browser, with no downloads required. Just enter your name, pick a room,
+      and start chatting instantly!
+    </p>
 
-      <!-- blog2 -->
-      <ins
-        class="adsbygoogle"
-        style="display: block"
-        data-ad-client="ca-pub-7006477250957433"
-        data-ad-slot="9197511706"
-        data-ad-format="auto"
-        data-full-width-responsive="true"
-      ></ins>
-      <script>
-        (adsbygoogle = window.adsbygoogle || []).push({});
-      </script>
+    <!-- blog2 -->
+    <ins class="adsbygoogle" style="display: block" data-ad-client="ca-pub-7006477250957433" data-ad-slot="9197511706"
+      data-ad-format="auto" data-full-width-responsive="true"></ins>
+    <script>
+      (adsbygoogle = window.adsbygoogle || []).push({});
+    </script>
 
-      <p>
-        Our mission is to make communication simple, private, and accessible to
-        everyone. With Chattrix, you don’t need to worry about complicated
-        sign-ups, long installation processes, or heavy apps that slow down your
-        device. Everything works instantly in your browser, making it
-        lightweight and efficient. Whether you’re managing a study group,
-        catching up with family, or collaborating with your team, Chattrix is
-        built to keep conversations flowing smoothly.
-      </p>
+    <p>
+      Our mission is to make communication simple, private, and accessible to
+      everyone. With Chattrix, you don’t need to worry about complicated
+      sign-ups, long installation processes, or heavy apps that slow down your
+      device. Everything works instantly in your browser, making it
+      lightweight and efficient. Whether you’re managing a study group,
+      catching up with family, or collaborating with your team, Chattrix is
+      built to keep conversations flowing smoothly.
+    </p>
 
-      <p>
-        We believe in <strong>privacy-first communication</strong>. Unlike many
-        messaging apps that collect user data, Chattrix respects your privacy.
-        Your chats remain secure and are never shared with third parties. This
-        makes our platform a safe space for casual users, professionals, and
-        communities who value private and distraction-free conversations.
-      </p>
+    <p>
+      We believe in <strong>privacy-first communication</strong>. Unlike many
+      messaging apps that collect user data, Chattrix respects your privacy.
+      Your chats remain secure and are never shared with third parties. This
+      makes our platform a safe space for casual users, professionals, and
+      communities who value private and distraction-free conversations.
+    </p>
 
-      <p>
-        Our platform is also <strong>constantly evolving</strong>. We are
-        working on adding more features such as media sharing, customizable chat
-        themes, and enhanced moderation tools for group conversations. By
-        choosing Chattrix today, you’re joining a growing community that values
-        fast, private, and reliable communication.
-      </p>
+    <p>
+      Our platform is also <strong>constantly evolving</strong>. We are
+      working on adding more features such as media sharing, customizable chat
+      themes, and enhanced moderation tools for group conversations. By
+      choosing Chattrix today, you’re joining a growing community that values
+      fast, private, and reliable communication.
+    </p>
 
-      <!-- Three-column layout -->
-      <div
-        style="
+    <!-- Three-column layout -->
+    <div style="
           display: flex;
           justify-content: space-between;
           gap: 20px;
           margin-top: 20px;
           text-align: left;
           flex-wrap: wrap;
-        "
-      >
-        <!-- Features -->
-        <div style="flex: 1; min-width: 220px">
-          <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.3em">
-            ✨ Features
-          </h2>
-          <ul
-            style="
+        ">
+      <!-- Features -->
+      <div style="flex: 1; min-width: 220px">
+        <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.3em">
+          ✨ Features
+        </h2>
+        <ul style="
               list-style: none;
               padding-left: 0;
               margin: 0;
               font-size: 0.95em;
-            "
-          >
-            <li>✅ Instant real-time messaging</li>
-            <li>✅ Private and group chats</li>
-            <li>✅ Simple and clean interface</li>
-            <li>✅ Free to use</li>
-          </ul>
-        </div>
-
-        <!-- Why Choose Us -->
-        <div style="flex: 1; min-width: 220px">
-          <h2 style="color: #25d366; margin: 0 0 8px 0; font-size: 1.3em">
-            💡 Why Choose Us?
-          </h2>
-          <p style="margin: 0; font-size: 0.95em">
-            Unlike other chat apps, <strong>Chattrix</strong> doesn’t require
-            sign-ups or downloads. It’s lightweight, privacy-friendly, and
-            always available in your browser.
-          </p>
-        </div>
-
-        <!-- FAQ -->
-        <div style="flex: 1; min-width: 200px; font-size: 0.867em">
-          <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.2em">
-            📌 FAQ
-          </h2>
-          <ul style="list-style: disc; padding-left: 18px; margin: 0">
-            <li><strong>Is it free?</strong> Yes, 100% free.</li>
-            <li><strong>Is it safe?</strong> All chats stay private.</li>
-            <li><strong>On mobile?</strong> Yes, works on all devices.</li>
-            <li>
-              <strong>Need download?</strong> No, works directly in browser.
-            </li>
-          </ul>
-        </div>
+            ">
+          <li>✅ Instant real-time messaging</li>
+          <li>✅ Private and group chats</li>
+          <li>✅ Simple and clean interface</li>
+          <li>✅ Free to use</li>
+        </ul>
       </div>
-      <!-- Footer Section -->
-      <footer
-        style="
+
+      <!-- Why Choose Us -->
+      <div style="flex: 1; min-width: 220px">
+        <h2 style="color: #25d366; margin: 0 0 8px 0; font-size: 1.3em">
+          💡 Why Choose Us?
+        </h2>
+        <p style="margin: 0; font-size: 0.95em">
+          Unlike other chat apps, <strong>Chattrix</strong> doesn’t require
+          sign-ups or downloads. It’s lightweight, privacy-friendly, and
+          always available in your browser.
+        </p>
+      </div>
+
+      <!-- FAQ -->
+      <div style="flex: 1; min-width: 200px; font-size: 0.867em">
+        <h2 style="color: #25d366; margin: 0 0 5px 0; font-size: 1.2em">
+          📌 FAQ
+        </h2>
+        <ul style="list-style: disc; padding-left: 18px; margin: 0">
+          <li><strong>Is it free?</strong> Yes, 100% free.</li>
+          <li><strong>Is it safe?</strong> All chats stay private.</li>
+          <li><strong>On mobile?</strong> Yes, works on all devices.</li>
+          <li>
+            <strong>Need download?</strong> No, works directly in browser.
+          </li>
+        </ul>
+      </div>
+    </div>
+    <!-- Footer Section -->
+    <footer style="
           margin-top: 30px;
           padding: 15px;
           background: #1a1812;
@@ -833,742 +790,719 @@
           border-top: 1px solid #333;
           width: 100%;
           box-sizing: border-box;
-        "
-      >
-        <div style="max-width: 900px; margin: 0 auto">
-          <p>
-            <a
-              href="/about.html"
-              style="color: #25d366; text-decoration: none; margin: 0 15px"
-              >About</a
-            >
-            |
-            <a
-              href="/privacy-policy.html"
-              style="color: #25d366; text-decoration: none; margin: 0 15px"
-              >Privacy Policy</a
-            >
-            |
-            <a
-              href="/terms-of-service.html"
-              style="color: #25d366; text-decoration: none; margin: 0 15px"
-              >Terms of Service</a
-            >|
-            <a
-              href="/disclaimer.html"
-              style="color: #25d366; text-decoration: none; margin: 0 15px"
-              >Disclaimer</a
-            >
-            |
-            <a
-              href="/blog.html"
-              style="color: #25d366; text-decoration: none; margin: 0 15px"
-              >Blog</a
-            >
-            |
-            <a
-              href="/contact.html"
-              style="color: #25d366; text-decoration: none; margin: 0 15px"
-              >Contact</a
-            >
-          </p>
-          <p style="margin-top: 8px; font-size: 0.8em; color: #777">
-            © 2025 Chattrix. All rights reserved.
-          </p>
-        </div>
-      </footer>
-    </div>
-
-    <div id="chat-container">
-      <div id="messages"></div>
-      <div id="input-area">
-        <input id="input" placeholder="Type your message…" disabled />
-        <input type="file" id="fileInput" style="display: none" />
-        <button id="attach" type="button" disabled>+</button>
-        <button id="send" type="button" disabled>Send</button>
+        ">
+      <div style="max-width: 900px; margin: 0 auto">
+        <p>
+          <a href="/about.html" style="color: #25d366; text-decoration: none; margin: 0 15px">About</a>
+          |
+          <a href="/privacy-policy.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Privacy
+            Policy</a>
+          |
+          <a href="/terms-of-service.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Terms of
+            Service</a>|
+          <a href="/disclaimer.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Disclaimer</a>
+          |
+          <a href="/blog.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Blog</a>
+          |
+          <a href="/contact.html" style="color: #25d366; text-decoration: none; margin: 0 15px">Contact</a>
+        </p>
+        <p style="margin-top: 8px; font-size: 0.8em; color: #777">
+          © 2025 Chattrix. All rights reserved.
+        </p>
       </div>
+    </footer>
+  </div>
+
+  <div id="chat-container">
+    <div id="messages"></div>
+    <div id="input-area">
+      <input id="input" placeholder="Type your message…" disabled />
+      <input type="file" id="fileInput" style="display: none" />
+      <button id="attach" type="button" disabled>+</button>
+      <button id="send" type="button" disabled>Send</button>
     </div>
+  </div>
 
-<script>
-      // ======================================================
-      // =============== Storage Utility ======================
-      // ======================================================
-      const Storage = {
-        set(k, v) {
-          try { localStorage.setItem(k, v); return; } catch {}
-          try { sessionStorage.setItem(k, v); return; } catch {}
-          document.cookie = `${k}=${encodeURIComponent(v)}; path=/`;
-        },
-        get(k) {
-          try { return localStorage.getItem(k) || sessionStorage.getItem(k); } catch {}
-          const m = document.cookie.match(new RegExp("(^| )" + k + "=([^;]+)"));
-          return m ? decodeURIComponent(m[2]) : null;
-        },
-        remove(k) {
-          try { localStorage.removeItem(k); } catch {}
-          try { sessionStorage.removeItem(k); } catch {}
-          document.cookie = `${k}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-        },
-      };
+  <script>
+    // ======================================================
+    // =============== Storage Utility ======================
+    // ======================================================
+    const Storage = {
+      set(k, v) {
+        try { localStorage.setItem(k, v); return; } catch { }
+        try { sessionStorage.setItem(k, v); return; } catch { }
+        document.cookie = `${k}=${encodeURIComponent(v)}; path=/`;
+      },
+      get(k) {
+        try { return localStorage.getItem(k) || sessionStorage.getItem(k); } catch { }
+        const m = document.cookie.match(new RegExp("(^| )" + k + "=([^;]+)"));
+        return m ? decodeURIComponent(m[2]) : null;
+      },
+      remove(k) {
+        try { localStorage.removeItem(k); } catch { }
+        try { sessionStorage.removeItem(k); } catch { }
+        document.cookie = `${k}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+      },
+    };
 
-      // ======================================================
-      // =============== Push Notifications ===================
-      // ======================================================
-      const VAPID_PUBLIC_KEY = "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
+    // ======================================================
+    // =============== Push Notifications ===================
+    // ======================================================
+    const VAPID_PUBLIC_KEY = "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
 
-      function urlBase64ToUint8Array(base64String) {
-        const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-        const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-        const rawData = atob(base64);
-        return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
-      }
+    function urlBase64ToUint8Array(base64String) {
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+    }
 
-      async function subscribeUser(sender, room) {
-        const registration = await navigator.serviceWorker.ready;
-        let subscription = await registration.pushManager.getSubscription();
-        if (!subscription) {
-          subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-          });
-        }
-        localStorage.setItem("pushSub", JSON.stringify(subscription.toJSON()));
-        const body = { sender: sender || "anonymous", room: room || null, subscription: subscription.toJSON() };
-        const response = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result?.error || "subscribe failed");
-        return subscription;
-      }
-
-      async function unsubscribeUser(sender, room) {
-        try {
-          const savedSub = localStorage.getItem("pushSub");
-          if (!savedSub) return;
-          const subscription = JSON.parse(savedSub);
-          await fetch("/api/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender, room, subscription }) });
-        } catch (err) { console.error("❌ Failed to unsubscribe:", err); }
-      }
-
-      async function requestNotificationPermission() {
-        if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-          const registration = await navigator.serviceWorker.register("/sw.js");
-        }
-      }
-
-      // ======================================================
-      // =============== Chat Application State ===============
-      // ======================================================
-      let socket, currentRoom = "", currentName = "";
-      let joinedRooms = new Set();
-      let lastPersistedTs = null;
-      let alreadyFetchingHistory = false;
-      let sending = false;
-      let roomTimestamps = {};
-      let joinedRoomsByUser = {};
-      let unreadCounts = {};
-
-      // ======================================================
-      // =============== Utility Functions ====================
-      // ======================================================
-      function escapeHtml(s) {
-        return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-      }
-      function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
-      function bumpTs(ts) { if (ts && (!lastPersistedTs || ts > lastPersistedTs)) lastPersistedTs = ts; }
-      function sendActive(active) { if (socket) socket.emit("status", { active }); }
-
-      // ======================================================
-      // =============== UI Functions =========================
-      // ======================================================
-      function toggleSidebar() {
-        const sidebar = document.getElementById("sidebar");
-        const showArrow = document.getElementById("show-arrow");
-        if (sidebar.classList.contains("hidden")) {
-          sidebar.classList.remove("hidden");
-          showArrow.style.display = "none";
-        } else {
-          sidebar.classList.add("hidden");
-          showArrow.style.display = "block";
-        }
-      }
-
-      // ======================================================
-      // =============== Room Management ======================
-      // ======================================================
-      async function joinRoom() {
-        currentName = document.getElementById("name").value.trim();
-        currentRoom = document.getElementById("room").value.trim();
-        if (!currentName || !currentRoom) { alert("Enter name and room first!"); return; }
-        if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
-
-        const roomStatus = await checkRoomStatus(currentRoom);
-        if (roomStatus.destroyed) {
-          if (roomStatus.time_remaining <= 0) {
-            closeDestroyedRoomAlert();
-          } else {
-            showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
-            return;
-          }
-        } else { closeDestroyedRoomAlert(); }
-
-        Storage.set("chat_name", currentName);
-        Storage.set("chat_room", currentRoom);
-        document.getElementById("chat-container").style.display = "flex";
-        document.getElementById("input-area").style.display = "flex";
-        document.getElementById("intro").style.display = "none";
-        document.getElementById("messages").style.display = "block";
-        document.getElementById("messages").innerHTML = "";
-        lastPersistedTs = null;
-        alreadyFetchingHistory = false;
-        document.getElementById("input").disabled = false;
-        document.getElementById("send").disabled = false;
-        document.getElementById("attach").disabled = false;
-        document.getElementById("user-list").innerHTML = "";
-
-        if (socket) { socket.off(); socket.disconnect(); }
-        socket = io("https://realtime-chat-1mv3.onrender.com", { path: "/socket.io", transports: ["websocket"] });
-
-        subscribeUser(currentName, currentRoom).catch((err) => console.warn("⚠️ Subscription failed in joinRoom:", err));
-
-        function safeJoinWithRetry(attempt = 1) {
-          if (!socket || !socket.connected) return;
-          if (joinedRooms.has(currentRoom)) return;
-          const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
-            if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); }
-            else { setTimeout(() => safeJoinWithRetry(attempt + 1), 500); }
-          });
-        }
-
-        socket.on("room_permanently_destroyed", (data) => {
-          Storage.remove("chat_name"); Storage.remove("chat_room");
-          if (joinedRoomsByUser[currentName]) {
-            joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== data.room);
-            localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-          }
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-          document.getElementById("messages").innerHTML = "";
-          document.getElementById("user-list").innerHTML = "";
-          currentRoom = "";
-          renderJoinedRooms();
+    async function subscribeUser(sender, room) {
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         });
-
-        socket.on("users_update", updateUserList);
-        socket.on("left_room", (data) => { if (data.room === currentRoom) document.getElementById("user-list").innerHTML = ""; });
-        socket.on("room_destroyed", handleRoomDestroyed);
-        socket.on("clear", handleRoomCleared);
-
-        // ✅ NEW: Listen for room storage clear command
-socket.on("clear_room_from_storage", (data) => {
-    const roomToClear = data.room;
-    
-    // Clear from localStorage
-    const savedRoom = Storage.get("chat_room");
-    if (savedRoom === roomToClear) {
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
+      }
+      localStorage.setItem("pushSub", JSON.stringify(subscription.toJSON()));
+      const body = { sender: sender || "anonymous", room: room || null, subscription: subscription.toJSON() };
+      const response = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error || "subscribe failed");
+      return subscription;
     }
-    
-    // Clear from joinedRoomsByUser
-    const currentName = Storage.get("chat_name") || currentName;
-    if (currentName && joinedRoomsByUser[currentName]) {
-        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== roomToClear);
-        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+
+    async function unsubscribeUser(sender, room) {
+      try {
+        const savedSub = localStorage.getItem("pushSub");
+        if (!savedSub) return;
+        const subscription = JSON.parse(savedSub);
+        await fetch("/api/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender, room, subscription }) });
+      } catch (err) { console.error("❌ Failed to unsubscribe:", err); }
     }
-    
-    // If currently in this room, leave it
-    if (currentRoom === roomToClear) {
-        currentRoom = "";
+
+    async function requestNotificationPermission() {
+      if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        const registration = await navigator.serviceWorker.register("/sw.js");
+      }
+    }
+
+    // ======================================================
+    // =============== Chat Application State ===============
+    // ======================================================
+    let socket, currentRoom = "", currentName = "";
+    let joinedRooms = new Set();
+    let lastPersistedTs = null;
+    let alreadyFetchingHistory = false;
+    let sending = false;
+    let roomTimestamps = {};
+    let joinedRoomsByUser = {};
+    let unreadCounts = {};
+
+    // ======================================================
+    // =============== Utility Functions ====================
+    // ======================================================
+    function escapeHtml(s) {
+      return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+    function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+    function bumpTs(ts) { if (ts && (!lastPersistedTs || ts > lastPersistedTs)) lastPersistedTs = ts; }
+    function sendActive(active) { if (socket) socket.emit("status", { active }); }
+
+    // ======================================================
+    // =============== UI Functions =========================
+    // ======================================================
+    function toggleSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const showArrow = document.getElementById("show-arrow");
+      if (sidebar.classList.contains("hidden")) {
+        sidebar.classList.remove("hidden");
+        showArrow.style.display = "none";
+      } else {
+        sidebar.classList.add("hidden");
+        showArrow.style.display = "block";
+      }
+    }
+
+    // ======================================================
+    // =============== Room Management ======================
+    // ======================================================
+    async function joinRoom() {
+      currentName = document.getElementById("name").value.trim();
+      currentRoom = document.getElementById("room").value.trim();
+      if (!currentName || !currentRoom) { alert("Enter name and room first!"); return; }
+      if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
+
+      const roomStatus = await checkRoomStatus(currentRoom);
+      if (roomStatus.destroyed) {
+        if (roomStatus.time_remaining <= 0) {
+          closeDestroyedRoomAlert();
+        } else {
+          showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
+          return;
+        }
+      } else { closeDestroyedRoomAlert(); }
+
+      Storage.set("chat_name", currentName);
+      Storage.set("chat_room", currentRoom);
+      document.getElementById("chat-container").style.display = "flex";
+      document.getElementById("input-area").style.display = "flex";
+      document.getElementById("intro").style.display = "none";
+      document.getElementById("messages").style.display = "block";
+      document.getElementById("messages").innerHTML = "";
+      lastPersistedTs = null;
+      alreadyFetchingHistory = false;
+      document.getElementById("input").disabled = false;
+      document.getElementById("send").disabled = false;
+      document.getElementById("attach").disabled = false;
+      document.getElementById("user-list").innerHTML = "";
+
+      if (socket) { socket.off(); socket.disconnect(); }
+      socket = io("https://realtime-chat-1mv3.onrender.com", { path: "/socket.io", transports: ["websocket"] });
+
+      subscribeUser(currentName, currentRoom).catch((err) => console.warn("⚠️ Subscription failed in joinRoom:", err));
+
+      function safeJoinWithRetry(attempt = 1) {
+        if (!socket || !socket.connected) return;
+        if (joinedRooms.has(currentRoom)) return;
+        const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+          if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); }
+          else { setTimeout(() => safeJoinWithRetry(attempt + 1), 500); }
+        });
+      }
+
+      socket.on("room_permanently_destroyed", (data) => {
+        Storage.remove("chat_name"); Storage.remove("chat_room");
+        if (joinedRoomsByUser[currentName]) {
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== data.room);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+        }
         document.getElementById("chat-container").style.display = "none";
         document.getElementById("input-area").style.display = "none";
         document.getElementById("intro").style.display = "block";
         document.getElementById("messages").innerHTML = "";
         document.getElementById("user-list").innerHTML = "";
-    }
-    
-    // Update UI
-    renderJoinedRooms();
-    console.log(`🧹 Cleared room ${roomToClear} from storage`);
-});
+        currentRoom = "";
+        renderJoinedRooms();
+      });
 
-        socket.on("connect", () => {
-          if (currentRoom && currentName) {
-            const fcmToken = localStorage.getItem("fcm_token") || null;
-            socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
-              if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); fetchUnreadCounts(); }
-              else { setTimeout(() => { socket.disconnect(); socket.connect(); }, 500); }
-            });
-          } else { restoreChatState(socket); }
-        });
+      socket.on("users_update", updateUserList);
+      socket.on("left_room", (data) => { if (data.room === currentRoom) document.getElementById("user-list").innerHTML = ""; });
+      socket.on("room_destroyed", handleRoomDestroyed);
+      socket.on("clear", handleRoomCleared);
 
-        socket.on("room_message_meta", (data) => {
-          try {
-            if (!currentName) return;
-            joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-            const myRooms = joinedRoomsByUser[currentName] || [];
-            if (!myRooms.includes(data.room)) return;
-            if (data.room === currentRoom) return;
-            unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
-            saveUnread();
-            updateBadge(data.room);
-            const title = `Room ${data.room}`;
-            const body = `${data.sender}: ${data.text}`;
-            if ("Notification" in window && Notification.permission === "granted") {
-              try {
-                const n = new Notification(title, { body, tag: `room-${data.room}` });
-                n.onclick = () => { window.focus(); switchRoom(data.room); n.close(); };
-              } catch (e) { console.warn("Notification failed:", e); }
-            } else {
-              const original = document.title;
-              document.title = `${data.room}: ${data.sender}`;
-              setTimeout(() => (document.title = original), 2500);
-            }
-          } catch (err) { console.warn("room_message_meta handler err:", err); }
-        });
+      // ✅ NEW: Listen for room storage clear command
+      socket.on("clear_room_from_storage", (data) => {
+        const roomToClear = data.room;
 
-        socket.on("message", addMessage);
-        socket.on("file", addFileMessage);
-        document.getElementById("send").onclick = sendMessage;
-        document.getElementById("input").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
-        document.getElementById("attach").onclick = (e) => { e.preventDefault(); document.getElementById("fileInput").click(); };
-        document.getElementById("fileInput").onchange = handleFileUpload;
-
-        const joinedList = document.getElementById("joined-rooms");
-        if (![...joinedList.children].some((li) => li.dataset.room === currentRoom)) {
-          const li = document.createElement("li");
-          li.textContent = currentRoom;
-          li.dataset.room = currentRoom;
-          li.style.padding = "6px 10px";
-          li.style.cursor = "pointer";
-          li.onclick = () => switchRoom(currentRoom);
-          joinedList.appendChild(li);
+        // Clear from localStorage
+        const savedRoom = Storage.get("chat_room");
+        if (savedRoom === roomToClear) {
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
         }
 
-        joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-        if (!joinedRoomsByUser[currentName]) joinedRoomsByUser[currentName] = [];
-        if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-          joinedRoomsByUser[currentName].push(currentRoom);
+        // Clear from joinedRoomsByUser
+        const currentName = Storage.get("chat_name") || currentName;
+        if (currentName && joinedRoomsByUser[currentName]) {
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== roomToClear);
           localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
+
+        // If currently in this room, leave it
+        if (currentRoom === roomToClear) {
+          currentRoom = "";
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+          document.getElementById("messages").innerHTML = "";
+          document.getElementById("user-list").innerHTML = "";
+        }
+
+        // Update UI
         renderJoinedRooms();
+        console.log(`🧹 Cleared room ${roomToClear} from storage`);
+      });
+
+      socket.on("connect", () => {
+        if (currentRoom && currentName) {
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+          socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+            if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); fetchUnreadCounts(); }
+            else { setTimeout(() => { socket.disconnect(); socket.connect(); }, 500); }
+          });
+        } else { restoreChatState(socket); }
+      });
+
+      socket.on("room_message_meta", (data) => {
+        try {
+          if (!currentName) return;
+          joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+          const myRooms = joinedRoomsByUser[currentName] || [];
+          if (!myRooms.includes(data.room)) return;
+          if (data.room === currentRoom) return;
+          unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
+          saveUnread();
+          updateBadge(data.room);
+          const title = `Room ${data.room}`;
+          const body = `${data.sender}: ${data.text}`;
+          if ("Notification" in window && Notification.permission === "granted") {
+            try {
+              const n = new Notification(title, { body, tag: `room-${data.room}` });
+              n.onclick = () => { window.focus(); switchRoom(data.room); n.close(); };
+            } catch (e) { console.warn("Notification failed:", e); }
+          } else {
+            const original = document.title;
+            document.title = `${data.room}: ${data.sender}`;
+            setTimeout(() => (document.title = original), 2500);
+          }
+        } catch (err) { console.warn("room_message_meta handler err:", err); }
+      });
+
+      socket.on("message", addMessage);
+      socket.on("file", addFileMessage);
+      document.getElementById("send").onclick = sendMessage;
+      document.getElementById("input").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+      document.getElementById("attach").onclick = (e) => { e.preventDefault(); document.getElementById("fileInput").click(); };
+      document.getElementById("fileInput").onchange = handleFileUpload;
+
+      const joinedList = document.getElementById("joined-rooms");
+      if (![...joinedList.children].some((li) => li.dataset.room === currentRoom)) {
+        const li = document.createElement("li");
+        li.textContent = currentRoom;
+        li.dataset.room = currentRoom;
+        li.style.padding = "6px 10px";
+        li.style.cursor = "pointer";
+        li.onclick = () => switchRoom(currentRoom);
+        joinedList.appendChild(li);
       }
 
-      // ✅ ENHANCED: More strict room status check
-async function checkRoomStatus(room) {
-    try {
+      joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+      if (!joinedRoomsByUser[currentName]) joinedRoomsByUser[currentName] = [];
+      if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+        joinedRoomsByUser[currentName].push(currentRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+      }
+      renderJoinedRooms();
+    }
+
+    // ✅ ENHANCED: More strict room status check
+    async function checkRoomStatus(room) {
+      try {
         const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
         if (!response.ok) throw new Error("Failed to check room status");
         const status = await response.json();
-        
+
         // ✅ If room was EVER destroyed, don't auto-join even if destruction period is over
         if (status.destroyed || status.was_destroyed) {
-            return { destroyed: true, time_remaining: status.time_remaining || 0 };
+          return { destroyed: true, time_remaining: status.time_remaining || 0 };
         }
         return status;
-    } catch (err) { 
-        console.warn("Room status check failed:", err); 
+      } catch (err) {
+        console.warn("Room status check failed:", err);
         // ✅ If we can't check status, assume room might be destroyed to be safe
-        return { destroyed: true, time_remaining: 0 }; 
+        return { destroyed: true, time_remaining: 0 };
+      }
     }
-}
 
-      function showDestroyedRoomAlert(room, initialTimeRemaining) {
-        let timeRemaining = Math.floor(initialTimeRemaining);
-        closeDestroyedRoomAlert();
-        const overlay = document.createElement("div");
-        overlay.id = "destroyed-room-alert";
-        overlay.style = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;`;
-        const alertBox = document.createElement("div");
-        alertBox.style = `background: #1a1812; padding: 20px; border-radius: 12px; border: 2px solid #e74c3c; max-width: 400px; text-align: center; color: #eaeaea;`;
-        alertBox.innerHTML = `<h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
+    function showDestroyedRoomAlert(room, initialTimeRemaining) {
+      let timeRemaining = Math.floor(initialTimeRemaining);
+      closeDestroyedRoomAlert();
+      const overlay = document.createElement("div");
+      overlay.id = "destroyed-room-alert";
+      overlay.style = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;`;
+      const alertBox = document.createElement("div");
+      alertBox.style = `background: #1a1812; padding: 20px; border-radius: 12px; border: 2px solid #e74c3c; max-width: 400px; text-align: center; color: #eaeaea;`;
+      alertBox.innerHTML = `<h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
         <p>Room <strong>"${room}"</strong> has been destroyed and cannot be joined yet.</p>
         <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
         <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
         <button onclick="closeDestroyedRoomAlert()" style="background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 10px;">Close</button>`;
-        overlay.appendChild(alertBox);
-        document.body.appendChild(overlay);
-        overlay._room = room;
-        const countdownEl = document.getElementById("countdown-timer");
-        const countdownInterval = setInterval(() => {
-          timeRemaining--;
-          if (countdownEl) countdownEl.textContent = timeRemaining;
-          if (timeRemaining <= 0) {
-            clearInterval(countdownInterval);
-            if (countdownEl) { countdownEl.textContent = "0"; countdownEl.style.color = "#e74c3c"; }
-          }
-        }, 1000);
-        const statusCheckInterval = setInterval(async () => {
-          try {
-            const status = await checkRoomStatus(room);
-            if (!status.destroyed) {
-              clearInterval(countdownInterval); clearInterval(statusCheckInterval); closeDestroyedRoomAlert();
-            } else {
-              if (countdownEl && status.time_remaining) {
-                const serverTimeRemaining = Math.floor(status.time_remaining);
-                if (serverTimeRemaining !== timeRemaining) {
-                  timeRemaining = serverTimeRemaining;
-                  countdownEl.textContent = serverTimeRemaining;
-                  if (serverTimeRemaining <= 0) countdownEl.style.color = "#e74c3c";
-                }
+      overlay.appendChild(alertBox);
+      document.body.appendChild(overlay);
+      overlay._room = room;
+      const countdownEl = document.getElementById("countdown-timer");
+      const countdownInterval = setInterval(() => {
+        timeRemaining--;
+        if (countdownEl) countdownEl.textContent = timeRemaining;
+        if (timeRemaining <= 0) {
+          clearInterval(countdownInterval);
+          if (countdownEl) { countdownEl.textContent = "0"; countdownEl.style.color = "#e74c3c"; }
+        }
+      }, 1000);
+      const statusCheckInterval = setInterval(async () => {
+        try {
+          const status = await checkRoomStatus(room);
+          if (!status.destroyed) {
+            clearInterval(countdownInterval); clearInterval(statusCheckInterval); closeDestroyedRoomAlert();
+          } else {
+            if (countdownEl && status.time_remaining) {
+              const serverTimeRemaining = Math.floor(status.time_remaining);
+              if (serverTimeRemaining !== timeRemaining) {
+                timeRemaining = serverTimeRemaining;
+                countdownEl.textContent = serverTimeRemaining;
+                if (serverTimeRemaining <= 0) countdownEl.style.color = "#e74c3c";
               }
             }
-          } catch (err) { console.warn("Room status check failed:", err); }
-        }, 10000);
-        overlay._intervals = [countdownInterval, statusCheckInterval];
-      }
+          }
+        } catch (err) { console.warn("Room status check failed:", err); }
+      }, 10000);
+      overlay._intervals = [countdownInterval, statusCheckInterval];
+    }
 
-      function closeDestroyedRoomAlert() {
-        const alert = document.getElementById("destroyed-room-alert");
-        if (alert && alert._intervals) alert._intervals.forEach(clearInterval);
-        if (alert) alert.remove();
-      }
+    function closeDestroyedRoomAlert() {
+      const alert = document.getElementById("destroyed-room-alert");
+      if (alert && alert._intervals) alert._intervals.forEach(clearInterval);
+      if (alert) alert.remove();
+    }
 
-      async function syncDestroyedRooms() {
+    async function syncDestroyedRooms() {
+      try {
+        const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
+        if (!res.ok) { console.warn("syncDestroyedRooms: server returned", res.status); return; }
+        const data = await res.json();
+        const destroyed = data.destroyed || [];
+        if (destroyed.length && currentName) {
+          joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+          joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter((room) => !destroyed.includes(room));
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+          if (destroyed.includes(currentRoom)) {
+            currentRoom = "";
+            document.getElementById("chat-container").style.display = "none";
+            document.getElementById("input-area").style.display = "none";
+            document.getElementById("intro").style.display = "block";
+            document.getElementById("messages").innerHTML = "";
+            document.getElementById("user-list").innerHTML = "";
+          }
+        }
+      } catch (err) { console.warn("Failed to sync destroyed rooms:", err); }
+    }
+
+    // ======================================================
+    // =============== Badge Management =====================
+    // ======================================================
+    function unreadKey() { return "unreadCounts_" + (currentName || "anon"); }
+    function loadUnread() {
+      try { unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}"); } catch (e) { unreadCounts = {}; }
+    }
+    function saveUnread() {
+      try { localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts)); } catch (e) { }
+    }
+    function updateBadge(room) {
+      const list = document.getElementById("joined-rooms");
+      if (!list) return;
+      const li = [...list.children].find((x) => x.dataset.room === room);
+      if (!li) return;
+      let badge = li.querySelector(".room-badge");
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "room-badge";
+        badge.style.cssText = "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
+        li.appendChild(badge);
+      }
+      const count = unreadCounts[room] || 0;
+      badge.textContent = count > 0 ? (count > 99 ? "99+" : count) : "";
+      badge.style.display = count > 0 ? "inline-block" : "none";
+    }
+
+    async function fetchUnreadCounts() {
+      if (!currentName || !socket || !socket.connected) return;
+      try {
+        const response = await fetch(`${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.unreadCounts) {
+            Object.keys(data.unreadCounts).forEach((room) => {
+              unreadCounts[room] = (unreadCounts[room] || 0) + data.unreadCounts[room];
+            });
+            saveUnread();
+            const rooms = joinedRoomsByUser[currentName] || [];
+            rooms.forEach((room) => { updateBadge(room); });
+          }
+        }
+      } catch (err) { console.warn("Failed to fetch unread counts:", err); }
+    }
+
+    // ======================================================
+    // =============== Joined Rooms Management ==============
+    // ======================================================
+    function renderJoinedRooms() {
+      loadUnread();
+      const list = document.getElementById("joined-rooms");
+      list.innerHTML = "";
+      const rooms = joinedRoomsByUser[currentName] || [];
+      rooms.forEach((room) => {
+        const li = document.createElement("li");
+        li.dataset.room = room;
+        li.className = "joined-room-item";
+        if (room === currentRoom) li.classList.add("active");
+        const span = document.createElement("span");
+        span.className = "room-name";
+        span.textContent = room;
+        li.appendChild(span);
+        const badge = document.createElement("span");
+        badge.className = "room-badge";
+        li.appendChild(badge);
+        li.onclick = () => switchRoom(room);
+        list.appendChild(li);
+        updateBadge(room);
+      });
+    }
+
+    function switchRoom(room) {
+      if (!room || room === currentRoom) return;
+      const previousRoom = currentRoom;
+      const messagesEl = document.getElementById("messages");
+      const usersEl = document.getElementById("user-list");
+      messagesEl && (messagesEl.innerHTML = "");
+      usersEl && (usersEl.innerHTML = "");
+      currentRoom = room;
+      lastPersistedTs = null;
+      document.getElementById("room").value = currentRoom;
+      Storage.set("chat_room", currentRoom);
+      Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
+        li.style.background = li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+      });
+
+      if (previousRoom && socket && socket.connected) {
         try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
-          if (!res.ok) { console.warn("syncDestroyedRooms: server returned", res.status); return; }
-          const data = await res.json();
-          const destroyed = data.destroyed || [];
-          if (destroyed.length && currentName) {
-            joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-            joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter((room) => !destroyed.includes(room));
+          socket.emit("leave", { room: previousRoom, sender: currentName, reason: "switch" });
+        } catch (e) { console.warn("Failed to emit leave for previous room:", e); }
+      }
+
+      if (!socket || !socket.connected) { joinRoom(); return; }
+
+      socket.emit("join", { room: currentRoom, sender: currentName, lastTs: null }, (ack) => {
+        if (ack && ack.success) {
+          joinedRooms.add(currentRoom);
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
+          if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+            joinedRoomsByUser[currentName].push(currentRoom);
             localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-            if (destroyed.includes(currentRoom)) {
-              currentRoom = "";
-              document.getElementById("chat-container").style.display = "none";
-              document.getElementById("input-area").style.display = "none";
-              document.getElementById("intro").style.display = "block";
-              document.getElementById("messages").innerHTML = "";
-              document.getElementById("user-list").innerHTML = "";
-            }
           }
-        } catch (err) { console.warn("Failed to sync destroyed rooms:", err); }
-      }
-
-      // ======================================================
-      // =============== Badge Management =====================
-      // ======================================================
-      function unreadKey() { return "unreadCounts_" + (currentName || "anon"); }
-      function loadUnread() {
-        try { unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}"); } catch (e) { unreadCounts = {}; }
-      }
-      function saveUnread() {
-        try { localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts)); } catch (e) {}
-      }
-      function updateBadge(room) {
-        const list = document.getElementById("joined-rooms");
-        if (!list) return;
-        const li = [...list.children].find((x) => x.dataset.room === room);
-        if (!li) return;
-        let badge = li.querySelector(".room-badge");
-        if (!badge) {
-          badge = document.createElement("span");
-          badge.className = "room-badge";
-          badge.style.cssText = "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
-          li.appendChild(badge);
+          renderJoinedRooms();
+          document.getElementById("chat-container").style.display = "flex";
+          document.getElementById("input-area").style.display = "flex";
+          document.getElementById("intro").style.display = "none";
+          document.getElementById("messages").style.display = "block";
         }
-        const count = unreadCounts[room] || 0;
-        badge.textContent = count > 0 ? (count > 99 ? "99+" : count) : "";
-        badge.style.display = count > 0 ? "inline-block" : "none";
-      }
+      });
 
-      async function fetchUnreadCounts() {
-        if (!currentName || !socket || !socket.connected) return;
+      unreadCounts[currentRoom] = 0;
+      saveUnread();
+      updateBadge(currentRoom);
+    }
+
+    async function restoreChatState(socket) {
+      const state = await loadChatState();
+      if (state) {
+        const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken: fcmToken });
+      }
+    }
+
+    // ======================================================
+    // =============== Message Handling =====================
+    // ======================================================
+    async function sendMessage() {
+      if (sending) return;
+      const inputEl = document.getElementById("input");
+      const text = inputEl.value.trim();
+      if (!text || !currentRoom) return;
+      const nowTs = new Date().toISOString();
+      lastPersistedTs = nowTs;
+      try {
+        localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
+      } catch (e) { console.warn("Could not persist chatState:", e); }
+      sending = true;
+      document.getElementById("send").disabled = true;
+      let sub = null;
+      try {
+        const savedSub = localStorage.getItem("pushSub");
+        sub = savedSub ? JSON.parse(savedSub) : null;
+      } catch (err) { console.warn("⚠️ Subscription failed, but sending message anyway:", err); }
+      socket.emit("message", { room: currentRoom, sender: currentName, text, subscription: sub }, () => {
+        sending = false;
+        document.getElementById("send").disabled = false;
+      });
+      inputEl.value = "";
+    }
+
+    function showCopyNotice(text) {
+      const messages = document.getElementById("messages");
+      const div = document.createElement("div");
+      div.className = "msg system";
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+      setTimeout(() => div.remove(), 2500);
+    }
+
+    let lastCopyTime = 0;
+    function copyToClipboard(text, notice) {
+      const now = Date.now();
+      if (now - lastCopyTime < 400) return;
+      lastCopyTime = now;
+      navigator.clipboard.writeText(text).then(() => { if (notice) showCopyNotice(notice); }).catch((err) => console.error("❌ Copy failed:", err));
+    }
+
+    function enableCopyOnMessage(el, text) {
+      el.style.userSelect = "none";
+      let pressTimer;
+      el.addEventListener("touchstart", () => {
+        pressTimer = setTimeout(() => { copyToClipboard(text, "📋 Message copied"); }, 500);
+      });
+      el.addEventListener("touchend", () => clearTimeout(pressTimer));
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        copyToClipboard(text, "📋 Message copied");
+      });
+    }
+
+    function enableCopyOnLink(el) {
+      el.style.userSelect = "none";
+      el.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        copyToClipboard(el.href, "🔗 Link copied");
+      });
+      el.addEventListener("touchstart", (e) => {
+        e.stopPropagation();
+        const timer = setTimeout(() => { copyToClipboard(el.href, "🔗 Link copied"); }, 500);
+        el.addEventListener("touchend", () => clearTimeout(timer), { once: true });
+      });
+    }
+
+    function linkifyWithFavicon(text) {
+      const urlRegex = /(https?:\/\/[^\s]+)/g;
+      return text.replace(urlRegex, (url) => {
         try {
-          const response = await fetch(`${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`);
-          if (response.ok) {
-            const data = await response.json();
-            if (data.unreadCounts) {
-              Object.keys(data.unreadCounts).forEach((room) => {
-                unreadCounts[room] = (unreadCounts[room] || 0) + data.unreadCounts[room];
-              });
-              saveUnread();
-              const rooms = joinedRoomsByUser[currentName] || [];
-              rooms.forEach((room) => { updateBadge(room); });
-            }
-          }
-        } catch (err) { console.warn("Failed to fetch unread counts:", err); }
-      }
-
-      // ======================================================
-      // =============== Joined Rooms Management ==============
-      // ======================================================
-      function renderJoinedRooms() {
-        loadUnread();
-        const list = document.getElementById("joined-rooms");
-        list.innerHTML = "";
-        const rooms = joinedRoomsByUser[currentName] || [];
-        rooms.forEach((room) => {
-          const li = document.createElement("li");
-          li.dataset.room = room;
-          li.className = "joined-room-item";
-          if (room === currentRoom) li.classList.add("active");
-          const span = document.createElement("span");
-          span.className = "room-name";
-          span.textContent = room;
-          li.appendChild(span);
-          const badge = document.createElement("span");
-          badge.className = "room-badge";
-          li.appendChild(badge);
-          li.onclick = () => switchRoom(room);
-          list.appendChild(li);
-          updateBadge(room);
-        });
-      }
-
-      function switchRoom(room) {
-        if (!room || room === currentRoom) return;
-        const previousRoom = currentRoom;
-        const messagesEl = document.getElementById("messages");
-        const usersEl = document.getElementById("user-list");
-        messagesEl && (messagesEl.innerHTML = "");
-        usersEl && (usersEl.innerHTML = "");
-        currentRoom = room;
-        lastPersistedTs = null;
-        document.getElementById("room").value = currentRoom;
-        Storage.set("chat_room", currentRoom);
-        Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
-          li.style.background = li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-        });
-
-        if (previousRoom && socket && socket.connected) {
-          try {
-            socket.emit("leave", { room: previousRoom, sender: currentName, reason: "switch" });
-          } catch (e) { console.warn("Failed to emit leave for previous room:", e); }
-        }
-
-        if (!socket || !socket.connected) { joinRoom(); return; }
-
-        socket.emit("join", { room: currentRoom, sender: currentName, lastTs: null }, (ack) => {
-          if (ack && ack.success) {
-            joinedRooms.add(currentRoom);
-            joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
-            if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-              joinedRoomsByUser[currentName].push(currentRoom);
-              localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-            }
-            renderJoinedRooms();
-            document.getElementById("chat-container").style.display = "flex";
-            document.getElementById("input-area").style.display = "flex";
-            document.getElementById("intro").style.display = "none";
-            document.getElementById("messages").style.display = "block";
-          }
-        });
-
-        unreadCounts[currentRoom] = 0;
-        saveUnread();
-        updateBadge(currentRoom);
-      }
-
-      async function restoreChatState(socket) {
-        const state = await loadChatState();
-        if (state) {
-          const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken: fcmToken });
-        }
-      }
-
-      // ======================================================
-      // =============== Message Handling =====================
-      // ======================================================
-      async function sendMessage() {
-        if (sending) return;
-        const inputEl = document.getElementById("input");
-        const text = inputEl.value.trim();
-        if (!text || !currentRoom) return;
-        const nowTs = new Date().toISOString();
-        lastPersistedTs = nowTs;
-        try {
-          localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
-        } catch (e) { console.warn("Could not persist chatState:", e); }
-        sending = true;
-        document.getElementById("send").disabled = true;
-        let sub = null;
-        try {
-          const savedSub = localStorage.getItem("pushSub");
-          sub = savedSub ? JSON.parse(savedSub) : null;
-        } catch (err) { console.warn("⚠️ Subscription failed, but sending message anyway:", err); }
-        socket.emit("message", { room: currentRoom, sender: currentName, text, subscription: sub }, () => {
-          sending = false;
-          document.getElementById("send").disabled = false;
-        });
-        inputEl.value = "";
-      }
-
-      function showCopyNotice(text) {
-        const messages = document.getElementById("messages");
-        const div = document.createElement("div");
-        div.className = "msg system";
-        div.textContent = text;
-        messages.appendChild(div);
-        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-        setTimeout(() => div.remove(), 2500);
-      }
-
-      let lastCopyTime = 0;
-      function copyToClipboard(text, notice) {
-        const now = Date.now();
-        if (now - lastCopyTime < 400) return;
-        lastCopyTime = now;
-        navigator.clipboard.writeText(text).then(() => { if (notice) showCopyNotice(notice); }).catch((err) => console.error("❌ Copy failed:", err));
-      }
-
-      function enableCopyOnMessage(el, text) {
-        el.style.userSelect = "none";
-        let pressTimer;
-        el.addEventListener("touchstart", () => {
-          pressTimer = setTimeout(() => { copyToClipboard(text, "📋 Message copied"); }, 500);
-        });
-        el.addEventListener("touchend", () => clearTimeout(pressTimer));
-        el.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          copyToClipboard(text, "📋 Message copied");
-        });
-      }
-
-      function enableCopyOnLink(el) {
-        el.style.userSelect = "none";
-        el.addEventListener("contextmenu", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          copyToClipboard(el.href, "🔗 Link copied");
-        });
-        el.addEventListener("touchstart", (e) => {
-          e.stopPropagation();
-          const timer = setTimeout(() => { copyToClipboard(el.href, "🔗 Link copied"); }, 500);
-          el.addEventListener("touchend", () => clearTimeout(timer), { once: true });
-        });
-      }
-
-      function linkifyWithFavicon(text) {
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        return text.replace(urlRegex, (url) => {
-          try {
-            const u = new URL(url);
-            const favicon = `${u.origin}/favicon.ico`;
-            return `<span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
+          const u = new URL(url);
+          const favicon = `${u.origin}/favicon.ico`;
+          return `<span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
               <img src="${favicon}" alt="icon" style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
               <a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>
             </span>`;
-          } catch {
-            return `<a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>`;
-          }
-        });
-      }
-
-      function addMessage(data) {
-        const messages = document.getElementById("messages");
-        if (data.ts) roomTimestamps[currentRoom] = data.ts;
-        const div = document.createElement("div");
-        if (data.sender === "System") {
-          div.className = "msg system";
-          div.textContent = data.text;
-          enableCopyOnMessage(div, data.text);
-        } else {
-          bumpTs(data.ts);
-          const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
-          div.className = "msg " + (isMe ? "me" : "other");
-          div.dataset.ts = data.ts;
-          const safeText = escapeHtml(data.text);
-          const formattedText = linkifyWithFavicon(safeText);
-          div.innerHTML = `<strong>${data.sender}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
-          enableCopyOnMessage(div, data.text);
-          div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
+        } catch {
+          return `<a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>`;
         }
-        messages.appendChild(div);
-        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-      }
+      });
+    }
 
-      // ======================================================
-      // =============== File Handling ========================
-      // ======================================================
-      async function saveFileToDevice(base64Data, filename, mimeType) {
-        try {
-          const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
-          const { Filesystem, Toast } = window.Capacitor.Plugins;
-          if (!Filesystem) {
-            if (Toast) await Toast.show({ text: "❌ Filesystem plugin missing!", duration: "short", position: "bottom" });
-            return;
-          }
-          const result = await Filesystem.writeFile({ path: filename, data: cleaned, directory: "DOCUMENTS" });
-          if (Toast) await Toast.show({ text: `✅ Downloaded: ${filename}`, duration: "short", position: "bottom" });
-          return result.uri;
-        } catch (e) {
-          const { Toast } = window.Capacitor.Plugins;
-          if (Toast) await Toast.show({ text: `❌ Save failed: ${e.message}`, duration: "short", position: "bottom" });
-        }
-      }
-
-      window.downloadFile = async (base64, filename, mimetype) => {
-        try {
-          if (window.Capacitor?.isNativePlatform()) {
-            await saveFileToDevice(base64, filename, mimetype);
-          } else {
-            const a = document.createElement("a");
-            a.href = base64;
-            a.download = filename;
-            a.click();
-          }
-        } catch (err) {
-          const { Toast } = window.Capacitor.Plugins;
-          if (Toast) await Toast.show({ text: `❌ Download error: ${err.message}`, duration: "short", position: "bottom" });
-        }
-      };
-
-      function base64ToBlob(base64Data, contentType = "") {
-        const parts = base64Data.split(",");
-        const byteCharacters = atob(parts[1]);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-        const byteArray = new Uint8Array(byteNumbers);
-        return new Blob([byteArray], { type: contentType });
-      }
-
-      function generateVideoThumbnail(videoUrl, callback) {
-        const video = document.createElement("video");
-        video.src = videoUrl;
-        video.crossOrigin = "anonymous";
-        video.load();
-        video.addEventListener("loadeddata", () => { video.currentTime = 1; });
-        video.addEventListener("seeked", () => {
-          const canvas = document.createElement("canvas");
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const imageUrl = canvas.toDataURL();
-          callback(imageUrl);
-        });
-      }
-
-      async function generatePdfThumbnail(pdfUrl, callback) {
-        const pdfjsLib = window["pdfjs-dist/build/pdf"];
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-        const loadingTask = pdfjsLib.getDocument(pdfUrl);
-        const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1 });
-        const canvas = document.createElement("canvas");
-        const context = canvas.getContext("2d");
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        await page.render({ canvasContext: context, viewport: viewport }).promise;
-        const thumbnailUrl = canvas.toDataURL("image/png");
-        callback(thumbnailUrl);
-      }
-
-      window.addFileMessage = function addFileMessage(data) {
+    function addMessage(data) {
+      const messages = document.getElementById("messages");
+      if (data.ts) roomTimestamps[currentRoom] = data.ts;
+      const div = document.createElement("div");
+      if (data.sender === "System") {
+        div.className = "msg system";
+        div.textContent = data.text;
+        enableCopyOnMessage(div, data.text);
+      } else {
         bumpTs(data.ts);
-        const div = document.createElement("div");
         const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
         div.className = "msg " + (isMe ? "me" : "other");
         div.dataset.ts = data.ts;
-        if (data.mimetype && data.mimetype.startsWith("image/")) {
-          div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
+        const safeText = escapeHtml(data.text);
+        const formattedText = linkifyWithFavicon(safeText);
+        div.innerHTML = `<strong>${data.sender}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
+        enableCopyOnMessage(div, data.text);
+        div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
+      }
+      messages.appendChild(div);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }
+
+    // ======================================================
+    // =============== File Handling ========================
+    // ======================================================
+    async function saveFileToDevice(base64Data, filename, mimeType) {
+      try {
+        const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+        const { Filesystem, Toast } = window.Capacitor.Plugins;
+        if (!Filesystem) {
+          if (Toast) await Toast.show({ text: "❌ Filesystem plugin missing!", duration: "short", position: "bottom" });
+          return;
+        }
+        const result = await Filesystem.writeFile({ path: filename, data: cleaned, directory: "DOCUMENTS" });
+        if (Toast) await Toast.show({ text: `✅ Downloaded: ${filename}`, duration: "short", position: "bottom" });
+        return result.uri;
+      } catch (e) {
+        const { Toast } = window.Capacitor.Plugins;
+        if (Toast) await Toast.show({ text: `❌ Save failed: ${e.message}`, duration: "short", position: "bottom" });
+      }
+    }
+
+    window.downloadFile = async (base64, filename, mimetype) => {
+      try {
+        if (window.Capacitor?.isNativePlatform()) {
+          await saveFileToDevice(base64, filename, mimetype);
+        } else {
+          const a = document.createElement("a");
+          a.href = base64;
+          a.download = filename;
+          a.click();
+        }
+      } catch (err) {
+        const { Toast } = window.Capacitor.Plugins;
+        if (Toast) await Toast.show({ text: `❌ Download error: ${err.message}`, duration: "short", position: "bottom" });
+      }
+    };
+
+    function base64ToBlob(base64Data, contentType = "") {
+      const parts = base64Data.split(",");
+      const byteCharacters = atob(parts[1]);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
+      const byteArray = new Uint8Array(byteNumbers);
+      return new Blob([byteArray], { type: contentType });
+    }
+
+    function generateVideoThumbnail(videoUrl, callback) {
+      const video = document.createElement("video");
+      video.src = videoUrl;
+      video.crossOrigin = "anonymous";
+      video.load();
+      video.addEventListener("loadeddata", () => { video.currentTime = 1; });
+      video.addEventListener("seeked", () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageUrl = canvas.toDataURL();
+        callback(imageUrl);
+      });
+    }
+
+    async function generatePdfThumbnail(pdfUrl, callback) {
+      const pdfjsLib = window["pdfjs-dist/build/pdf"];
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+      const loadingTask = pdfjsLib.getDocument(pdfUrl);
+      const pdf = await loadingTask.promise;
+      const page = await pdf.getPage(1);
+      const viewport = page.getViewport({ scale: 1 });
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
+      const thumbnailUrl = canvas.toDataURL("image/png");
+      callback(thumbnailUrl);
+    }
+
+    window.addFileMessage = function addFileMessage(data) {
+      bumpTs(data.ts);
+      const div = document.createElement("div");
+      const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
+      div.className = "msg " + (isMe ? "me" : "other");
+      div.dataset.ts = data.ts;
+      if (data.mimetype && data.mimetype.startsWith("image/")) {
+        div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
           <div class="image-wrapper">
             <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
@@ -1576,11 +1510,11 @@ async function checkRoomStatus(room) {
             <img src="${data.data}" alt="${escapeAttr(data.filename)}" style="cursor:pointer;">
           </div>
           <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
-        } else if (data.mimetype && data.mimetype.startsWith("video/")) {
-          const videoBlob = base64ToBlob(data.data, data.mimetype);
-          const videoUrl = URL.createObjectURL(videoBlob);
-          generateVideoThumbnail(videoUrl, (thumbnailUrl) => {
-            div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
+      } else if (data.mimetype && data.mimetype.startsWith("video/")) {
+        const videoBlob = base64ToBlob(data.data, data.mimetype);
+        const videoUrl = URL.createObjectURL(videoBlob);
+        generateVideoThumbnail(videoUrl, (thumbnailUrl) => {
+          div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
             <div class="image-wrapper">
               <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
@@ -1588,12 +1522,12 @@ async function checkRoomStatus(room) {
               <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${data.mimetype}','${data.filename}')">
             </div>
             <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
-          });
-        } else if (data.mimetype === "application/pdf") {
-          const pdfBlob = base64ToBlob(data.data, data.mimetype);
-          const pdfUrl = URL.createObjectURL(pdfBlob);
-          generatePdfThumbnail(pdfUrl, (thumbnailUrl) => {
-            div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
+        });
+      } else if (data.mimetype === "application/pdf") {
+        const pdfBlob = base64ToBlob(data.data, data.mimetype);
+        const pdfUrl = URL.createObjectURL(pdfBlob);
+        generatePdfThumbnail(pdfUrl, (thumbnailUrl) => {
+          div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
             <div class="image-wrapper">
               <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
@@ -1602,174 +1536,174 @@ async function checkRoomStatus(room) {
               <div style="margin-top:4px;font-size:12px;color:#fff;text-align:center;">📄 ${data.filename}</div>
             </div>
             <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
-          });
+        });
+      }
+      const messages = document.getElementById("messages");
+      messages.appendChild(div);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+      try {
+        if (data.mimetype && data.mimetype.startsWith("image/")) {
+          const img = div.querySelector("img");
+          if (img) {
+            img.dataset.mimetype = data.mimetype || "";
+            img.dataset.filename = data.filename || "";
+            img.addEventListener("click", (e) => {
+              try { openPreview(img.src, img.dataset.mimetype || data.mimetype, img.dataset.filename || data.filename); }
+              catch (err) { console.error("DEBUG_PREVIEW", "error in img click handler", err); }
+            });
+          }
+        } else if (data.mimetype && data.mimetype.startsWith("video/")) {
+          const video = div.querySelector("video");
+          if (video) {
+            video.dataset.mimetype = data.mimetype || "";
+            video.dataset.filename = data.filename || "";
+            video.addEventListener("click", (e) => {
+              try { openPreview(video.querySelector("source").src, video.dataset.mimetype || data.mimetype, video.dataset.filename || data.filename); }
+              catch (err) { console.error("DEBUG_PREVIEW", "error in video click handler", err); }
+            });
+          }
+        } else if (data.mimetype === "application/pdf") {
+          const link = div.querySelector(".download-link");
+          if (link) {
+            link.addEventListener("click", (e) => {
+              e.preventDefault();
+              try { openPreview(data.data, data.mimetype, data.filename); }
+              catch (err) { console.error("DEBUG_PREVIEW", "error in pdf click handler", err); }
+            }, { passive: false });
+          }
         }
-        const messages = document.getElementById("messages");
-        messages.appendChild(div);
-        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-        try {
-          if (data.mimetype && data.mimetype.startsWith("image/")) {
-            const img = div.querySelector("img");
-            if (img) {
-              img.dataset.mimetype = data.mimetype || "";
-              img.dataset.filename = data.filename || "";
-              img.addEventListener("click", (e) => {
-                try { openPreview(img.src, img.dataset.mimetype || data.mimetype, img.dataset.filename || data.filename); }
-                catch (err) { console.error("DEBUG_PREVIEW", "error in img click handler", err); }
-              });
-            }
-          } else if (data.mimetype && data.mimetype.startsWith("video/")) {
-            const video = div.querySelector("video");
-            if (video) {
-              video.dataset.mimetype = data.mimetype || "";
-              video.dataset.filename = data.filename || "";
-              video.addEventListener("click", (e) => {
-                try { openPreview(video.querySelector("source").src, video.dataset.mimetype || data.mimetype, video.dataset.filename || data.filename); }
-                catch (err) { console.error("DEBUG_PREVIEW", "error in video click handler", err); }
-              });
-            }
-          } else if (data.mimetype === "application/pdf") {
-            const link = div.querySelector(".download-link");
-            if (link) {
-              link.addEventListener("click", (e) => {
-                e.preventDefault();
-                try { openPreview(data.data, data.mimetype, data.filename); }
-                catch (err) { console.error("DEBUG_PREVIEW", "error in pdf click handler", err); }
-              }, { passive: false });
-            }
-          }
-        } catch (err) { console.error("DEBUG_PREVIEW", "attach handler general error:", err); }
-      };
+      } catch (err) { console.error("DEBUG_PREVIEW", "attach handler general error:", err); }
+    };
 
-      // ======================================================
-      // =============== Preview Functions ====================
-      // ======================================================
-      async function openPreview(src, type, filename) {
-        try {
-          if (!src) return;
-          if (document.getElementById("preview-overlay")) return;
-          const overlay = document.createElement("div");
-          overlay.id = "preview-overlay";
-          overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:99999;padding:12px;box-sizing:border-box;`;
-          const box = document.createElement("div");
-          box.style = `background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:hidden;padding:8px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;`;
-          const header = document.createElement("div");
-          header.style = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
-          const title = document.createElement("div");
-          title.textContent = filename || "Preview";
-          title.style = "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-          header.appendChild(title);
-          box.appendChild(header);
-          const contentWrapper = document.createElement("div");
-          contentWrapper.style = `width:100%;flex:1 1 auto;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 6px;box-sizing:border-box;`;
-          box.appendChild(contentWrapper);
-          const controls = document.createElement("div");
-          controls.style = "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
-          const closeBtn = document.createElement("button");
-          closeBtn.textContent = "Close";
-          closeBtn.onclick = closePreview;
-          closeBtn.style = "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
-          controls.appendChild(closeBtn);
-          box.appendChild(controls);
-          overlay.appendChild(box);
-          document.body.appendChild(overlay);
-          overlay.addEventListener("click", (ev) => { if (ev.target === overlay) closePreview(); });
-          const onKey = (ev) => { if (ev.key === "Escape") closePreview(); };
-          window.addEventListener("keydown", onKey);
-          const onPop = () => { closePreview(); };
-          history.pushState({ preview: true }, "");
-          window.addEventListener("popstate", onPop);
-          overlay._cleanup = () => {
-            window.removeEventListener("keydown", onKey);
-            window.removeEventListener("popstate", onPop);
-          };
+    // ======================================================
+    // =============== Preview Functions ====================
+    // ======================================================
+    async function openPreview(src, type, filename) {
+      try {
+        if (!src) return;
+        if (document.getElementById("preview-overlay")) return;
+        const overlay = document.createElement("div");
+        overlay.id = "preview-overlay";
+        overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:99999;padding:12px;box-sizing:border-box;`;
+        const box = document.createElement("div");
+        box.style = `background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:hidden;padding:8px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;`;
+        const header = document.createElement("div");
+        header.style = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
+        const title = document.createElement("div");
+        title.textContent = filename || "Preview";
+        title.style = "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        header.appendChild(title);
+        box.appendChild(header);
+        const contentWrapper = document.createElement("div");
+        contentWrapper.style = `width:100%;flex:1 1 auto;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 6px;box-sizing:border-box;`;
+        box.appendChild(contentWrapper);
+        const controls = document.createElement("div");
+        controls.style = "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = "Close";
+        closeBtn.onclick = closePreview;
+        closeBtn.style = "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
+        controls.appendChild(closeBtn);
+        box.appendChild(controls);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+        overlay.addEventListener("click", (ev) => { if (ev.target === overlay) closePreview(); });
+        const onKey = (ev) => { if (ev.key === "Escape") closePreview(); };
+        window.addEventListener("keydown", onKey);
+        const onPop = () => { closePreview(); };
+        history.pushState({ preview: true }, "");
+        window.addEventListener("popstate", onPop);
+        overlay._cleanup = () => {
+          window.removeEventListener("keydown", onKey);
+          window.removeEventListener("popstate", onPop);
+        };
 
-          if (type && type.startsWith("image/")) {
-            const img = document.createElement("img");
-            img.src = src;
-            img.alt = filename || "image";
-            img.style.maxWidth = "100%";
-            img.style.maxHeight = "80vh";
-            img.style.borderRadius = "6px";
-            contentWrapper.appendChild(img);
+        if (type && type.startsWith("image/")) {
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = filename || "image";
+          img.style.maxWidth = "100%";
+          img.style.maxHeight = "80vh";
+          img.style.borderRadius = "6px";
+          contentWrapper.appendChild(img);
+          return;
+        }
+
+        if (type === "application/pdf" || (typeof src === "string" && src.startsWith("data:application/pdf"))) {
+          const loadingIndicator = document.createElement("div");
+          loadingIndicator.textContent = "Loading PDF…";
+          loadingIndicator.style = "color:#333;padding:8px;";
+          contentWrapper.appendChild(loadingIndicator);
+          try {
+            const pdfjsLib = window["pdfjs-dist/build/pdf"];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+            const loadingTask = pdfjsLib.getDocument(src);
+            const pdf = await loadingTask.promise;
+            loadingIndicator.remove();
+            const maxDisplayWidth = Math.min(window.innerWidth * 0.9, 1200);
+            for (let p = 1; p <= pdf.numPages; p++) {
+              const page = await pdf.getPage(p);
+              const viewport = page.getViewport({ scale: 1 });
+              const devicePixelRatio = window.devicePixelRatio || 1;
+              const targetCssWidth = Math.min(viewport.width, maxDisplayWidth);
+              const scale = (targetCssWidth / viewport.width) * devicePixelRatio;
+              const renderViewport = page.getViewport({ scale });
+              const canvas = document.createElement("canvas");
+              canvas.width = Math.round(renderViewport.width);
+              canvas.height = Math.round(renderViewport.height);
+              canvas.style.maxWidth = "90vw";
+              canvas.style.height = "auto";
+              canvas.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
+              canvas.style.borderRadius = "4px";
+              canvas.style.background = "#fff";
+              const ctx = canvas.getContext("2d");
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+              const label = document.createElement("div");
+              label.textContent = `Page ${p} / ${pdf.numPages}`;
+              label.style = "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
+              contentWrapper.appendChild(label);
+              contentWrapper.appendChild(canvas);
+            }
             return;
+          } catch (err) {
+            console.error("DEBUG_PREVIEW", "PDF render failed:", err);
+            loadingIndicator.textContent = "Failed to render PDF. Falling back to embed.";
           }
+        }
 
-          if (type === "application/pdf" || (typeof src === "string" && src.startsWith("data:application/pdf"))) {
-            const loadingIndicator = document.createElement("div");
-            loadingIndicator.textContent = "Loading PDF…";
-            loadingIndicator.style = "color:#333;padding:8px;";
-            contentWrapper.appendChild(loadingIndicator);
-            try {
-              const pdfjsLib = window["pdfjs-dist/build/pdf"];
-              pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-              const loadingTask = pdfjsLib.getDocument(src);
-              const pdf = await loadingTask.promise;
-              loadingIndicator.remove();
-              const maxDisplayWidth = Math.min(window.innerWidth * 0.9, 1200);
-              for (let p = 1; p <= pdf.numPages; p++) {
-                const page = await pdf.getPage(p);
-                const viewport = page.getViewport({ scale: 1 });
-                const devicePixelRatio = window.devicePixelRatio || 1;
-                const targetCssWidth = Math.min(viewport.width, maxDisplayWidth);
-                const scale = (targetCssWidth / viewport.width) * devicePixelRatio;
-                const renderViewport = page.getViewport({ scale });
-                const canvas = document.createElement("canvas");
-                canvas.width = Math.round(renderViewport.width);
-                canvas.height = Math.round(renderViewport.height);
-                canvas.style.maxWidth = "90vw";
-                canvas.style.height = "auto";
-                canvas.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
-                canvas.style.borderRadius = "4px";
-                canvas.style.background = "#fff";
-                const ctx = canvas.getContext("2d");
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
-                const label = document.createElement("div");
-                label.textContent = `Page ${p} / ${pdf.numPages}`;
-                label.style = "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
-                contentWrapper.appendChild(label);
-                contentWrapper.appendChild(canvas);
-              }
-              return;
-            } catch (err) {
-              console.error("DEBUG_PREVIEW", "PDF render failed:", err);
-              loadingIndicator.textContent = "Failed to render PDF. Falling back to embed.";
-            }
-          }
+        const embed = document.createElement("embed");
+        embed.src = src;
+        embed.type = type || "application/octet-stream";
+        embed.style.width = "80vw";
+        embed.style.height = "70vh";
+        box.insertBefore(embed, controls);
+      } catch (err) { console.error("DEBUG_PREVIEW", "openPreview error:", err); }
+    }
 
-          const embed = document.createElement("embed");
-          embed.src = src;
-          embed.type = type || "application/octet-stream";
-          embed.style.width = "80vw";
-          embed.style.height = "70vh";
-          box.insertBefore(embed, controls);
-        } catch (err) { console.error("DEBUG_PREVIEW", "openPreview error:", err); }
-      }
+    function closePreview() {
+      const overlay = document.getElementById("preview-overlay");
+      if (!overlay) return;
+      try {
+        if (overlay._cleanup) overlay._cleanup();
+        if (history.state && history.state.preview) { try { history.back(); } catch (e) { } }
+      } finally { overlay.remove(); }
+    }
 
-      function closePreview() {
-        const overlay = document.getElementById("preview-overlay");
-        if (!overlay) return;
-        try {
-          if (overlay._cleanup) overlay._cleanup();
-          if (history.state && history.state.preview) { try { history.back(); } catch (e) {} }
-        } finally { overlay.remove(); }
-      }
-
-      // ======================================================
-      // =============== File Upload & Crop ===================
-      // ======================================================
-      function handleFileUpload() {
-        const fileInput = document.getElementById("fileInput");
-        const file = fileInput.files && fileInput.files[0];
-        if (!file || !currentRoom) { if (fileInput) fileInput.value = ""; return; }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const overlay = document.createElement("div");
-          overlay.id = "file-preview";
-          overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9999;`;
-          if (file.type.startsWith("image/")) {
-            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
+    // ======================================================
+    // =============== File Upload & Crop ===================
+    // ======================================================
+    function handleFileUpload() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files && fileInput.files[0];
+      if (!file || !currentRoom) { if (fileInput) fileInput.value = ""; return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const overlay = document.createElement("div");
+        overlay.id = "file-preview";
+        overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9999;`;
+        if (file.type.startsWith("image/")) {
+          overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
               <div style="width:80vmin;height:80vmin;position:relative;">
                 <img id="crop-image" src="${reader.result}" style="max-width:100%;max-height:100%;border-radius:8px;display:block;margin:auto;">
               </div>
@@ -1780,28 +1714,28 @@ async function checkRoomStatus(room) {
                 <button onclick="applyCropAndSend('${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
               </div>
             </div>`;
-          } else if (file.type.startsWith("video/")) {
-            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
+        } else if (file.type.startsWith("video/")) {
+          overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
               <video controls style="width:80vw;max-height:80vh;border-radius:8px;"><source src="${reader.result}" type="${file.type}">Your browser does not support the video tag.</video>
               <div style="margin-top:12px;display:flex;gap:12px;">
                 <button onclick="closeFilePreview()" style="background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Cancel</button>
                 <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
               </div>
             </div>`;
-          } else if (file.type === "application/pdf") {
-            const pdfUrl = URL.createObjectURL(file);
-            const pdfjsLib = window["pdfjs-dist/build/pdf"];
-            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-            const loadingTask = pdfjsLib.getDocument(pdfUrl);
-            loadingTask.promise.then(async (pdf) => {
-              const page = await pdf.getPage(1);
-              const viewport = page.getViewport({ scale: 1.5 });
-              const canvas = document.createElement("canvas");
-              const ctx = canvas.getContext("2d");
-              canvas.width = viewport.width;
-              canvas.height = viewport.height;
-              await page.render({ canvasContext: ctx, viewport }).promise;
-              overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:95%;max-height:95%;display:flex;flex-direction:column;align-items:center;">
+        } else if (file.type === "application/pdf") {
+          const pdfUrl = URL.createObjectURL(file);
+          const pdfjsLib = window["pdfjs-dist/build/pdf"];
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+          const loadingTask = pdfjsLib.getDocument(pdfUrl);
+          loadingTask.promise.then(async (pdf) => {
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:95%;max-height:95%;display:flex;flex-direction:column;align-items:center;">
                 <canvas id="pdf-canvas" style="max-width:90vw;max-height:80vh;border-radius:8px;object-fit:contain"></canvas>
                 <div style="margin-top:8px;color:#fff;">📄 ${file.name}</div>
                 <div style="margin-top:12px;display:flex;gap:12px;">
@@ -1809,337 +1743,338 @@ async function checkRoomStatus(room) {
                   <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
                 </div>
               </div>`;
-              const previewCanvas = overlay.querySelector("#pdf-canvas");
-              previewCanvas.width = canvas.width;
-              previewCanvas.height = canvas.height;
-              previewCanvas.getContext("2d").drawImage(canvas, 0, 0);
-            });
-          } else {
-            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
+            const previewCanvas = overlay.querySelector("#pdf-canvas");
+            previewCanvas.width = canvas.width;
+            previewCanvas.height = canvas.height;
+            previewCanvas.getContext("2d").drawImage(canvas, 0, 0);
+          });
+        } else {
+          overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
               <embed src="${reader.result}" type="${file.type}" style="width:80vw;height:70vh;border-radius:8px;">
               <div style="margin-top:12px;display:flex;gap:12px;">
                 <button onclick="closeFilePreview()" style="background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Cancel</button>
                 <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
               </div>
             </div>`;
-          }
-          document.body.appendChild(overlay);
-          if (file.type.startsWith("image/")) {
-            const image = document.getElementById("crop-image");
-            image.onload = () => {
-              if (window._cropper) window._cropper.destroy();
-              window._rotation = 0;
-              window._cropper = new Cropper(image, {
-                viewMode: 2,
-                autoCropArea: 1,
-                responsive: true,
-                rotatable: true,
-                ready() {
-                  const canvas = this.cropper.getCanvasData();
-                  this.cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
-                },
-              });
-            };
-          }
-        };
-        reader.readAsDataURL(file);
-      }
-
-      function rotateCrop(deg) {
-        const cropper = window._cropper;
-        if (!cropper) return;
-        window._rotation = ((window._rotation || 0) + deg) % 360;
-        cropper.reset();
-        cropper.rotateTo(window._rotation);
-        setTimeout(() => { fitFullImageCrop(); }, 80);
-      }
-
-      function fitFullImageCrop() {
-        const cropper = window._cropper;
-        if (!cropper) return;
-        const canvas = cropper.getCanvasData();
-        cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
-      }
-
-      function applyCropAndSend(filename, mimetype) {
-        if (!window._cropper) return;
-        const canvas = window._cropper.getCroppedCanvas({ maxWidth: 1920, maxHeight: 1920, fillColor: "#fff" });
-        if (!canvas) return;
-        canvas.toBlob((blob) => {
-          const reader = new FileReader();
-          reader.onloadend = () => { confirmFileSend(reader.result, filename, mimetype); };
-          reader.readAsDataURL(blob);
-        }, mimetype);
-      }
-
-      function confirmFileSend(data, filename, mimetype) {
-        const nowTs = new Date().toISOString();
-        lastPersistedTs = nowTs;
-        try {
-          localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
-        } catch (e) { /* ignore */ }
-        socket.emit("file", { room: currentRoom, sender: currentName, filename, mimetype, data });
-        closeFilePreview();
-        document.getElementById("fileInput").value = "";
-      }
-
-      function closeFilePreview() {
-        const overlay = document.getElementById("file-preview");
-        if (overlay) overlay.remove();
-        document.getElementById("fileInput").value = "";
-        if (window._cropper) { window._cropper.destroy(); window._cropper = null; }
-        window._rotation = 0;
-      }
-
-      // ======================================================
-      // =============== User List Management =================
-      // ======================================================
-      function updateUserList(data) {
-        if (!currentRoom || data.room !== currentRoom) return;
-        const list = document.getElementById("user-list");
-        const seen = new Set();
-        const existing = new Map();
-        list.querySelectorAll("li").forEach((li) => existing.set(li.getAttribute("data-name"), li));
-        const sortedUsers = [...data.users].sort((a, b) => {
-          if (a.active === b.active) return a.name.localeCompare(b.name);
-          return a.active ? -1 : 1;
-        });
-        sortedUsers.forEach((u) => {
-          if (seen.has(u.name)) return;
-          seen.add(u.name);
-          const color = u.active ? "#25d366" : "#e74c3c";
-          const displayName = u.name === currentName ? `${u.name} (Me)` : u.name;
-          let li = existing.get(u.name);
-          if (li) {
-            li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-            existing.delete(u.name);
-          } else {
-            li = document.createElement("li");
-            li.setAttribute("data-name", u.name);
-            li.className = "fade-in";
-            li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-            list.appendChild(li);
-          }
-        });
-        existing.forEach((li) => {
-          li.classList.add("fade-out");
-          setTimeout(() => li.remove(), 300);
-        });
-      }
-
-      function handleRoomDestroyed(data) {
-        const destroyedRoom = data.room;
-        if (joinedRooms.has(destroyedRoom)) joinedRooms.delete(destroyedRoom);
-        if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== destroyedRoom);
-          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
-        if (currentRoom === destroyedRoom) {
-          currentRoom = "";
-          document.getElementById("messages").innerHTML = "";
-          document.getElementById("user-list").innerHTML = "";
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-        }
-        renderJoinedRooms();
-      }
-
-      function handleRoomCleared(data) {
-        if (currentRoom === data.room) {
-          document.getElementById("messages").innerHTML = "";
-          addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
-          lastPersistedTs = null;
-        }
-      }
-
-      // ======================================================
-      // =============== Room Actions =========================
-      // ======================================================
-      const API_BASE = "https://realtime-chat-1mv3.onrender.com";
-
-      window.clearRoom = async function clearRoom() {
-        if (!currentRoom) { alert("Join a room first!"); return; }
-        try {
-          const res = await fetch(`${API_BASE}/clear/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, cache: "no-store" });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data?.error || `Failed to clear room: ${res.status}`);
-          addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
-        } catch (err) { console.error("❌ clearRoom error:", err); alert(err.message); }
-      };
-
-      window.destroyRoom = async function destroyRoom() {
-        if (!currentRoom) { alert("Join a room first!"); return; }
-        if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`)) return;
-        try {
-          const res = await fetch(`${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" } });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data?.error || `Failed to destroy room: ${res.status}`);
-          unsubscribeUser(currentName, currentRoom);
-          document.getElementById("messages").innerHTML = "";
-          addMessage({ sender: "System", text: "Room destroyed. All messages cleared. Please join a new room.", ts: new Date().toISOString() });
-          lastPersistedTs = null;
-          Storage.remove("chat_name"); Storage.remove("chat_room");
-          joinedRooms.delete(currentRoom);
-          currentRoom = "";
-          document.getElementById("user-list").innerHTML = "";
-          document.getElementById("chat-container").style.display = "none";
-          document.getElementById("input-area").style.display = "none";
-          document.getElementById("intro").style.display = "block";
-          document.getElementById("messages").style.display = "none";
-        } catch (err) { console.error("❌ destroyRoom error:", err); alert(err.message); }
-      };
-
-      async function leaveRoom() {
-        if (!currentRoom) { alert("You are not in a room!"); return; }
-        const leftRoom = currentRoom;
-        const savedToken = localStorage.getItem("fcm_token");
-        if (savedToken) {
-          try {
-            await fetch("/api/unregister-fcm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: savedToken, user: currentName, room: currentRoom }) });
-          } catch (err) { console.error("❌ Failed to unregister FCM token:", err); }
-        }
-        try { await unsubscribeUser(currentName, currentRoom); } catch (err) { console.error("❌ Failed to unsubscribe WebPush:", err); }
-        socket.emit("leave", { room: currentRoom, sender: currentName, reason: "leave" });
-        document.getElementById("input").disabled = true;
-        document.getElementById("send").disabled = true;
-        document.getElementById("attach").disabled = true;
-        addMessage({ sender: "System", text: `YOU LEFT FROM ROOM ${leftRoom}`, ts: new Date().toISOString() });
-        lastPersistedTs = null;
-        joinedRooms.delete(currentRoom);
-        if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== currentRoom);
-          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-        }
-        renderJoinedRooms();
-        currentRoom = "";
-        Storage.remove("chat_name"); Storage.remove("chat_room");
-        document.getElementById("user-list").innerHTML = "";
-        document.getElementById("chat-container").style.display = "block";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("messages").style.display = "block";
-      }
-
-      // ======================================================
-      // =============== Event Listeners ======================
-      // ======================================================
-      document.addEventListener("visibilitychange", () => sendActive(!document.hidden));
-      window.addEventListener("focus", () => sendActive(true));
-      window.addEventListener("blur", () => sendActive(false));
-      window.addEventListener("offline", () => { if (socket && socket.connected) socket.disconnect(); });
-      let reconnectTimer;
-      window.addEventListener("online", () => {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(() => {
-          if (socket && !socket.connected && currentRoom && currentName) socket.connect();
-          else if (socket && socket.connected) fetchUnreadCounts();
-        }, 300);
-      });
-
-      // ======================================================
-      // =============== Initialization =======================
-      // ======================================================
-window.addEventListener("load", async () => {
-  await requestNotificationPermission();
-  const savedName = Storage.get("chat_name");
-  const savedRoom = Storage.get("chat_room");
-  
-  if (savedName && savedRoom) {
-    try {
-      // ✅ STRICT CHECK: Block auto-join if room was EVER destroyed
-      const roomStatus = await checkRoomStatus(savedRoom);
-      if (roomStatus.destroyed || roomStatus.was_destroyed) {
-        showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
-        
-        // ✅ CLEAR STORAGE: If room was ever destroyed, clear it from storage
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
-        
-        // ✅ CLEAR from joinedRoomsByUser
-        if (joinedRoomsByUser[savedName]) {
-          joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
-          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-        }
-        
-        document.getElementById("intro").style.display = "block";
-        return;
-      }
-      
-      // If room is not destroyed and was never destroyed, proceed with auto-join
-      document.getElementById("name").value = savedName;
-      document.getElementById("room").value = savedRoom;
-      joinRoom({ preserveMessages: true });
-      
-    } catch (err) {
-      // ✅ If status check fails, DON'T auto-join (be safe)
-      console.error("Auto-join blocked due to status check failure:", err);
-      Storage.remove("chat_name");
-      Storage.remove("chat_room");
-      document.getElementById("intro").style.display = "block";
-    }
-  } else {
-    document.getElementById("intro").style.display = "block";
-  }
-});
-
-      // ======================================================
-      // =============== Capacitor Push Notifications =========
-      // ======================================================
-      document.addEventListener("DOMContentLoaded", async () => {
-        const { PushNotifications } = Capacitor.Plugins;
-        if (!PushNotifications) { console.error("❌ PushNotifications plugin not available"); return; }
-        let permStatus = await PushNotifications.requestPermissions();
-        if (permStatus.receive === "granted") await PushNotifications.register();
-        PushNotifications.addListener("registration", async (token) => {
-          try {
-            const user = localStorage.getItem("chat_name") || "guest";
-            const room = localStorage.getItem("chat_room") || null;
-            await fetch("https://realtime-chat-1mv3.onrender.com/api/register-fcm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token: token.value, user, room }),
+        document.body.appendChild(overlay);
+        if (file.type.startsWith("image/")) {
+          const image = document.getElementById("crop-image");
+          image.onload = () => {
+            if (window._cropper) window._cropper.destroy();
+            window._rotation = 0;
+            window._cropper = new Cropper(image, {
+              viewMode: 2,
+              autoCropArea: 1,
+              responsive: true,
+              rotatable: true,
+              ready() {
+                const canvas = this.cropper.getCanvasData();
+                this.cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
+              },
             });
-            localStorage.setItem("fcm_token", token.value);
-          } catch (err) { console.error("❌ Failed to send token:", err); }
-        });
-        PushNotifications.addListener("registrationError", (err) => { console.error("❌ Registration error:", err.error); });
-        PushNotifications.addListener("pushNotificationReceived", (notification) => {});
-        PushNotifications.addListener("pushNotificationActionPerformed", (action) => {});
-        window.clearNotifications = async () => {
-          try { await PushNotifications.removeAllDeliveredNotifications(); } catch (err) { console.error("❌ Failed to clear notifications:", err); }
-        };
+          };
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function rotateCrop(deg) {
+      const cropper = window._cropper;
+      if (!cropper) return;
+      window._rotation = ((window._rotation || 0) + deg) % 360;
+      cropper.reset();
+      cropper.rotateTo(window._rotation);
+      setTimeout(() => { fitFullImageCrop(); }, 80);
+    }
+
+    function fitFullImageCrop() {
+      const cropper = window._cropper;
+      if (!cropper) return;
+      const canvas = cropper.getCanvasData();
+      cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
+    }
+
+    function applyCropAndSend(filename, mimetype) {
+      if (!window._cropper) return;
+      const canvas = window._cropper.getCroppedCanvas({ maxWidth: 1920, maxHeight: 1920, fillColor: "#fff" });
+      if (!canvas) return;
+      canvas.toBlob((blob) => {
+        const reader = new FileReader();
+        reader.onloadend = () => { confirmFileSend(reader.result, filename, mimetype); };
+        reader.readAsDataURL(blob);
+      }, mimetype);
+    }
+
+    function confirmFileSend(data, filename, mimetype) {
+      const nowTs = new Date().toISOString();
+      lastPersistedTs = nowTs;
+      try {
+        localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
+      } catch (e) { /* ignore */ }
+      socket.emit("file", { room: currentRoom, sender: currentName, filename, mimetype, data });
+      closeFilePreview();
+      document.getElementById("fileInput").value = "";
+    }
+
+    function closeFilePreview() {
+      const overlay = document.getElementById("file-preview");
+      if (overlay) overlay.remove();
+      document.getElementById("fileInput").value = "";
+      if (window._cropper) { window._cropper.destroy(); window._cropper = null; }
+      window._rotation = 0;
+    }
+
+    // ======================================================
+    // =============== User List Management =================
+    // ======================================================
+    function updateUserList(data) {
+      if (!currentRoom || data.room !== currentRoom) return;
+      const list = document.getElementById("user-list");
+      const seen = new Set();
+      const existing = new Map();
+      list.querySelectorAll("li").forEach((li) => existing.set(li.getAttribute("data-name"), li));
+      const sortedUsers = [...data.users].sort((a, b) => {
+        if (a.active === b.active) return a.name.localeCompare(b.name);
+        return a.active ? -1 : 1;
       });
-    </script>
+      sortedUsers.forEach((u) => {
+        if (seen.has(u.name)) return;
+        seen.add(u.name);
+        const color = u.active ? "#25d366" : "#e74c3c";
+        const displayName = u.name === currentName ? `${u.name} (Me)` : u.name;
+        let li = existing.get(u.name);
+        if (li) {
+          li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+          existing.delete(u.name);
+        } else {
+          li = document.createElement("li");
+          li.setAttribute("data-name", u.name);
+          li.className = "fade-in";
+          li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+          list.appendChild(li);
+        }
+      });
+      existing.forEach((li) => {
+        li.classList.add("fade-out");
+        setTimeout(() => li.remove(), 300);
+      });
+    }
 
-    <!-- Capacitor Storage Module -->
-    <script type="module">
-      import { Storage } from "@capacitor/storage";
-      import { PushNotifications, LocalNotifications } from "@capacitor/push-notifications";
-
-      async function saveChatState(username, room, lastTs) {
-        await Storage.set({ key: "chatState", value: JSON.stringify({ username, room, lastTs }) });
+    function handleRoomDestroyed(data) {
+      const destroyedRoom = data.room;
+      if (joinedRooms.has(destroyedRoom)) joinedRooms.delete(destroyedRoom);
+      if (joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== destroyedRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       }
-
-      async function loadChatState() {
-        const { value } = await Storage.get({ key: "chatState" });
-        return value ? JSON.parse(value) : null;
+      if (currentRoom === destroyedRoom) {
+        currentRoom = "";
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("user-list").innerHTML = "";
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
       }
+      renderJoinedRooms();
+    }
 
-      const API_BASE_CAP = "https://realtime-chat-1mv3.onrender.com";
-      const state = await loadChatState();
-      if (state) {
+    function handleRoomCleared(data) {
+      if (currentRoom === data.room) {
+        document.getElementById("messages").innerHTML = "";
+        addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
+        lastPersistedTs = null;
+      }
+    }
+
+    // ======================================================
+    // =============== Room Actions =========================
+    // ======================================================
+    const API_BASE = "https://realtime-chat-1mv3.onrender.com";
+
+    window.clearRoom = async function clearRoom() {
+      if (!currentRoom) { alert("Join a room first!"); return; }
+      try {
+        const res = await fetch(`${API_BASE}/clear/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, cache: "no-store" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `Failed to clear room: ${res.status}`);
+        addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
+      } catch (err) { console.error("❌ clearRoom error:", err); alert(err.message); }
+    };
+
+    window.destroyRoom = async function destroyRoom() {
+      if (!currentRoom) { alert("Join a room first!"); return; }
+      if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`)) return;
+      try {
+        const res = await fetch(`${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" } });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || `Failed to destroy room: ${res.status}`);
+        unsubscribeUser(currentName, currentRoom);
+        document.getElementById("messages").innerHTML = "";
+        addMessage({ sender: "System", text: "Room destroyed. All messages cleared. Please join a new room.", ts: new Date().toISOString() });
+        lastPersistedTs = null;
+        Storage.remove("chat_name"); Storage.remove("chat_room");
+        joinedRooms.delete(currentRoom);
+        currentRoom = "";
+        document.getElementById("user-list").innerHTML = "";
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+        document.getElementById("messages").style.display = "none";
+      } catch (err) { console.error("❌ destroyRoom error:", err); alert(err.message); }
+    };
+
+    async function leaveRoom() {
+      if (!currentRoom) { alert("You are not in a room!"); return; }
+      const leftRoom = currentRoom;
+      const savedToken = localStorage.getItem("fcm_token");
+      if (savedToken) {
         try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
-          const json = await res.json();
-          const destroyed = json.destroyed || [];
-          if (!destroyed.includes(state.room)) {
-            const fcmToken = localStorage.getItem("fcm_token") || null;
-            socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken });
-          } else {
-            await Storage.remove({ key: "chatState" });
-          }
-        } catch (err) { console.warn("Failed to check destroyed rooms on startup:", err); }
+          await fetch("/api/unregister-fcm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: savedToken, user: currentName, room: currentRoom }) });
+        } catch (err) { console.error("❌ Failed to unregister FCM token:", err); }
       }
-    </script>
-  </body>
+      try { await unsubscribeUser(currentName, currentRoom); } catch (err) { console.error("❌ Failed to unsubscribe WebPush:", err); }
+      socket.emit("leave", { room: currentRoom, sender: currentName, reason: "leave" });
+      document.getElementById("input").disabled = true;
+      document.getElementById("send").disabled = true;
+      document.getElementById("attach").disabled = true;
+      addMessage({ sender: "System", text: `YOU LEFT FROM ROOM ${leftRoom}`, ts: new Date().toISOString() });
+      lastPersistedTs = null;
+      joinedRooms.delete(currentRoom);
+      if (joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== currentRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+      }
+      renderJoinedRooms();
+      currentRoom = "";
+      Storage.remove("chat_name"); Storage.remove("chat_room");
+      document.getElementById("user-list").innerHTML = "";
+      document.getElementById("chat-container").style.display = "block";
+      document.getElementById("input-area").style.display = "none";
+      document.getElementById("messages").style.display = "block";
+    }
+
+    // ======================================================
+    // =============== Event Listeners ======================
+    // ======================================================
+    document.addEventListener("visibilitychange", () => sendActive(!document.hidden));
+    window.addEventListener("focus", () => sendActive(true));
+    window.addEventListener("blur", () => sendActive(false));
+    window.addEventListener("offline", () => { if (socket && socket.connected) socket.disconnect(); });
+    let reconnectTimer;
+    window.addEventListener("online", () => {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => {
+        if (socket && !socket.connected && currentRoom && currentName) socket.connect();
+        else if (socket && socket.connected) fetchUnreadCounts();
+      }, 300);
+    });
+
+    // ======================================================
+    // =============== Initialization =======================
+    // ======================================================
+    window.addEventListener("load", async () => {
+      await requestNotificationPermission();
+      const savedName = Storage.get("chat_name");
+      const savedRoom = Storage.get("chat_room");
+
+      if (savedName && savedRoom) {
+        try {
+          // ✅ STRICT CHECK: Block auto-join if room was EVER destroyed
+          const roomStatus = await checkRoomStatus(savedRoom);
+          if (roomStatus.destroyed || roomStatus.was_destroyed) {
+            showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
+
+            // ✅ CLEAR STORAGE: If room was ever destroyed, clear it from storage
+            Storage.remove("chat_name");
+            Storage.remove("chat_room");
+
+            // ✅ CLEAR from joinedRoomsByUser
+            if (joinedRoomsByUser[savedName]) {
+              joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
+              localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+            }
+
+            document.getElementById("intro").style.display = "block";
+            return;
+          }
+
+          // If room is not destroyed and was never destroyed, proceed with auto-join
+          document.getElementById("name").value = savedName;
+          document.getElementById("room").value = savedRoom;
+          joinRoom({ preserveMessages: true });
+
+        } catch (err) {
+          // ✅ If status check fails, DON'T auto-join (be safe)
+          console.error("Auto-join blocked due to status check failure:", err);
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
+          document.getElementById("intro").style.display = "block";
+        }
+      } else {
+        document.getElementById("intro").style.display = "block";
+      }
+    });
+
+    // ======================================================
+    // =============== Capacitor Push Notifications =========
+    // ======================================================
+    document.addEventListener("DOMContentLoaded", async () => {
+      const { PushNotifications } = Capacitor.Plugins;
+      if (!PushNotifications) { console.error("❌ PushNotifications plugin not available"); return; }
+      let permStatus = await PushNotifications.requestPermissions();
+      if (permStatus.receive === "granted") await PushNotifications.register();
+      PushNotifications.addListener("registration", async (token) => {
+        try {
+          const user = localStorage.getItem("chat_name") || "guest";
+          const room = localStorage.getItem("chat_room") || null;
+          await fetch("https://realtime-chat-1mv3.onrender.com/api/register-fcm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: token.value, user, room }),
+          });
+          localStorage.setItem("fcm_token", token.value);
+        } catch (err) { console.error("❌ Failed to send token:", err); }
+      });
+      PushNotifications.addListener("registrationError", (err) => { console.error("❌ Registration error:", err.error); });
+      PushNotifications.addListener("pushNotificationReceived", (notification) => { });
+      PushNotifications.addListener("pushNotificationActionPerformed", (action) => { });
+      window.clearNotifications = async () => {
+        try { await PushNotifications.removeAllDeliveredNotifications(); } catch (err) { console.error("❌ Failed to clear notifications:", err); }
+      };
+    });
+  </script>
+
+  <!-- Capacitor Storage Module -->
+  <script type="module">
+    import { Storage } from "@capacitor/storage";
+    import { PushNotifications, LocalNotifications } from "@capacitor/push-notifications";
+
+    async function saveChatState(username, room, lastTs) {
+      await Storage.set({ key: "chatState", value: JSON.stringify({ username, room, lastTs }) });
+    }
+
+    async function loadChatState() {
+      const { value } = await Storage.get({ key: "chatState" });
+      return value ? JSON.parse(value) : null;
+    }
+
+    const API_BASE_CAP = "https://realtime-chat-1mv3.onrender.com";
+    const state = await loadChatState();
+    if (state) {
+      try {
+        const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
+        const json = await res.json();
+        const destroyed = json.destroyed || [];
+        if (!destroyed.includes(state.room)) {
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+          socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken });
+        } else {
+          await Storage.remove({ key: "chatState" });
+        }
+      } catch (err) { console.warn("Failed to check destroyed rooms on startup:", err); }
+    }
+  </script>
+</body>
+
 </html>
