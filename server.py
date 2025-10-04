@@ -427,7 +427,6 @@ async def broadcast_users(room):
         sid = ROOM_USERS.get(room, {}).get(username)
         active = False
         if sid:
-            # Check if this user is connected and active
             active = USER_STATUS.get(sid, {}).get("active", False)
         users.append({"name": username, "active": active})
 
@@ -564,61 +563,7 @@ async def join(sid, data):
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
-    # 🔥 NEW: Complete cleanup for revived rooms
-    has_history = room in ROOM_HISTORY and len(ROOM_HISTORY[room]) > 0
-    has_active_users = room in ROOM_USERS and len(ROOM_USERS[room]) > 0
-
-    if has_history and not has_active_users:
-        # This room is being revived after destruction - CLEAN EVERYTHING
-        print(f"🔄 Room {room} revived - performing complete cleanup")
-
-        # 1. Clear user history
-        ROOM_HISTORY[room] = set()
-
-        # 2. Clear messages from database
-        clear_room(room)
-
-        # 3. Clear FCM tokens for this room
-        delete_fcm_tokens_for_room(room)
-
-        # 4. Clear WebPush subscriptions for this room
-        if room in subscriptions:
-            del subscriptions[room]
-            print(f"🛑 Cleared WebPush subscriptions for room {room}")
-
-        # 5. Clear in-memory FCM tokens
-        for user in list(FCM_TOKENS.keys()):
-            if room in FCM_TOKENS[user]:
-                del FCM_TOKENS[user][room]
-                print(f"🧹 Removed FCM tokens for {user} in room {room}")
-            if not FCM_TOKENS[user]:
-                del FCM_TOKENS[user]
-
-        # 6. Clear any remaining user status for this room
-        users_to_remove = []
-        for user_sid, status in USER_STATUS.items():
-            if status.get("user") and room in ROOM_HISTORY:
-                # This user was previously in this room, remove their status
-                users_to_remove.append(user_sid)
-
-        for user_sid in users_to_remove:
-            USER_STATUS.pop(user_sid, None)
-
-        # 7. Clear last seen timestamps for this room
-        room_last_seen_keys = [key for key in USER_LAST_SEEN.keys() if key[1] == room]
-        for key in room_last_seen_keys:
-            USER_LAST_SEEN.pop(key, None)
-
-        # 8. Clear last message cache for this room
-        room_message_keys = [key for key in LAST_MESSAGE.keys() if key[0] == room]
-        for key in room_message_keys:
-            LAST_MESSAGE.pop(key, None)
-
-        print(f"✅ Complete cleanup done for room {room}")
-        # Reset last_ts to ensure no old messages are loaded
-        last_ts = None
-
-    # ensure history exists, then add user
+    # ✅ Simply ensure history exists and add user (no aggressive cleanup)
     ROOM_HISTORY.setdefault(room, set()).add(username)
 
     if room not in ROOM_USERS:
@@ -646,7 +591,7 @@ async def join(sid, data):
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # send missed messages (will be empty after cleanup)
+    # send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
@@ -934,7 +879,6 @@ async def leave(sid, data):
 async def disconnect(sid):
     USER_STATUS.pop(sid, None)
     
-    # Find which room and user this sid belongs to
     disconnected_user = None
     disconnected_room = None
     
@@ -943,7 +887,7 @@ async def disconnect(sid):
             if user_sid == sid:
                 disconnected_user = username
                 disconnected_room = room
-                # Remove from active users but keep in ROOM_HISTORY
+                # Only remove from active users, keep in ROOM_HISTORY
                 del users[username]
                 if not users:
                     del ROOM_USERS[room]
@@ -951,11 +895,10 @@ async def disconnect(sid):
         if disconnected_user:
             break
     
-    # Broadcast updated user list to the room
+    # Broadcast updated user list to show user as offline
     if disconnected_room:
         await broadcast_users(disconnected_room)
         
-        # Only show disconnect message if user was actually in a room
         await sio.emit(
             "message",
             {

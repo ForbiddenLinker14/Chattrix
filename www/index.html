@@ -1190,43 +1190,39 @@
         socket.on("room_destroyed", handleRoomDestroyed);
         socket.on("clear", handleRoomCleared);
 
-socket.on("connect", () => {
-  console.log("✅ Connected to server");
-  if (currentRoom && currentName) {
-    const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.on("connect", () => {
+          if (currentRoom && currentName) {
+            const fcmToken = localStorage.getItem("fcm_token") || null;
 
-    socket.emit(
-      "join",
-      {
-        room: currentRoom,
-        sender: currentName,
-        lastTs: lastPersistedTs || null,
-        fcmToken: fcmToken,
-      },
-      (ack) => {
-        if (ack && ack.success) {
-          console.log("✅ Rejoined room on reconnect:", currentRoom);
-          joinedRooms.add(currentRoom);
-          sendActive(!document.hidden);
-          
-          // Force refresh user list on reconnection
-          setTimeout(() => {
-            socket.emit("get_users", { room: currentRoom });
-          }, 1000);
-        }
-      }
-    );
-  } else {
-    restoreChatState(socket);
-  }
-});
+            socket.emit(
+              "join",
+              {
+                room: currentRoom,
+                sender: currentName,
+                lastTs: lastPersistedTs || null,
+                fcmToken: fcmToken,
+              },
+              (ack) => {
+                if (ack && ack.success) {
+                  console.log("✅ Joined room on reconnect:", currentRoom);
+                  joinedRooms.add(currentRoom);
+                  sendActive(!document.hidden);
 
-// Add this new event listener for manual user list refresh
-socket.on("get_users", (data) => {
-  if (data.room === currentRoom) {
-    updateUserList(data);
-  }
-});
+                  // ✅ NEW: Fetch unread counts when reconnecting after being offline
+                  fetchUnreadCounts();
+                } else {
+                  console.warn("⚠️ Join failed on reconnect, retrying...");
+                  setTimeout(() => {
+                    socket.disconnect();
+                    socket.connect();
+                  }, 500);
+                }
+              }
+            );
+          } else {
+            restoreChatState(socket);
+          }
+        });
 
         socket.on("room_message_meta", (data) => {
           try {
@@ -2590,47 +2586,87 @@ socket.on("get_users", (data) => {
         }
         window._rotation = 0;
       }
+      // function updateUserList(data) {
+      //   if (!currentRoom || data.room !== currentRoom) return;
 
-function updateUserList(data) {
-  if (!currentRoom || data.room !== currentRoom) return;
+      //   const list = document.getElementById("user-list");
+      //   const seen = new Set();
+      //   const existing = new Map();
 
-  const list = document.getElementById("user-list");
-  const seen = new Set();
-  const existing = new Map();
+      //   list
+      //     .querySelectorAll("li")
+      //     .forEach((li) => existing.set(li.getAttribute("data-name"), li));
 
-  list.querySelectorAll("li").forEach((li) => existing.set(li.getAttribute("data-name"), li));
+      //   data.users.forEach((u) => {
+      //     if (seen.has(u.name)) return;
+      //     seen.add(u.name);
 
-  // ✅ sort: active users first, inactive last
-  const sortedUsers = [...data.users].sort((a, b) => {
-    if (a.active === b.active) return a.name.localeCompare(b.name);
-    return a.active ? -1 : 1;
-  });
+      //     const color = u.status === "online" ? "#25d366" : "red";
+      //     const displayName =
+      //       u.name === currentName ? `${u.name} (Me)` : u.name;
 
-  sortedUsers.forEach((u) => {
-    if (seen.has(u.name)) return;
-    seen.add(u.name);
+      //     let li = existing.get(u.name);
+      //     if (li) {
+      //       li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+      //       existing.delete(u.name);
+      //     } else {
+      //       li = document.createElement("li");
+      //       li.setAttribute("data-name", u.name);
+      //       li.className = "fade-in";
+      //       li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+      //       list.appendChild(li);
+      //     }
+      //   });
 
-    const color = u.active ? "#25d366" : "#e74c3c";
-    const displayName = u.name === currentName ? `${u.name} (Me)` : u.name;
+      //   existing.forEach((li) => {
+      //     li.classList.add("fade-out");
+      //     setTimeout(() => li.remove(), 300);
+      //   });
+      // }
 
-    let li = existing.get(u.name);
-    if (li) {
-      li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-      existing.delete(u.name);
-    } else {
-      li = document.createElement("li");
-      li.setAttribute("data-name", u.name);
-      li.className = "fade-in";
-      li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-      list.appendChild(li);
-    }
-  });
+      function updateUserList(data) {
+        if (!currentRoom || data.room !== currentRoom) return;
 
-  existing.forEach((li) => {
-    li.classList.add("fade-out");
-    setTimeout(() => li.remove(), 300);
-  });
-}
+        const list = document.getElementById("user-list");
+        const seen = new Set();
+        const existing = new Map();
+
+        list
+          .querySelectorAll("li")
+          .forEach((li) => existing.set(li.getAttribute("data-name"), li));
+
+        // ✅ sort: active users first, inactive last
+        const sortedUsers = [...data.users].sort((a, b) => {
+          if (a.active === b.active) return a.name.localeCompare(b.name); // optional: alphabetical within groups
+          return a.active ? -1 : 1; // active before inactive
+        });
+
+        sortedUsers.forEach((u) => {
+          if (seen.has(u.name)) return;
+          seen.add(u.name);
+
+          const color = u.active ? "#25d366" : "#e74c3c";
+          const displayName =
+            u.name === currentName ? `${u.name} (Me)` : u.name;
+
+          let li = existing.get(u.name);
+          if (li) {
+            li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+            existing.delete(u.name);
+          } else {
+            li = document.createElement("li");
+            li.setAttribute("data-name", u.name);
+            li.className = "fade-in";
+            li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
+            list.appendChild(li);
+          }
+        });
+
+        existing.forEach((li) => {
+          li.classList.add("fade-out");
+          setTimeout(() => li.remove(), 300);
+        });
+      }
 
       function handleRoomDestroyed(data) {
         const destroyedRoom = data.room;
