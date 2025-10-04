@@ -1428,8 +1428,6 @@ function showDestroyedRoomAlert(room, destroyedAt) {
 function startCountdown(seconds, room) {
     let timeLeft = seconds;
     const countdownEl = document.getElementById("destroyed-room-countdown");
-    let lastStatusCheck = 0;
-    const STATUS_CHECK_INTERVAL = 30000; // 30 seconds
     
     const countdownInterval = setInterval(() => {
         timeLeft--;
@@ -1454,6 +1452,31 @@ function startCountdown(seconds, room) {
     
     // Store interval ID for cleanup
     window.destroyedRoomCountdown = countdownInterval;
+}
+
+function startStatusCheck(room) {
+  let isChecking = true;
+  
+  const check = async () => {
+    if (!isChecking) return;
+    
+    await checkRoomStatus(room);
+    
+    if (isChecking) {
+      window.destroyedRoomStatusTimeout = setTimeout(check, 30000);
+    }
+  };
+  
+  // Start first check
+  check();
+  
+  // Return function to stop checking
+  return () => {
+    isChecking = false;
+    if (window.destroyedRoomStatusTimeout) {
+      clearTimeout(window.destroyedRoomStatusTimeout);
+    }
+  };
 }
 
 // ✅ NEW: Function to check room status periodically
