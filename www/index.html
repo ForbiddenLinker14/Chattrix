@@ -889,38 +889,24 @@
       </div>
     </div>
 
-    <script>
+<script>
       // ======================================================
       // =============== Storage Utility ======================
       // ======================================================
       const Storage = {
         set(k, v) {
-          try {
-            localStorage.setItem(k, v);
-            return;
-          } catch {}
-          try {
-            sessionStorage.setItem(k, v);
-            return;
-          } catch {}
+          try { localStorage.setItem(k, v); return; } catch {}
+          try { sessionStorage.setItem(k, v); return; } catch {}
           document.cookie = `${k}=${encodeURIComponent(v)}; path=/`;
         },
-
         get(k) {
-          try {
-            return localStorage.getItem(k) || sessionStorage.getItem(k);
-          } catch {}
+          try { return localStorage.getItem(k) || sessionStorage.getItem(k); } catch {}
           const m = document.cookie.match(new RegExp("(^| )" + k + "=([^;]+)"));
           return m ? decodeURIComponent(m[2]) : null;
         },
-
         remove(k) {
-          try {
-            localStorage.removeItem(k);
-          } catch {}
-          try {
-            sessionStorage.removeItem(k);
-          } catch {}
+          try { localStorage.removeItem(k); } catch {}
+          try { sessionStorage.removeItem(k); } catch {}
           document.cookie = `${k}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
         },
       };
@@ -928,14 +914,11 @@
       // ======================================================
       // =============== Push Notifications ===================
       // ======================================================
-      const VAPID_PUBLIC_KEY =
-        "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
+      const VAPID_PUBLIC_KEY = "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
 
       function urlBase64ToUint8Array(base64String) {
         const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-        const base64 = (base64String + padding)
-          .replace(/-/g, "+")
-          .replace(/_/g, "/");
+        const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
         const rawData = atob(base64);
         return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
       }
@@ -943,41 +926,17 @@
       async function subscribeUser(sender, room) {
         const registration = await navigator.serviceWorker.ready;
         let subscription = await registration.pushManager.getSubscription();
-
         if (!subscription) {
           subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
           });
-          console.log(
-            "📌 New subscription created:",
-            JSON.stringify(subscription)
-          );
-        } else {
-          console.log(
-            "🔄 Reusing existing subscription:",
-            JSON.stringify(subscription)
-          );
         }
-
         localStorage.setItem("pushSub", JSON.stringify(subscription.toJSON()));
-
-        const body = {
-          sender: sender || "anonymous",
-          room: room || null,
-          subscription: subscription.toJSON(),
-        };
-
-        const response = await fetch("/api/subscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-
+        const body = { sender: sender || "anonymous", room: room || null, subscription: subscription.toJSON() };
+        const response = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
         const result = await response.json();
         if (!response.ok) throw new Error(result?.error || "subscribe failed");
-
-        console.log("✅ Backend response:", result.message);
         return subscription;
       }
 
@@ -985,79 +944,40 @@
         try {
           const savedSub = localStorage.getItem("pushSub");
           if (!savedSub) return;
-
           const subscription = JSON.parse(savedSub);
-
-          await fetch("/api/unsubscribe", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sender, room, subscription }),
-          });
-
-          console.log(`🛑 Unsubscribed ${sender} from room ${room}`);
-        } catch (err) {
-          console.error("❌ Failed to unsubscribe:", err);
-        }
+          await fetch("/api/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender, room, subscription }) });
+        } catch (err) { console.error("❌ Failed to unsubscribe:", err); }
       }
 
       async function requestNotificationPermission() {
-        if (!("Notification" in window) || !("serviceWorker" in navigator))
-          return;
-
+        if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
         const permission = await Notification.requestPermission();
         if (permission === "granted") {
-          console.log("✅ Notification permission granted.");
           const registration = await navigator.serviceWorker.register("/sw.js");
-          console.log("✅ Service Worker registered.", registration);
-        } else {
-          console.log("❌ Notification permission denied.");
         }
       }
 
       // ======================================================
       // =============== Chat Application State ===============
       // ======================================================
-      let socket,
-        currentRoom = "",
-        currentName = "";
+      let socket, currentRoom = "", currentName = "";
       let joinedRooms = new Set();
       let lastPersistedTs = null;
       let alreadyFetchingHistory = false;
       let sending = false;
-      let roomTimestamps = {}; // Store the last timestamp per room
-      let joinedRoomsByUser = {}; // Persist joined rooms per user
-      let unreadCounts = {}; // { roomId: n }
+      let roomTimestamps = {};
+      let joinedRoomsByUser = {};
+      let unreadCounts = {};
 
       // ======================================================
       // =============== Utility Functions ====================
       // ======================================================
       function escapeHtml(s) {
-        return (s ?? "").replace(
-          /[&<>"']/g,
-          (c) =>
-            ({
-              "&": "&amp;",
-              "<": "&lt;",
-              ">": "&gt;",
-              '"': "&quot;",
-              "'": "&#39;",
-            }[c])
-        );
+        return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
       }
-
-      function escapeAttr(s) {
-        return escapeHtml(s).replace(/"/g, "&quot;");
-      }
-
-      function bumpTs(ts) {
-        if (ts && (!lastPersistedTs || ts > lastPersistedTs)) {
-          lastPersistedTs = ts;
-        }
-      }
-
-      function sendActive(active) {
-        if (socket) socket.emit("status", { active });
-      }
+      function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+      function bumpTs(ts) { if (ts && (!lastPersistedTs || ts > lastPersistedTs)) lastPersistedTs = ts; }
+      function sendActive(active) { if (socket) socket.emit("status", { active }); }
 
       // ======================================================
       // =============== UI Functions =========================
@@ -1065,7 +985,6 @@
       function toggleSidebar() {
         const sidebar = document.getElementById("sidebar");
         const showArrow = document.getElementById("show-arrow");
-
         if (sidebar.classList.contains("hidden")) {
           sidebar.classList.remove("hidden");
           showArrow.style.display = "none";
@@ -1078,51 +997,28 @@
       // ======================================================
       // =============== Room Management ======================
       // ======================================================
-      // ----------------- Join Room -----------------
       async function joinRoom() {
         currentName = document.getElementById("name").value.trim();
         currentRoom = document.getElementById("room").value.trim();
+        if (!currentName || !currentRoom) { alert("Enter name and room first!"); return; }
+        if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
 
-        if (!currentName || !currentRoom) {
-          alert("Enter name and room first!");
-          return;
-        }
-
-        if (joinedRooms.has(currentRoom)) {
-          alert(`You are already in room "${currentRoom}"!`);
-          return;
-        }
-
-        // ✅ Check if room is destroyed before joining
         const roomStatus = await checkRoomStatus(currentRoom);
         if (roomStatus.destroyed) {
-          // Check if timer has ended (0 or negative time remaining)
           if (roomStatus.time_remaining <= 0) {
-            // Timer ended, but room might still be in destroyed set due to server cleanup delay
-            // Allow the join to proceed - server will reject if still destroyed
-            console.log(
-              `⏰ Timer ended for room ${currentRoom}, attempting join...`
-            );
             closeDestroyedRoomAlert();
-            // Continue with join - server will handle the final check
           } else {
-            // Room is still destroyed with time remaining
             showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
-            return; // Prevent joining
+            return;
           }
-        } else {
-          // Room is not destroyed, close any existing alert
-          closeDestroyedRoomAlert();
-        }
+        } else { closeDestroyedRoomAlert(); }
 
         Storage.set("chat_name", currentName);
         Storage.set("chat_room", currentRoom);
-
         document.getElementById("chat-container").style.display = "flex";
         document.getElementById("input-area").style.display = "flex";
         document.getElementById("intro").style.display = "none";
         document.getElementById("messages").style.display = "block";
-
         document.getElementById("messages").innerHTML = "";
         lastPersistedTs = null;
         alreadyFetchingHistory = false;
@@ -1131,195 +1027,84 @@
         document.getElementById("attach").disabled = false;
         document.getElementById("user-list").innerHTML = "";
 
-        if (socket) {
-          socket.off();
-          socket.disconnect();
-        }
+        if (socket) { socket.off(); socket.disconnect(); }
+        socket = io("https://realtime-chat-1mv3.onrender.com", { path: "/socket.io", transports: ["websocket"] });
 
-        socket = io("https://realtime-chat-1mv3.onrender.com", {
-          path: "/socket.io",
-          transports: ["websocket"],
-        });
-
-        // 👉 Subscribe user when joining room (not when sending message)
-        subscribeUser(currentName, currentRoom).catch((err) =>
-          console.warn("⚠️ Subscription failed in joinRoom:", err)
-        );
+        subscribeUser(currentName, currentRoom).catch((err) => console.warn("⚠️ Subscription failed in joinRoom:", err));
 
         function safeJoinWithRetry(attempt = 1) {
           if (!socket || !socket.connected) return;
           if (joinedRooms.has(currentRoom)) return;
-
-          // 🔑 fetch stored FCM token
           const fcmToken = localStorage.getItem("fcm_token") || null;
-
-          socket.emit(
-            "join",
-            {
-              room: currentRoom,
-              sender: currentName,
-              lastTs: lastPersistedTs || null,
-              fcmToken: fcmToken,
-            },
-            (ack) => {
-              if (ack && ack.success) {
-                console.log("✅ Joined room:", currentRoom);
-                joinedRooms.add(currentRoom);
-                sendActive(!document.hidden);
-              } else {
-                console.log("⚠️ Join failed, retrying...", attempt);
-                setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
-              }
-            }
-          );
+          socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+            if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); }
+            else { setTimeout(() => safeJoinWithRetry(attempt + 1), 500); }
+          });
         }
 
-        // Add this socket event listener in your joinRoom function
         socket.on("room_permanently_destroyed", (data) => {
-          console.log(`💥 Room ${data.room} was permanently destroyed`);
-
-          // Clear local storage
-          Storage.remove("chat_name");
-          Storage.remove("chat_room");
-
-          // Remove from joined rooms
+          Storage.remove("chat_name"); Storage.remove("chat_room");
           if (joinedRoomsByUser[currentName]) {
-            joinedRoomsByUser[currentName] = joinedRoomsByUser[
-              currentName
-            ].filter((r) => r !== data.room);
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
+            joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== data.room);
+            localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
           }
-
-          // Reset UI
           document.getElementById("chat-container").style.display = "none";
           document.getElementById("input-area").style.display = "none";
           document.getElementById("intro").style.display = "block";
           document.getElementById("messages").innerHTML = "";
           document.getElementById("user-list").innerHTML = "";
-
           currentRoom = "";
           renderJoinedRooms();
         });
 
         socket.on("users_update", updateUserList);
-        socket.on("left_room", (data) => {
-          if (data.room === currentRoom)
-            document.getElementById("user-list").innerHTML = "";
-        });
+        socket.on("left_room", (data) => { if (data.room === currentRoom) document.getElementById("user-list").innerHTML = ""; });
         socket.on("room_destroyed", handleRoomDestroyed);
         socket.on("clear", handleRoomCleared);
-
         socket.on("connect", () => {
           if (currentRoom && currentName) {
             const fcmToken = localStorage.getItem("fcm_token") || null;
-
-            socket.emit(
-              "join",
-              {
-                room: currentRoom,
-                sender: currentName,
-                lastTs: lastPersistedTs || null,
-                fcmToken: fcmToken,
-              },
-              (ack) => {
-                if (ack && ack.success) {
-                  console.log("✅ Joined room on reconnect:", currentRoom);
-                  joinedRooms.add(currentRoom);
-                  sendActive(!document.hidden);
-
-                  // ✅ NEW: Fetch unread counts when reconnecting after being offline
-                  fetchUnreadCounts();
-                } else {
-                  console.warn("⚠️ Join failed on reconnect, retrying...");
-                  setTimeout(() => {
-                    socket.disconnect();
-                    socket.connect();
-                  }, 500);
-                }
-              }
-            );
-          } else {
-            restoreChatState(socket);
-          }
+            socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+              if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); fetchUnreadCounts(); }
+              else { setTimeout(() => { socket.disconnect(); socket.connect(); }, 500); }
+            });
+          } else { restoreChatState(socket); }
         });
 
         socket.on("room_message_meta", (data) => {
           try {
-            // only act if we know our username and joinedRoomsByUser
             if (!currentName) return;
-            joinedRoomsByUser =
-              joinedRoomsByUser ||
-              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+            joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
             const myRooms = joinedRoomsByUser[currentName] || [];
-            if (!myRooms.includes(data.room)) return; // ignore rooms we're not tracking
-
-            // if message belongs to the room we're currently viewing, let addMessage handle it
+            if (!myRooms.includes(data.room)) return;
             if (data.room === currentRoom) return;
-
-            // increment unread
             unreadCounts[data.room] = (unreadCounts[data.room] || 0) + 1;
             saveUnread();
             updateBadge(data.room);
-
-            // show an in-page / desktop notification
             const title = `Room ${data.room}`;
             const body = `${data.sender}: ${data.text}`;
-            if (
-              "Notification" in window &&
-              Notification.permission === "granted"
-            ) {
+            if ("Notification" in window && Notification.permission === "granted") {
               try {
-                const n = new Notification(title, {
-                  body,
-                  tag: `room-${data.room}`,
-                });
-                n.onclick = () => {
-                  window.focus();
-                  switchRoom(data.room);
-                  n.close();
-                };
-              } catch (e) {
-                console.warn("Notification failed:", e);
-              }
+                const n = new Notification(title, { body, tag: `room-${data.room}` });
+                n.onclick = () => { window.focus(); switchRoom(data.room); n.close(); };
+              } catch (e) { console.warn("Notification failed:", e); }
             } else {
-              // fallback: briefly flash document title (simple)
               const original = document.title;
               document.title = `${data.room}: ${data.sender}`;
               setTimeout(() => (document.title = original), 2500);
             }
-          } catch (err) {
-            console.warn("room_message_meta handler err:", err);
-          }
+          } catch (err) { console.warn("room_message_meta handler err:", err); }
         });
 
         socket.on("message", addMessage);
         socket.on("file", addFileMessage);
-
         document.getElementById("send").onclick = sendMessage;
-        document.getElementById("input").onkeydown = (e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-          }
-        };
-
-        document.getElementById("attach").onclick = (e) => {
-          e.preventDefault();
-          document.getElementById("fileInput").click();
-        };
-
+        document.getElementById("input").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+        document.getElementById("attach").onclick = (e) => { e.preventDefault(); document.getElementById("fileInput").click(); };
         document.getElementById("fileInput").onchange = handleFileUpload;
 
-        // 👉 Add to Joined Rooms list
         const joinedList = document.getElementById("joined-rooms");
-        if (
-          ![...joinedList.children].some(
-            (li) => li.dataset.room === currentRoom
-          )
-        ) {
+        if (![...joinedList.children].some((li) => li.dataset.room === currentRoom)) {
           const li = document.createElement("li");
           li.textContent = currentRoom;
           li.dataset.room = currentRoom;
@@ -1329,195 +1114,84 @@
           joinedList.appendChild(li);
         }
 
-        // 👉 Store joined rooms for this user (use global, no shadowing)
-        joinedRoomsByUser = JSON.parse(
-          localStorage.getItem("joinedRoomsByUser") || "{}"
-        );
-        if (!joinedRoomsByUser[currentName])
-          joinedRoomsByUser[currentName] = [];
+        joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+        if (!joinedRoomsByUser[currentName]) joinedRoomsByUser[currentName] = [];
         if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
           joinedRoomsByUser[currentName].push(currentRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
-
-        // refresh UI
         renderJoinedRooms();
       }
 
-      // ======================================================
-      // =============== Check Room Status ====================
-      // ======================================================
       async function checkRoomStatus(room) {
         try {
-          const response = await fetch(
-            `${API_BASE}/room-status/${encodeURIComponent(room)}`
-          );
+          const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
           if (!response.ok) throw new Error("Failed to check room status");
           return await response.json();
-        } catch (err) {
-          console.warn("Room status check failed:", err);
-          return { destroyed: false };
-        }
+        } catch (err) { console.warn("Room status check failed:", err); return { destroyed: false }; }
       }
 
-      // ======================================================
-      // =============== Show Destroyed Room Alert ============
-      // ======================================================
       function showDestroyedRoomAlert(room, initialTimeRemaining) {
         let timeRemaining = Math.floor(initialTimeRemaining);
-
-        // Close any existing alert first
         closeDestroyedRoomAlert();
-
-        // Create alert overlay
         const overlay = document.createElement("div");
         overlay.id = "destroyed-room-alert";
-        overlay.style = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.8);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-    `;
-
+        overlay.style = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;`;
         const alertBox = document.createElement("div");
-        alertBox.style = `
-        background: #1a1812;
-        padding: 20px;
-        border-radius: 12px;
-        border: 2px solid #e74c3c;
-        max-width: 400px;
-        text-align: center;
-        color: #eaeaea;
-    `;
-
-        alertBox.innerHTML = `
-        <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
+        alertBox.style = `background: #1a1812; padding: 20px; border-radius: 12px; border: 2px solid #e74c3c; max-width: 400px; text-align: center; color: #eaeaea;`;
+        alertBox.innerHTML = `<h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
         <p>Room <strong>"${room}"</strong> has been destroyed and cannot be joined yet.</p>
         <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
         <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
-        <button onclick="closeDestroyedRoomAlert()" style="
-            background: #27ae60;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 10px;
-        ">Close</button>
-    `;
-
+        <button onclick="closeDestroyedRoomAlert()" style="background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 10px;">Close</button>`;
         overlay.appendChild(alertBox);
         document.body.appendChild(overlay);
-
-        // Store room name for later reference
         overlay._room = room;
-
-        // Start countdown
         const countdownEl = document.getElementById("countdown-timer");
         const countdownInterval = setInterval(() => {
           timeRemaining--;
-          if (countdownEl) {
-            countdownEl.textContent = timeRemaining;
-          }
+          if (countdownEl) countdownEl.textContent = timeRemaining;
           if (timeRemaining <= 0) {
             clearInterval(countdownInterval);
-            // When timer ends, update message
-            if (countdownEl) {
-              countdownEl.textContent = "0";
-              countdownEl.style.color = "#e74c3c";
-            }
+            if (countdownEl) { countdownEl.textContent = "0"; countdownEl.style.color = "#e74c3c"; }
           }
         }, 1000);
-
-        // Check server status every 10 seconds (more frequent)
         const statusCheckInterval = setInterval(async () => {
           try {
             const status = await checkRoomStatus(room);
             if (!status.destroyed) {
-              clearInterval(countdownInterval);
-              clearInterval(statusCheckInterval);
-              closeDestroyedRoomAlert();
-              console.log(
-                `✅ Room ${room} is no longer destroyed, alert closed`
-              );
+              clearInterval(countdownInterval); clearInterval(statusCheckInterval); closeDestroyedRoomAlert();
             } else {
-              // Update timer with actual remaining time from server
               if (countdownEl && status.time_remaining) {
                 const serverTimeRemaining = Math.floor(status.time_remaining);
                 if (serverTimeRemaining !== timeRemaining) {
                   timeRemaining = serverTimeRemaining;
                   countdownEl.textContent = serverTimeRemaining;
-
-                  if (serverTimeRemaining <= 0) {
-                    countdownEl.style.color = "#e74c3c";
-                  }
+                  if (serverTimeRemaining <= 0) countdownEl.style.color = "#e74c3c";
                 }
               }
             }
-          } catch (err) {
-            console.warn("Room status check failed:", err);
-          }
-        }, 10000); // Check every 10 seconds
-
-        // Store intervals for cleanup
+          } catch (err) { console.warn("Room status check failed:", err); }
+        }, 10000);
         overlay._intervals = [countdownInterval, statusCheckInterval];
       }
 
       function closeDestroyedRoomAlert() {
         const alert = document.getElementById("destroyed-room-alert");
-        if (alert && alert._intervals) {
-          alert._intervals.forEach(clearInterval);
-        }
-        if (alert) {
-          alert.remove();
-        }
+        if (alert && alert._intervals) alert._intervals.forEach(clearInterval);
+        if (alert) alert.remove();
       }
 
-      // ======================================================
-      // ========== syncDestroyedRooms(Joined Room) ===========
-      // ======================================================
       async function syncDestroyedRooms() {
         try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-            cache: "no-store",
-          });
-          if (!res.ok) {
-            console.warn("syncDestroyedRooms: server returned", res.status);
-            return;
-          }
+          const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
+          if (!res.ok) { console.warn("syncDestroyedRooms: server returned", res.status); return; }
           const data = await res.json();
           const destroyed = data.destroyed || [];
-
           if (destroyed.length && currentName) {
-            // ensure joinedRoomsByUser is loaded
-            joinedRoomsByUser =
-              joinedRoomsByUser ||
-              JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-
-            // filter out destroyed rooms from local storage
-            joinedRoomsByUser[currentName] = (
-              joinedRoomsByUser[currentName] || []
-            ).filter((room) => !destroyed.includes(room));
-
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
-            console.log(
-              "syncDestroyedRooms: removed destroyed rooms:",
-              destroyed
-            );
-
-            // ✅ If the currently open room was destroyed, reset to intro
+            joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+            joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter((room) => !destroyed.includes(room));
+            localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
             if (destroyed.includes(currentRoom)) {
               currentRoom = "";
               document.getElementById("chat-container").style.display = "none";
@@ -1527,41 +1201,18 @@
               document.getElementById("user-list").innerHTML = "";
             }
           }
-        } catch (err) {
-          console.warn("Failed to sync destroyed rooms:", err);
-        }
+        } catch (err) { console.warn("Failed to sync destroyed rooms:", err); }
       }
 
-      window.addEventListener("DOMContentLoaded", async () => {
-        joinedRoomsByUser = JSON.parse(
-          localStorage.getItem("joinedRoomsByUser") || "{}"
-        );
-        currentName = Storage.get("chat_name") || "";
-        if (currentName) {
-          await syncDestroyedRooms(); // <-- clean up localStorage first
-          renderJoinedRooms(); // <-- then render (no ghost rooms)
-        }
-      });
-
       // ======================================================
-      // =============== Badge ===================
+      // =============== Badge Management =====================
       // ======================================================
-
-      function unreadKey() {
-        // persist per-username to avoid cross-user collisions
-        return "unreadCounts_" + (currentName || "anon");
-      }
+      function unreadKey() { return "unreadCounts_" + (currentName || "anon"); }
       function loadUnread() {
-        try {
-          unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}");
-        } catch (e) {
-          unreadCounts = {};
-        }
+        try { unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}"); } catch (e) { unreadCounts = {}; }
       }
       function saveUnread() {
-        try {
-          localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts));
-        } catch (e) {}
+        try { localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts)); } catch (e) {}
       }
       function updateBadge(room) {
         const list = document.getElementById("joined-rooms");
@@ -1572,9 +1223,7 @@
         if (!badge) {
           badge = document.createElement("span");
           badge.className = "room-badge";
-          // small inline styling so you don't need a separate CSS file
-          badge.style.cssText =
-            "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
+          badge.style.cssText = "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
           li.appendChild(badge);
         }
         const count = unreadCounts[room] || 0;
@@ -1584,172 +1233,87 @@
 
       async function fetchUnreadCounts() {
         if (!currentName || !socket || !socket.connected) return;
-
         try {
-          const response = await fetch(
-            `${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`
-          );
+          const response = await fetch(`${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`);
           if (response.ok) {
             const data = await response.json();
             if (data.unreadCounts) {
-              // Merge server unread counts with local ones
               Object.keys(data.unreadCounts).forEach((room) => {
-                unreadCounts[room] =
-                  (unreadCounts[room] || 0) + data.unreadCounts[room];
+                unreadCounts[room] = (unreadCounts[room] || 0) + data.unreadCounts[room];
               });
               saveUnread();
-
-              // Update badges for all rooms
               const rooms = joinedRoomsByUser[currentName] || [];
-              rooms.forEach((room) => {
-                updateBadge(room);
-              });
+              rooms.forEach((room) => { updateBadge(room); });
             }
           }
-        } catch (err) {
-          console.warn("Failed to fetch unread counts:", err);
-        }
+        } catch (err) { console.warn("Failed to fetch unread counts:", err); }
       }
 
-      function loadUnread() {
-        try {
-          const saved = localStorage.getItem(unreadKey());
-          if (saved) {
-            unreadCounts = JSON.parse(saved);
-          } else {
-            unreadCounts = {};
-          }
-        } catch (e) {
-          unreadCounts = {};
-          console.warn("Failed to load unread counts:", e);
-        }
-      }
       // ======================================================
-      // =============== Joined Room =========================
+      // =============== Joined Rooms Management ==============
       // ======================================================
       function renderJoinedRooms() {
         loadUnread();
         const list = document.getElementById("joined-rooms");
         list.innerHTML = "";
-
         const rooms = joinedRoomsByUser[currentName] || [];
         rooms.forEach((room) => {
           const li = document.createElement("li");
           li.dataset.room = room;
-          li.className = "joined-room-item"; // base class
-          if (room === currentRoom) {
-            li.classList.add("active"); // highlight if current
-          }
-
-          // room name span
+          li.className = "joined-room-item";
+          if (room === currentRoom) li.classList.add("active");
           const span = document.createElement("span");
           span.className = "room-name";
           span.textContent = room;
           li.appendChild(span);
-
-          // badge span
           const badge = document.createElement("span");
           badge.className = "room-badge";
           li.appendChild(badge);
-
-          // click to switch
           li.onclick = () => switchRoom(room);
-
           list.appendChild(li);
-
-          // update unread badge
           updateBadge(room);
         });
       }
 
-      window.addEventListener("DOMContentLoaded", () => {
-        joinedRoomsByUser = JSON.parse(
-          localStorage.getItem("joinedRoomsByUser") || "{}"
-        );
-        currentName = Storage.get("chat_name") || "";
-        if (currentName) renderJoinedRooms();
-      });
-
-      // ======================================================
-      // =============== Switch Room ===================
-      // ======================================================
       function switchRoom(room) {
         if (!room || room === currentRoom) return;
-
         const previousRoom = currentRoom;
-
-        // Reset UI immediately
         const messagesEl = document.getElementById("messages");
         const usersEl = document.getElementById("user-list");
         messagesEl && (messagesEl.innerHTML = "");
         usersEl && (usersEl.innerHTML = "");
-
-        // Update current room and persist
         currentRoom = room;
-        lastPersistedTs = null; // force full history reload
+        lastPersistedTs = null;
         document.getElementById("room").value = currentRoom;
         Storage.set("chat_room", currentRoom);
+        Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
+          li.style.background = li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+        });
 
-        // Update sidebar highlight safely
-        Array.from(document.getElementById("joined-rooms").children).forEach(
-          (li) => {
-            li.style.background =
-              li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-          }
-        );
-
-        // If we were in another room, tell server we left it (keeps server state clean)
         if (previousRoom && socket && socket.connected) {
           try {
-            socket.emit("leave", {
-              room: previousRoom,
-              sender: currentName,
-              reason: "switch", // ✅ added reason flag
-            });
-            console.log("➡️ Left previous room:", previousRoom);
-          } catch (e) {
-            console.warn("Failed to emit leave for previous room:", e);
-          }
+            socket.emit("leave", { room: previousRoom, sender: currentName, reason: "switch" });
+          } catch (e) { console.warn("Failed to emit leave for previous room:", e); }
         }
 
-        // If socket isn't ready, let joinRoom create/connect the socket and join
-        if (!socket || !socket.connected) {
-          console.warn("⚠️ Socket not connected; calling joinRoom()");
-          joinRoom();
-          return;
-        }
+        if (!socket || !socket.connected) { joinRoom(); return; }
 
-        // Join the requested room and request full history (lastTs: null)
-        socket.emit(
-          "join",
-          { room: currentRoom, sender: currentName, lastTs: null },
-          (ack) => {
-            if (ack && ack.success) {
-              // mark local joined sets/storage
-              joinedRooms.add(currentRoom);
-              joinedRoomsByUser[currentName] =
-                joinedRoomsByUser[currentName] || [];
-              if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-                joinedRoomsByUser[currentName].push(currentRoom);
-                localStorage.setItem(
-                  "joinedRoomsByUser",
-                  JSON.stringify(joinedRoomsByUser)
-                );
-              }
-              // refresh UI
-              renderJoinedRooms();
-              document.getElementById("chat-container").style.display = "flex";
-              document.getElementById("input-area").style.display = "flex";
-              document.getElementById("intro").style.display = "none";
-              document.getElementById("messages").style.display = "block";
-              console.log(`🔄 Switched to room ${currentRoom}`);
-            } else {
-              console.warn("❌ Failed to switch room:", room, ack);
+        socket.emit("join", { room: currentRoom, sender: currentName, lastTs: null }, (ack) => {
+          if (ack && ack.success) {
+            joinedRooms.add(currentRoom);
+            joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
+            if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+              joinedRoomsByUser[currentName].push(currentRoom);
+              localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
             }
+            renderJoinedRooms();
+            document.getElementById("chat-container").style.display = "flex";
+            document.getElementById("input-area").style.display = "flex";
+            document.getElementById("intro").style.display = "none";
+            document.getElementById("messages").style.display = "block";
           }
-        );
+        });
 
-        // reset unread for this room now that user switched into it
         unreadCounts[currentRoom] = 0;
         saveUnread();
         updateBadge(currentRoom);
@@ -1758,76 +1322,38 @@
       async function restoreChatState(socket) {
         const state = await loadChatState();
         if (state) {
-          // 🔑 fetch stored FCM token
           const fcmToken = localStorage.getItem("fcm_token") || null;
-
-          socket.emit("join", {
-            room: state.room,
-            sender: state.username,
-            lastTs: state.lastTs,
-            fcmToken: fcmToken, // ✅ include token so backend registers
-          });
+          socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken: fcmToken });
         }
       }
 
       // ======================================================
-      // ======= Room Management(sendMessage) + Copy =========
+      // =============== Message Handling =====================
       // ======================================================
-
       async function sendMessage() {
         if (sending) return;
-
         const inputEl = document.getElementById("input");
         const text = inputEl.value.trim();
         if (!text || !currentRoom) return;
-
-        // --- NEW: mark lastPersistedTs now so reconnects won't cause server to resend this text ---
         const nowTs = new Date().toISOString();
         lastPersistedTs = nowTs;
         try {
-          // store minimal chat state (used by restore/joins)
-          localStorage.setItem(
-            "chatState",
-            JSON.stringify({
-              username: currentName,
-              room: currentRoom,
-              lastTs: lastPersistedTs,
-            })
-          );
-        } catch (e) {
-          console.warn("Could not persist chatState:", e);
-        }
-
+          localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
+        } catch (e) { console.warn("Could not persist chatState:", e); }
         sending = true;
         document.getElementById("send").disabled = true;
-
         let sub = null;
         try {
-          console.log("📌 Current permission:", Notification.permission);
-
-          // await subscribeUser(currentName);
           const savedSub = localStorage.getItem("pushSub");
           sub = savedSub ? JSON.parse(savedSub) : null;
-        } catch (err) {
-          console.warn(
-            "⚠️ Subscription failed, but sending message anyway:",
-            err
-          );
-        }
-
-        socket.emit(
-          "message",
-          { room: currentRoom, sender: currentName, text, subscription: sub },
-          () => {
-            sending = false;
-            document.getElementById("send").disabled = false;
-          }
-        );
-
+        } catch (err) { console.warn("⚠️ Subscription failed, but sending message anyway:", err); }
+        socket.emit("message", { room: currentRoom, sender: currentName, text, subscription: sub }, () => {
+          sending = false;
+          document.getElementById("send").disabled = false;
+        });
         inputEl.value = "";
       }
 
-      // Utility: show system message in chat (auto-remove after 2.5s)
       function showCopyNotice(text) {
         const messages = document.getElementById("messages");
         const div = document.createElement("div");
@@ -1835,71 +1361,43 @@
         div.textContent = text;
         messages.appendChild(div);
         messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-
         setTimeout(() => div.remove(), 2500);
       }
 
-      // Utility: copy to clipboard + notify
-      let lastCopyTime = 0; // prevent double firing
+      let lastCopyTime = 0;
       function copyToClipboard(text, notice) {
         const now = Date.now();
-        if (now - lastCopyTime < 400) return; // ignore duplicates within 400ms
+        if (now - lastCopyTime < 400) return;
         lastCopyTime = now;
-
-        navigator.clipboard
-          .writeText(text)
-          .then(() => {
-            if (notice) showCopyNotice(notice);
-          })
-          .catch((err) => console.error("❌ Copy failed:", err));
+        navigator.clipboard.writeText(text).then(() => { if (notice) showCopyNotice(notice); }).catch((err) => console.error("❌ Copy failed:", err));
       }
 
-      // Enable copy on a full message
       function enableCopyOnMessage(el, text) {
         el.style.userSelect = "none";
         let pressTimer;
-
-        // Mobile long press
         el.addEventListener("touchstart", () => {
-          pressTimer = setTimeout(() => {
-            copyToClipboard(text, "📋 Message copied");
-          }, 500);
+          pressTimer = setTimeout(() => { copyToClipboard(text, "📋 Message copied"); }, 500);
         });
         el.addEventListener("touchend", () => clearTimeout(pressTimer));
-
-        // Desktop right-click
         el.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           copyToClipboard(text, "📋 Message copied");
         });
       }
 
-      // Enable copy on a link only
       function enableCopyOnLink(el) {
         el.style.userSelect = "none";
-
-        // Desktop right-click
         el.addEventListener("contextmenu", (e) => {
           e.preventDefault();
           e.stopPropagation();
           copyToClipboard(el.href, "🔗 Link copied");
         });
-
-        // Mobile long press
         el.addEventListener("touchstart", (e) => {
           e.stopPropagation();
-          const timer = setTimeout(() => {
-            copyToClipboard(el.href, "🔗 Link copied");
-          }, 500);
-          el.addEventListener("touchend", () => clearTimeout(timer), {
-            once: true,
-          });
+          const timer = setTimeout(() => { copyToClipboard(el.href, "🔗 Link copied"); }, 500);
+          el.addEventListener("touchend", () => clearTimeout(timer), { once: true });
         });
       }
-
-      // ======================================================
-      // =============== Existing Functions ===================
-      // ======================================================
 
       function linkifyWithFavicon(text) {
         const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -1907,35 +1405,20 @@
           try {
             const u = new URL(url);
             const favicon = `${u.origin}/favicon.ico`;
-            return `
-        <span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
-          <img src="${favicon}" alt="icon" 
-               style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
-          <a href="${url}" target="_blank" 
-             style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">
-            ${url}
-          </a>
-        </span>
-      `;
+            return `<span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
+              <img src="${favicon}" alt="icon" style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
+              <a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>
+            </span>`;
           } catch {
-            return `<a href="${url}" target="_blank" 
-                 style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">
-                ${url}
-              </a>`;
+            return `<a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>`;
           }
         });
       }
 
       function addMessage(data) {
-        console.debug("MSG RECEIVED", data, "currentRoom=", currentRoom);
         const messages = document.getElementById("messages");
-
-        if (data.ts) {
-          roomTimestamps[currentRoom] = data.ts;
-        }
-
+        if (data.ts) roomTimestamps[currentRoom] = data.ts;
         const div = document.createElement("div");
-
         if (data.sender === "System") {
           div.className = "msg system";
           div.textContent = data.text;
@@ -1945,128 +1428,49 @@
           const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
           div.className = "msg " + (isMe ? "me" : "other");
           div.dataset.ts = data.ts;
-
           const safeText = escapeHtml(data.text);
           const formattedText = linkifyWithFavicon(safeText);
-
-          div.innerHTML = `
-      <strong>${data.sender}</strong><br>
-      ${formattedText}
-      <br><small>${new Date(data.ts).toLocaleString()}</small>
-    `;
-
+          div.innerHTML = `<strong>${data.sender}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
           enableCopyOnMessage(div, data.text);
           div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
         }
-
-        // ✅ Append to DOM
         messages.appendChild(div);
         messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
       }
 
-      // Save Base64 file into device Documents folder (safe, no MANAGE_EXTERNAL_STORAGE)
+      // ======================================================
+      // =============== File Handling ========================
+      // ======================================================
       async function saveFileToDevice(base64Data, filename, mimeType) {
         try {
-          console.log(
-            "DEBUG_DOWNLOAD",
-            "Preparing to save file:",
-            filename,
-            "type:",
-            mimeType
-          );
-
-          const cleaned = base64Data.includes(",")
-            ? base64Data.split(",")[1]
-            : base64Data;
-          console.log(
-            "DEBUG_DOWNLOAD",
-            "Base64 cleaned length:",
-            cleaned.length
-          );
-
+          const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
           const { Filesystem, Toast } = window.Capacitor.Plugins;
-
           if (!Filesystem) {
-            console.error(
-              "DEBUG_DOWNLOAD",
-              "❌ Filesystem plugin not available!"
-            );
-            if (Toast) {
-              await Toast.show({
-                text: "❌ Filesystem plugin missing!",
-                duration: "short",
-                position: "bottom",
-              });
-            }
+            if (Toast) await Toast.show({ text: "❌ Filesystem plugin missing!", duration: "short", position: "bottom" });
             return;
           }
-
-          console.log("DEBUG_DOWNLOAD", "Calling Filesystem.writeFile...");
-
-          const result = await Filesystem.writeFile({
-            path: filename,
-            data: cleaned,
-            directory: "DOCUMENTS", // ✅ safe folder
-          });
-
-          console.log("DEBUG_DOWNLOAD", "✅ File write result:", result);
-
-          if (Toast) {
-            await Toast.show({
-              text: `✅ Downloaded: ${filename}`,
-              duration: "short", // ~2s auto-disappear
-              position: "bottom",
-            });
-          }
-
+          const result = await Filesystem.writeFile({ path: filename, data: cleaned, directory: "DOCUMENTS" });
+          if (Toast) await Toast.show({ text: `✅ Downloaded: ${filename}`, duration: "short", position: "bottom" });
           return result.uri;
         } catch (e) {
-          console.error("DEBUG_DOWNLOAD", "❌ Save failed error object:", e);
           const { Toast } = window.Capacitor.Plugins;
-          if (Toast) {
-            await Toast.show({
-              text: `❌ Save failed: ${e.message}`,
-              duration: "short",
-              position: "bottom",
-            });
-          }
+          if (Toast) await Toast.show({ text: `❌ Save failed: ${e.message}`, duration: "short", position: "bottom" });
         }
       }
 
       window.downloadFile = async (base64, filename, mimetype) => {
         try {
-          console.log(
-            "DEBUG_DOWNLOAD",
-            "Download clicked. Platform:",
-            window.Capacitor?.getPlatform?.()
-          );
-
           if (window.Capacitor?.isNativePlatform()) {
-            console.log(
-              "DEBUG_DOWNLOAD",
-              "📂 Running in Capacitor → will save file..."
-            );
             await saveFileToDevice(base64, filename, mimetype);
           } else {
-            console.log(
-              "DEBUG_DOWNLOAD",
-              "🌍 Running in browser → fallback download"
-            );
             const a = document.createElement("a");
             a.href = base64;
             a.download = filename;
             a.click();
           }
         } catch (err) {
-          console.error("DEBUG_DOWNLOAD", "❌ Download error:", err);
           const { Toast } = window.Capacitor.Plugins;
-          if (Toast) {
-            await Toast.show({
-              text: `❌ Download error: ${err.message}`,
-              duration: "short",
-              position: "bottom",
-            });
-          }
+          if (Toast) await Toast.show({ text: `❌ Download error: ${err.message}`, duration: "short", position: "bottom" });
         }
       };
 
@@ -2074,9 +1478,7 @@
         const parts = base64Data.split(",");
         const byteCharacters = atob(parts[1]);
         const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
+        for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
         const byteArray = new Uint8Array(byteNumbers);
         return new Blob([byteArray], { type: contentType });
       }
@@ -2086,11 +1488,7 @@
         video.src = videoUrl;
         video.crossOrigin = "anonymous";
         video.load();
-
-        video.addEventListener("loadeddata", () => {
-          video.currentTime = 1; // Seek to 1 second to avoid blank frame at start
-        });
-
+        video.addEventListener("loadeddata", () => { video.currentTime = 1; });
         video.addEventListener("seeked", () => {
           const canvas = document.createElement("canvas");
           canvas.width = video.videoWidth;
@@ -2104,150 +1502,75 @@
 
       async function generatePdfThumbnail(pdfUrl, callback) {
         const pdfjsLib = window["pdfjs-dist/build/pdf"];
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
         const loadingTask = pdfjsLib.getDocument(pdfUrl);
         const pdf = await loadingTask.promise;
-        const page = await pdf.getPage(1); // first page
-
+        const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 1 });
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d");
-
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-
-        await page.render({ canvasContext: context, viewport: viewport })
-          .promise;
-
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
         const thumbnailUrl = canvas.toDataURL("image/png");
         callback(thumbnailUrl);
       }
 
-      // ==================================================
-      // 🔽 UPDATED addFileMessage FUNCTION
-      // ==================================================
       window.addFileMessage = function addFileMessage(data) {
         bumpTs(data.ts);
         const div = document.createElement("div");
         const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
         div.className = "msg " + (isMe ? "me" : "other");
         div.dataset.ts = data.ts;
-
         if (data.mimetype && data.mimetype.startsWith("image/")) {
-          div.innerHTML = `
-      <div class="username"><strong>${data.sender}</strong></div>
-      <div class="image-wrapper">
-        <a href="javascript:void(0)" 
-           onclick="downloadFile('${data.data}', '${escapeAttr(
-            data.filename
-          )}', '${data.mimetype}')"
-           class="download-icon" title="Download">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
-            <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
-          </svg>
-        </a>
-        <img src="${data.data}" alt="${escapeAttr(
-            data.filename
-          )}" style="cursor:pointer;">
-      </div>
-      <div class="timestamp"><small>${new Date(
-        data.ts
-      ).toLocaleString()}</small></div>`;
+          div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
+          <div class="image-wrapper">
+            <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
+            </a>
+            <img src="${data.data}" alt="${escapeAttr(data.filename)}" style="cursor:pointer;">
+          </div>
+          <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
         } else if (data.mimetype && data.mimetype.startsWith("video/")) {
           const videoBlob = base64ToBlob(data.data, data.mimetype);
           const videoUrl = URL.createObjectURL(videoBlob);
-
           generateVideoThumbnail(videoUrl, (thumbnailUrl) => {
-            div.innerHTML = `
-      <div class="username"><strong>${data.sender}</strong></div>
-      <div class="image-wrapper">
-        <a href="javascript:void(0)" 
-           onclick="downloadFile('${data.data}', '${escapeAttr(
-              data.filename
-            )}', '${data.mimetype}')"
-           class="download-icon" title="Download">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
-            <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
-          </svg>
-        </a>
-        <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${
-              data.mimetype
-            }','${data.filename}')">
-      </div>
-      <div class="timestamp"><small>${new Date(
-        data.ts
-      ).toLocaleString()}</small></div>
-    `;
+            div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
+            <div class="image-wrapper">
+              <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
+              </a>
+              <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${data.mimetype}','${data.filename}')">
+            </div>
+            <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
           });
         } else if (data.mimetype === "application/pdf") {
           const pdfBlob = base64ToBlob(data.data, data.mimetype);
           const pdfUrl = URL.createObjectURL(pdfBlob);
-
           generatePdfThumbnail(pdfUrl, (thumbnailUrl) => {
-            div.innerHTML = `
-      <div class="username"><strong>${data.sender}</strong></div>
-      <div class="image-wrapper">
-        <a href="javascript:void(0)" 
-           onclick="downloadFile('${data.data}', '${escapeAttr(
-              data.filename
-            )}', '${data.mimetype}')"
-           class="download-icon" title="Download">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24">
-            <path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/>
-          </svg>
-        </a>
-        <img src="${thumbnailUrl}" style="width:220px;height:150px;object-fit:cover;cursor:pointer;border-radius:8px;"
-             onclick="openPreview('${pdfUrl}','${data.mimetype}','${
-              data.filename
-            }')">
-        <div style="margin-top:4px;font-size:12px;color:#fff;text-align:center;">📄 ${
-          data.filename
-        }</div>
-      </div>
-      <div class="timestamp"><small>${new Date(
-        data.ts
-      ).toLocaleString()}</small></div>`;
+            div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
+            <div class="image-wrapper">
+              <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
+              </a>
+              <img src="${thumbnailUrl}" style="width:220px;height:150px;object-fit:cover;cursor:pointer;border-radius:8px;" onclick="openPreview('${pdfUrl}','${data.mimetype}','${data.filename}')">
+              <div style="margin-top:4px;font-size:12px;color:#fff;text-align:center;">📄 ${data.filename}</div>
+            </div>
+            <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
           });
         }
-
         const messages = document.getElementById("messages");
         messages.appendChild(div);
         messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-
-        // Attach preview handlers AFTER the element is created and appended
         try {
-          console.log(
-            "DEBUG_PREVIEW",
-            "addFileMessage appended for",
-            data.filename || "(no filename)"
-          );
-
           if (data.mimetype && data.mimetype.startsWith("image/")) {
             const img = div.querySelector("img");
             if (img) {
               img.dataset.mimetype = data.mimetype || "";
               img.dataset.filename = data.filename || "";
-              console.log(
-                "DEBUG_PREVIEW",
-                "binding img click for",
-                data.filename
-              );
               img.addEventListener("click", (e) => {
-                try {
-                  openPreview(
-                    img.src,
-                    img.dataset.mimetype || data.mimetype,
-                    img.dataset.filename || data.filename
-                  );
-                } catch (err) {
-                  console.error(
-                    "DEBUG_PREVIEW",
-                    "error in img click handler",
-                    err
-                  );
-                }
+                try { openPreview(img.src, img.dataset.mimetype || data.mimetype, img.dataset.filename || data.filename); }
+                catch (err) { console.error("DEBUG_PREVIEW", "error in img click handler", err); }
               });
             }
           } else if (data.mimetype && data.mimetype.startsWith("video/")) {
@@ -2255,143 +1578,67 @@
             if (video) {
               video.dataset.mimetype = data.mimetype || "";
               video.dataset.filename = data.filename || "";
-              console.log(
-                "DEBUG_PREVIEW",
-                "binding video click for",
-                data.filename
-              );
               video.addEventListener("click", (e) => {
-                try {
-                  openPreview(
-                    video.querySelector("source").src,
-                    video.dataset.mimetype || data.mimetype,
-                    video.dataset.filename || data.filename
-                  );
-                } catch (err) {
-                  console.error(
-                    "DEBUG_PREVIEW",
-                    "error in video click handler",
-                    err
-                  );
-                }
+                try { openPreview(video.querySelector("source").src, video.dataset.mimetype || data.mimetype, video.dataset.filename || data.filename); }
+                catch (err) { console.error("DEBUG_PREVIEW", "error in video click handler", err); }
               });
             }
           } else if (data.mimetype === "application/pdf") {
             const link = div.querySelector(".download-link");
             if (link) {
-              link.addEventListener(
-                "click",
-                (e) => {
-                  e.preventDefault();
-                  try {
-                    openPreview(data.data, data.mimetype, data.filename);
-                  } catch (err) {
-                    console.error(
-                      "DEBUG_PREVIEW",
-                      "error in pdf click handler",
-                      err
-                    );
-                  }
-                },
-                { passive: false }
-              );
+              link.addEventListener("click", (e) => {
+                e.preventDefault();
+                try { openPreview(data.data, data.mimetype, data.filename); }
+                catch (err) { console.error("DEBUG_PREVIEW", "error in pdf click handler", err); }
+              }, { passive: false });
             }
           }
-        } catch (err) {
-          console.error("DEBUG_PREVIEW", "attach handler general error:", err);
-        }
+        } catch (err) { console.error("DEBUG_PREVIEW", "attach handler general error:", err); }
       };
 
-      // ✅ Updated openPreview with pdf.js multi-page scrollable rendering
+      // ======================================================
+      // =============== Preview Functions ====================
+      // ======================================================
       async function openPreview(src, type, filename) {
         try {
-          console.log(
-            "DEBUG_PREVIEW",
-            "openPreview called",
-            filename,
-            type,
-            "src_len=",
-            src ? src.length : 0
-          );
-          if (!src) {
-            console.warn("DEBUG_PREVIEW", "openPreview: no src provided");
-            return;
-          }
-          if (document.getElementById("preview-overlay")) return; // avoid duplicate overlays
-
-          // overlay
+          if (!src) return;
+          if (document.getElementById("preview-overlay")) return;
           const overlay = document.createElement("div");
           overlay.id = "preview-overlay";
-          overlay.style = `
-      position:fixed;top:0;left:0;width:100%;height:100%;
-      background:rgba(0,0,0,0.85);display:flex;
-      align-items:center;justify-content:center;z-index:99999;padding:12px;box-sizing:border-box;
-    `;
-
+          overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:99999;padding:12px;box-sizing:border-box;`;
           const box = document.createElement("div");
-          box.style = `
-      background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:hidden;
-      padding:8px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;
-    `;
-
-          // header (filename)
+          box.style = `background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:hidden;padding:8px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;`;
           const header = document.createElement("div");
-          header.style =
-            "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
+          header.style = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
           const title = document.createElement("div");
           title.textContent = filename || "Preview";
-          title.style =
-            "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+          title.style = "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
           header.appendChild(title);
           box.appendChild(header);
-
-          // content container
           const contentWrapper = document.createElement("div");
-          contentWrapper.style = `
-      width:100%;flex:1 1 auto;overflow:auto;
-      display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 6px;box-sizing:border-box;
-    `;
+          contentWrapper.style = `width:100%;flex:1 1 auto;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 6px;box-sizing:border-box;`;
           box.appendChild(contentWrapper);
-
-          // close button
           const controls = document.createElement("div");
-          controls.style =
-            "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
+          controls.style = "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
           const closeBtn = document.createElement("button");
           closeBtn.textContent = "Close";
           closeBtn.onclick = closePreview;
-          closeBtn.style =
-            "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
+          closeBtn.style = "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
           controls.appendChild(closeBtn);
           box.appendChild(controls);
-
           overlay.appendChild(box);
           document.body.appendChild(overlay);
-
-          // close on outside click
-          overlay.addEventListener("click", (ev) => {
-            if (ev.target === overlay) closePreview();
-          });
-
-          // Esc closes
-          const onKey = (ev) => {
-            if (ev.key === "Escape") closePreview();
-          };
+          overlay.addEventListener("click", (ev) => { if (ev.target === overlay) closePreview(); });
+          const onKey = (ev) => { if (ev.key === "Escape") closePreview(); };
           window.addEventListener("keydown", onKey);
-
-          // Android back button support
-          const onPop = () => {
-            closePreview();
-          };
+          const onPop = () => { closePreview(); };
           history.pushState({ preview: true }, "");
           window.addEventListener("popstate", onPop);
-
           overlay._cleanup = () => {
             window.removeEventListener("keydown", onKey);
             window.removeEventListener("popstate", onPop);
           };
 
-          // === IMAGE preview ===
           if (type && type.startsWith("image/")) {
             const img = document.createElement("img");
             img.src = src;
@@ -2403,39 +1650,25 @@
             return;
           }
 
-          // === PDF preview ===
-          if (
-            type === "application/pdf" ||
-            (typeof src === "string" && src.startsWith("data:application/pdf"))
-          ) {
+          if (type === "application/pdf" || (typeof src === "string" && src.startsWith("data:application/pdf"))) {
             const loadingIndicator = document.createElement("div");
             loadingIndicator.textContent = "Loading PDF…";
             loadingIndicator.style = "color:#333;padding:8px;";
             contentWrapper.appendChild(loadingIndicator);
-
             try {
               const pdfjsLib = window["pdfjs-dist/build/pdf"];
-              pdfjsLib.GlobalWorkerOptions.workerSrc =
-                "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-
+              pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
               const loadingTask = pdfjsLib.getDocument(src);
               const pdf = await loadingTask.promise;
               loadingIndicator.remove();
-
               const maxDisplayWidth = Math.min(window.innerWidth * 0.9, 1200);
-
               for (let p = 1; p <= pdf.numPages; p++) {
                 const page = await pdf.getPage(p);
                 const viewport = page.getViewport({ scale: 1 });
                 const devicePixelRatio = window.devicePixelRatio || 1;
-                const targetCssWidth = Math.min(
-                  viewport.width,
-                  maxDisplayWidth
-                );
-                const scale =
-                  (targetCssWidth / viewport.width) * devicePixelRatio;
+                const targetCssWidth = Math.min(viewport.width, maxDisplayWidth);
+                const scale = (targetCssWidth / viewport.width) * devicePixelRatio;
                 const renderViewport = page.getViewport({ scale });
-
                 const canvas = document.createElement("canvas");
                 canvas.width = Math.round(renderViewport.width);
                 canvas.height = Math.round(renderViewport.height);
@@ -2444,40 +1677,29 @@
                 canvas.style.boxShadow = "0 2px 8px rgba(0,0,0,0.12)";
                 canvas.style.borderRadius = "4px";
                 canvas.style.background = "#fff";
-
                 const ctx = canvas.getContext("2d");
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                await page.render({
-                  canvasContext: ctx,
-                  viewport: renderViewport,
-                }).promise;
-
+                await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
                 const label = document.createElement("div");
                 label.textContent = `Page ${p} / ${pdf.numPages}`;
-                label.style =
-                  "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
-
+                label.style = "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
                 contentWrapper.appendChild(label);
                 contentWrapper.appendChild(canvas);
               }
               return;
             } catch (err) {
               console.error("DEBUG_PREVIEW", "PDF render failed:", err);
-              loadingIndicator.textContent =
-                "Failed to render PDF. Falling back to embed.";
+              loadingIndicator.textContent = "Failed to render PDF. Falling back to embed.";
             }
           }
 
-          // === fallback embed ===
           const embed = document.createElement("embed");
           embed.src = src;
           embed.type = type || "application/octet-stream";
           embed.style.width = "80vw";
           embed.style.height = "70vh";
           box.insertBefore(embed, controls);
-        } catch (err) {
-          console.error("DEBUG_PREVIEW", "openPreview error:", err);
-        }
+        } catch (err) { console.error("DEBUG_PREVIEW", "openPreview error:", err); }
       }
 
       function closePreview() {
@@ -2485,163 +1707,91 @@
         if (!overlay) return;
         try {
           if (overlay._cleanup) overlay._cleanup();
-          // if we pushed the history state, go back
-          if (history.state && history.state.preview) {
-            try {
-              history.back();
-            } catch (e) {}
-          }
-        } finally {
-          overlay.remove();
-        }
+          if (history.state && history.state.preview) { try { history.back(); } catch (e) {} }
+        } finally { overlay.remove(); }
       }
-      // ✅ File Upload Handler with Preview + Crop & Rotate
+
+      // ======================================================
+      // =============== File Upload & Crop ===================
+      // ======================================================
       function handleFileUpload() {
         const fileInput = document.getElementById("fileInput");
         const file = fileInput.files && fileInput.files[0];
-        if (!file || !currentRoom) {
-          if (fileInput) fileInput.value = "";
-          return;
-        }
-
+        if (!file || !currentRoom) { if (fileInput) fileInput.value = ""; return; }
         const reader = new FileReader();
         reader.onload = () => {
-          // Overlay
           const overlay = document.createElement("div");
           overlay.id = "file-preview";
-          overlay.style = `
-      position:fixed;top:0;left:0;width:100%;height:100%;
-      background:rgba(0,0,0,.9);
-      display:flex;align-items:center;justify-content:center;
-      flex-direction:column;z-index:9999;
-    `;
-
+          overlay.style = `position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;flex-direction:column;z-index:9999;`;
           if (file.type.startsWith("image/")) {
-            overlay.innerHTML = `
-        <div style="background:#222;padding:15px;border-radius:12px;
-                    max-width:90%;max-height:90%;display:flex;
-                    flex-direction:column;align-items:center;">
-          <div style="width:80vmin;height:80vmin;position:relative;">
-            <img id="crop-image" src="${reader.result}"
-                 style="max-width:100%;max-height:100%;border-radius:8px;display:block;margin:auto;">
-          </div>
-          <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
-            <button onclick="rotateCrop(-90)" 
-                    style="background:#34495e;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">⟲ Rotate</button>
-            <button onclick="rotateCrop(90)" 
-                    style="background:#34495e;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">⟳ Rotate</button>
-            <button onclick="closeFilePreview()" 
-                    style="background:#e74c3c;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Cancel</button>
-            <button onclick="applyCropAndSend('${file.name}','${file.type}')" 
-                    style="background:#27ae60;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Send</button>
-          </div>
-        </div>`;
+            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
+              <div style="width:80vmin;height:80vmin;position:relative;">
+                <img id="crop-image" src="${reader.result}" style="max-width:100%;max-height:100%;border-radius:8px;display:block;margin:auto;">
+              </div>
+              <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+                <button onclick="rotateCrop(-90)" style="background:#34495e;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">⟲ Rotate</button>
+                <button onclick="rotateCrop(90)" style="background:#34495e;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">⟳ Rotate</button>
+                <button onclick="closeFilePreview()" style="background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Cancel</button>
+                <button onclick="applyCropAndSend('${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
+              </div>
+            </div>`;
           } else if (file.type.startsWith("video/")) {
-            overlay.innerHTML = `
-        <div style="background:#222;padding:15px;border-radius:12px;
-                    max-width:90%;max-height:90%;display:flex;
-                    flex-direction:column;align-items:center;">
-          <video controls style="width:80vw;max-height:80vh;border-radius:8px;">
-            <source src="${reader.result}" type="${file.type}">
-            Your browser does not support the video tag.
-          </video>
-          <div style="margin-top:12px;display:flex;gap:12px;">
-            <button onclick="closeFilePreview()" 
-                    style="background:#e74c3c;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Cancel</button>
-            <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" 
-                    style="background:#27ae60;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Send</button>
-          </div>
-        </div>`;
+            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
+              <video controls style="width:80vw;max-height:80vh;border-radius:8px;"><source src="${reader.result}" type="${file.type}">Your browser does not support the video tag.</video>
+              <div style="margin-top:12px;display:flex;gap:12px;">
+                <button onclick="closeFilePreview()" style="background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Cancel</button>
+                <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
+              </div>
+            </div>`;
           } else if (file.type === "application/pdf") {
             const pdfUrl = URL.createObjectURL(file);
-
-            // Load first page with pdf.js
             const pdfjsLib = window["pdfjs-dist/build/pdf"];
-            pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
             const loadingTask = pdfjsLib.getDocument(pdfUrl);
             loadingTask.promise.then(async (pdf) => {
               const page = await pdf.getPage(1);
-
-              // Scale page to fit nicely in viewport but keep its aspect ratio
-              const viewport = page.getViewport({ scale: 1.5 }); // adjust scale as needed
+              const viewport = page.getViewport({ scale: 1.5 });
               const canvas = document.createElement("canvas");
               const ctx = canvas.getContext("2d");
               canvas.width = viewport.width;
               canvas.height = viewport.height;
-
               await page.render({ canvasContext: ctx, viewport }).promise;
-
-              overlay.innerHTML = `
-      <div style="background:#222;padding:15px;border-radius:12px;
-                  max-width:95%;max-height:95%;display:flex;
-                  flex-direction:column;align-items:center;">
-        <canvas id="pdf-canvas" 
-                style="max-width:90vw;max-height:80vh;border-radius:8px;object-fit:contain"></canvas>
-        <div style="margin-top:8px;color:#fff;">📄 ${file.name}</div>
-        <div style="margin-top:12px;display:flex;gap:12px;">
-          <button onclick="closeFilePreview()" 
-                  style="background:#e74c3c;color:#fff;padding:6px 12px;
-                         border:none;border-radius:4px;cursor:pointer;">Cancel</button>
-          <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" 
-                  style="background:#27ae60;color:#fff;padding:6px 12px;
-                         border:none;border-radius:4px;cursor:pointer;">Send</button>
-        </div>
-      </div>`;
-
-              // Copy rendered content into our preview canvas
+              overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:95%;max-height:95%;display:flex;flex-direction:column;align-items:center;">
+                <canvas id="pdf-canvas" style="max-width:90vw;max-height:80vh;border-radius:8px;object-fit:contain"></canvas>
+                <div style="margin-top:8px;color:#fff;">📄 ${file.name}</div>
+                <div style="margin-top:12px;display:flex;gap:12px;">
+                  <button onclick="closeFilePreview()" style="background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Cancel</button>
+                  <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
+                </div>
+              </div>`;
               const previewCanvas = overlay.querySelector("#pdf-canvas");
               previewCanvas.width = canvas.width;
               previewCanvas.height = canvas.height;
               previewCanvas.getContext("2d").drawImage(canvas, 0, 0);
             });
           } else {
-            // Non-image fallback
-            overlay.innerHTML = `
-        <div style="background:#222;padding:15px;border-radius:12px;
-                    max-width:90%;max-height:90%;display:flex;
-                    flex-direction:column;align-items:center;">
-          <embed src="${reader.result}" type="${file.type}" 
-                 style="width:80vw;height:70vh;border-radius:8px;">
-          <div style="margin-top:12px;display:flex;gap:12px;">
-            <button onclick="closeFilePreview()" 
-                    style="background:#e74c3c;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Cancel</button>
-            <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" 
-                    style="background:#27ae60;color:#fff;padding:6px 12px;
-                           border:none;border-radius:4px;cursor:pointer;">Send</button>
-          </div>
-        </div>`;
+            overlay.innerHTML = `<div style="background:#222;padding:15px;border-radius:12px;max-width:90%;max-height:90%;display:flex;flex-direction:column;align-items:center;">
+              <embed src="${reader.result}" type="${file.type}" style="width:80vw;height:70vh;border-radius:8px;">
+              <div style="margin-top:12px;display:flex;gap:12px;">
+                <button onclick="closeFilePreview()" style="background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Cancel</button>
+                <button onclick="confirmFileSend('${reader.result}','${file.name}','${file.type}')" style="background:#27ae60;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;">Send</button>
+              </div>
+            </div>`;
           }
-
           document.body.appendChild(overlay);
-
-          // Init cropper for images
           if (file.type.startsWith("image/")) {
             const image = document.getElementById("crop-image");
             image.onload = () => {
               if (window._cropper) window._cropper.destroy();
               window._rotation = 0;
-
               window._cropper = new Cropper(image, {
-                viewMode: 2, // ✅ image always fully visible in container
-                autoCropArea: 1, // start with full image
+                viewMode: 2,
+                autoCropArea: 1,
                 responsive: true,
                 rotatable: true,
                 ready() {
-                  // Start with crop box covering whole image
                   const canvas = this.cropper.getCanvasData();
-                  this.cropper.setCropBoxData({
-                    width: canvas.width,
-                    height: canvas.height,
-                  });
+                  this.cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
                 },
               });
             };
@@ -2650,162 +1800,70 @@
         reader.readAsDataURL(file);
       }
 
-      // ✅ Rotate and re-center crop box to full image
       function rotateCrop(deg) {
         const cropper = window._cropper;
         if (!cropper) return;
-
-        // update rotation
         window._rotation = ((window._rotation || 0) + deg) % 360;
-
-        // reset centers the image & clears crop box
         cropper.reset();
-
-        // re-apply rotation
         cropper.rotateTo(window._rotation);
-
-        // after render, fit crop to full image
-        setTimeout(() => {
-          fitFullImageCrop();
-        }, 80);
+        setTimeout(() => { fitFullImageCrop(); }, 80);
       }
 
-      // ✅ Fit crop box to entire visible image
       function fitFullImageCrop() {
         const cropper = window._cropper;
         if (!cropper) return;
-
         const canvas = cropper.getCanvasData();
-
-        cropper.setCropBoxData({
-          width: canvas.width,
-          height: canvas.height,
-        });
+        cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
       }
 
-      // ✅ Apply crop and send
       function applyCropAndSend(filename, mimetype) {
         if (!window._cropper) return;
-
-        const canvas = window._cropper.getCroppedCanvas({
-          maxWidth: 1920,
-          maxHeight: 1920,
-          fillColor: "#fff",
-        });
-
+        const canvas = window._cropper.getCroppedCanvas({ maxWidth: 1920, maxHeight: 1920, fillColor: "#fff" });
         if (!canvas) return;
         canvas.toBlob((blob) => {
           const reader = new FileReader();
-          reader.onloadend = () => {
-            confirmFileSend(reader.result, filename, mimetype);
-          };
+          reader.onloadend = () => { confirmFileSend(reader.result, filename, mimetype); };
           reader.readAsDataURL(blob);
         }, mimetype);
       }
 
-      // ✅ Confirm Send → socket
       function confirmFileSend(data, filename, mimetype) {
-        // mark time so server won't resend this file back to the same client on reconnect
         const nowTs = new Date().toISOString();
         lastPersistedTs = nowTs;
         try {
-          localStorage.setItem(
-            "chatState",
-            JSON.stringify({
-              username: currentName,
-              room: currentRoom,
-              lastTs: lastPersistedTs,
-            })
-          );
-        } catch (e) {
-          /* ignore */
-        }
-
-        socket.emit("file", {
-          room: currentRoom,
-          sender: currentName,
-          filename,
-          mimetype,
-          data,
-        });
+          localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
+        } catch (e) { /* ignore */ }
+        socket.emit("file", { room: currentRoom, sender: currentName, filename, mimetype, data });
         closeFilePreview();
         document.getElementById("fileInput").value = "";
       }
 
-      // ✅ Close
       function closeFilePreview() {
         const overlay = document.getElementById("file-preview");
         if (overlay) overlay.remove();
         document.getElementById("fileInput").value = "";
-        if (window._cropper) {
-          window._cropper.destroy();
-          window._cropper = null;
-        }
+        if (window._cropper) { window._cropper.destroy(); window._cropper = null; }
         window._rotation = 0;
       }
-      // function updateUserList(data) {
-      //   if (!currentRoom || data.room !== currentRoom) return;
 
-      //   const list = document.getElementById("user-list");
-      //   const seen = new Set();
-      //   const existing = new Map();
-
-      //   list
-      //     .querySelectorAll("li")
-      //     .forEach((li) => existing.set(li.getAttribute("data-name"), li));
-
-      //   data.users.forEach((u) => {
-      //     if (seen.has(u.name)) return;
-      //     seen.add(u.name);
-
-      //     const color = u.status === "online" ? "#25d366" : "red";
-      //     const displayName =
-      //       u.name === currentName ? `${u.name} (Me)` : u.name;
-
-      //     let li = existing.get(u.name);
-      //     if (li) {
-      //       li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-      //       existing.delete(u.name);
-      //     } else {
-      //       li = document.createElement("li");
-      //       li.setAttribute("data-name", u.name);
-      //       li.className = "fade-in";
-      //       li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
-      //       list.appendChild(li);
-      //     }
-      //   });
-
-      //   existing.forEach((li) => {
-      //     li.classList.add("fade-out");
-      //     setTimeout(() => li.remove(), 300);
-      //   });
-      // }
-
+      // ======================================================
+      // =============== User List Management =================
+      // ======================================================
       function updateUserList(data) {
         if (!currentRoom || data.room !== currentRoom) return;
-
         const list = document.getElementById("user-list");
         const seen = new Set();
         const existing = new Map();
-
-        list
-          .querySelectorAll("li")
-          .forEach((li) => existing.set(li.getAttribute("data-name"), li));
-
-        // ✅ sort: active users first, inactive last
+        list.querySelectorAll("li").forEach((li) => existing.set(li.getAttribute("data-name"), li));
         const sortedUsers = [...data.users].sort((a, b) => {
-          if (a.active === b.active) return a.name.localeCompare(b.name); // optional: alphabetical within groups
-          return a.active ? -1 : 1; // active before inactive
+          if (a.active === b.active) return a.name.localeCompare(b.name);
+          return a.active ? -1 : 1;
         });
-
         sortedUsers.forEach((u) => {
           if (seen.has(u.name)) return;
           seen.add(u.name);
-
           const color = u.active ? "#25d366" : "#e74c3c";
-          const displayName =
-            u.name === currentName ? `${u.name} (Me)` : u.name;
-
+          const displayName = u.name === currentName ? `${u.name} (Me)` : u.name;
           let li = existing.get(u.name);
           if (li) {
             li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
@@ -2818,7 +1876,6 @@
             list.appendChild(li);
           }
         });
-
         existing.forEach((li) => {
           li.classList.add("fade-out");
           setTimeout(() => li.remove(), 300);
@@ -2827,23 +1884,11 @@
 
       function handleRoomDestroyed(data) {
         const destroyedRoom = data.room;
-        console.log("💥 Room destroyed:", destroyedRoom);
-
-        // Remove from memory + localStorage
-        if (joinedRooms.has(destroyedRoom)) {
-          joinedRooms.delete(destroyedRoom);
-        }
+        if (joinedRooms.has(destroyedRoom)) joinedRooms.delete(destroyedRoom);
         if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== destroyedRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== destroyedRoom);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
-
-        // If current room is destroyed, reset UI
         if (currentRoom === destroyedRoom) {
           currentRoom = "";
           document.getElementById("messages").innerHTML = "";
@@ -2852,100 +1897,44 @@
           document.getElementById("input-area").style.display = "none";
           document.getElementById("intro").style.display = "block";
         }
-
         renderJoinedRooms();
       }
 
       function handleRoomCleared(data) {
         if (currentRoom === data.room) {
           document.getElementById("messages").innerHTML = "";
-          addMessage({
-            sender: "System",
-            text: data.message,
-            ts: new Date().toISOString(),
-          });
+          addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
           lastPersistedTs = null;
         }
       }
 
+      // ======================================================
+      // =============== Room Actions =========================
+      // ======================================================
       const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
-      // expose globally (important for Android WebView buttons)
       window.clearRoom = async function clearRoom() {
-        if (!currentRoom) {
-          alert("Join a room first!");
-          return;
-        }
-
+        if (!currentRoom) { alert("Join a room first!"); return; }
         try {
-          const res = await fetch(
-            `${API_BASE}/clear/${encodeURIComponent(currentRoom)}`,
-            {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" }, // Android fix
-              cache: "no-store",
-            }
-          );
-
+          const res = await fetch(`${API_BASE}/clear/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, cache: "no-store" });
           const data = await res.json();
-          if (!res.ok)
-            throw new Error(
-              data?.error || `Failed to clear room: ${res.status}`
-            );
-
-          console.log("✅", data.message);
-
-          // Optional feedback
-          addMessage({
-            sender: "System",
-            text: data.message,
-            ts: new Date().toISOString(),
-          });
-        } catch (err) {
-          console.error("❌ clearRoom error:", err);
-          alert(err.message);
-        }
+          if (!res.ok) throw new Error(data?.error || `Failed to clear room: ${res.status}`);
+          addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
+        } catch (err) { console.error("❌ clearRoom error:", err); alert(err.message); }
       };
 
       window.destroyRoom = async function destroyRoom() {
-        if (!currentRoom) {
-          alert("Join a room first!");
-          return;
-        }
-
-        if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`))
-          return;
-
+        if (!currentRoom) { alert("Join a room first!"); return; }
+        if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`)) return;
         try {
-          const res = await fetch(
-            `${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`,
-            {
-              method: "DELETE",
-              headers: { "Content-Type": "application/json" }, // Android fix
-            }
-          );
-
+          const res = await fetch(`${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" } });
           const data = await res.json();
-          if (!res.ok)
-            throw new Error(
-              data?.error || `Failed to destroy room: ${res.status}`
-            );
-
-          console.log("✅", data.message);
-
+          if (!res.ok) throw new Error(data?.error || `Failed to destroy room: ${res.status}`);
           unsubscribeUser(currentName, currentRoom);
-
-          // reset UI
           document.getElementById("messages").innerHTML = "";
-          addMessage({
-            sender: "System",
-            text: "Room destroyed. All messages cleared. Please join a new room.",
-            ts: new Date().toISOString(),
-          });
-
+          addMessage({ sender: "System", text: "Room destroyed. All messages cleared. Please join a new room.", ts: new Date().toISOString() });
           lastPersistedTs = null;
-          Storage.remove("chat_name");
-          Storage.remove("chat_room");
+          Storage.remove("chat_name"); Storage.remove("chat_room");
           joinedRooms.delete(currentRoom);
           currentRoom = "";
           document.getElementById("user-list").innerHTML = "";
@@ -2953,85 +1942,33 @@
           document.getElementById("input-area").style.display = "none";
           document.getElementById("intro").style.display = "block";
           document.getElementById("messages").style.display = "none";
-        } catch (err) {
-          console.error("❌ destroyRoom error:", err);
-          alert(err.message);
-        }
+        } catch (err) { console.error("❌ destroyRoom error:", err); alert(err.message); }
       };
 
       async function leaveRoom() {
-        if (!currentRoom) {
-          alert("You are not in a room!");
-          return;
-        }
-
+        if (!currentRoom) { alert("You are not in a room!"); return; }
         const leftRoom = currentRoom;
-
-        // 🔑 Unregister FCM token for this room
         const savedToken = localStorage.getItem("fcm_token");
         if (savedToken) {
           try {
-            await fetch("/api/unregister-fcm", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                token: savedToken,
-                user: currentName,
-                room: currentRoom,
-              }),
-            });
-            console.log(
-              `🛑 Unregistered FCM token for ${currentName} in room ${currentRoom}`
-            );
-          } catch (err) {
-            console.error("❌ Failed to unregister FCM token:", err);
-          }
+            await fetch("/api/unregister-fcm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: savedToken, user: currentName, room: currentRoom }) });
+          } catch (err) { console.error("❌ Failed to unregister FCM token:", err); }
         }
-
-        // 🛑 Unsubscribe from WebPush for this room
-        try {
-          await unsubscribeUser(currentName, currentRoom);
-        } catch (err) {
-          console.error("❌ Failed to unsubscribe WebPush:", err);
-        }
-
-        // 🔌 Leave socket room (with reason flag)
-        socket.emit("leave", {
-          room: currentRoom,
-          sender: currentName,
-          reason: "leave", // ✅ This ensures proper cleanup
-        });
-        console.log(`🚪 Left room ${currentRoom}`);
-
-        // 🖥️ Reset UI
+        try { await unsubscribeUser(currentName, currentRoom); } catch (err) { console.error("❌ Failed to unsubscribe WebPush:", err); }
+        socket.emit("leave", { room: currentRoom, sender: currentName, reason: "leave" });
         document.getElementById("input").disabled = true;
         document.getElementById("send").disabled = true;
         document.getElementById("attach").disabled = true;
-
-        addMessage({
-          sender: "System",
-          text: `YOU LEFT FROM ROOM ${leftRoom}`,
-          ts: new Date().toISOString(),
-        });
-
+        addMessage({ sender: "System", text: `YOU LEFT FROM ROOM ${leftRoom}`, ts: new Date().toISOString() });
         lastPersistedTs = null;
-
-        // ❌ Remove from joined rooms set and sidebar
         joinedRooms.delete(currentRoom);
         if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== currentRoom);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== currentRoom);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
-        renderJoinedRooms(); // ✅ refresh sidebar
-
+        renderJoinedRooms();
         currentRoom = "";
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
+        Storage.remove("chat_name"); Storage.remove("chat_room");
         document.getElementById("user-list").innerHTML = "";
         document.getElementById("chat-container").style.display = "block";
         document.getElementById("input-area").style.display = "none";
@@ -3041,27 +1978,16 @@
       // ======================================================
       // =============== Event Listeners ======================
       // ======================================================
-      document.addEventListener("visibilitychange", () =>
-        sendActive(!document.hidden)
-      );
+      document.addEventListener("visibilitychange", () => sendActive(!document.hidden));
       window.addEventListener("focus", () => sendActive(true));
       window.addEventListener("blur", () => sendActive(false));
-
-      window.addEventListener("offline", () => {
-        if (socket && socket.connected) socket.disconnect();
-      });
-
+      window.addEventListener("offline", () => { if (socket && socket.connected) socket.disconnect(); });
       let reconnectTimer;
       window.addEventListener("online", () => {
         clearTimeout(reconnectTimer);
         reconnectTimer = setTimeout(() => {
-          if (socket && !socket.connected && currentRoom && currentName) {
-            socket.connect();
-            // fetchUnreadCounts will be called after successful reconnect
-          } else if (socket && socket.connected) {
-            // If already connected but just came online, fetch unread counts
-            fetchUnreadCounts();
-          }
+          if (socket && !socket.connected && currentRoom && currentName) socket.connect();
+          else if (socket && socket.connected) fetchUnreadCounts();
         }, 300);
       });
 
@@ -3072,154 +1998,67 @@
         await requestNotificationPermission();
         const savedName = Storage.get("chat_name");
         const savedRoom = Storage.get("chat_room");
-
         if (savedName && savedRoom) {
-          // ✅ Check if room exists and is not permanently destroyed
           try {
             const roomStatus = await checkRoomStatus(savedRoom);
-
             if (roomStatus.destroyed) {
-              // Room is temporarily destroyed - show alert
               showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
-
-              // Clear storage to prevent auto-join attempts
-              Storage.remove("chat_name");
-              Storage.remove("chat_room");
-
-              // Remove from joined rooms
-              joinedRoomsByUser = JSON.parse(
-                localStorage.getItem("joinedRoomsByUser") || "{}"
-              );
+              Storage.remove("chat_name"); Storage.remove("chat_room");
+              joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
               if (joinedRoomsByUser[savedName]) {
-                joinedRoomsByUser[savedName] = joinedRoomsByUser[
-                  savedName
-                ].filter((r) => r !== savedRoom);
-                localStorage.setItem(
-                  "joinedRoomsByUser",
-                  JSON.stringify(joinedRoomsByUser)
-                );
+                joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter((r) => r !== savedRoom);
+                localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
               }
-
               document.getElementById("intro").style.display = "block";
-              console.log(
-                `⚠️ Room ${savedRoom} is temporarily destroyed, preventing auto-join`
-              );
               return;
             }
-
-            // Room is safe to join
             document.getElementById("name").value = savedName;
             document.getElementById("room").value = savedRoom;
             joinRoom({ preserveMessages: true });
           } catch (err) {
-            console.warn(
-              "Failed to check room status, proceeding with join:",
-              err
-            );
-            // Fallback: proceed with join if status check fails
             document.getElementById("name").value = savedName;
             document.getElementById("room").value = savedRoom;
             joinRoom({ preserveMessages: true });
           }
-        } else {
-          document.getElementById("intro").style.display = "block";
-        }
+        } else document.getElementById("intro").style.display = "block";
       });
 
-      // ======================================================
-      // =============== Capacitor Push Notifications =========
-      // ======================================================
       // ======================================================
       // =============== Capacitor Push Notifications =========
       // ======================================================
       document.addEventListener("DOMContentLoaded", async () => {
         const { PushNotifications } = Capacitor.Plugins;
-
-        if (!PushNotifications) {
-          console.error("❌ PushNotifications plugin not available");
-          return;
-        }
-
-        // Ask for permission
+        if (!PushNotifications) { console.error("❌ PushNotifications plugin not available"); return; }
         let permStatus = await PushNotifications.requestPermissions();
-        console.log("📌 Permission:", permStatus);
-
-        if (permStatus.receive === "granted") {
-          await PushNotifications.register();
-        }
-
-        // Registration success → send token to backend
+        if (permStatus.receive === "granted") await PushNotifications.register();
         PushNotifications.addListener("registration", async (token) => {
-          console.log("📱 Push registration token:", token.value);
-
           try {
             const user = localStorage.getItem("chat_name") || "guest";
-            const room = localStorage.getItem("chat_room") || null; // 🔑 now room-aware
-
-            await fetch(
-              "https://realtime-chat-1mv3.onrender.com/api/register-fcm",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  token: token.value,
-                  user,
-                  room, // 🔑 send room too
-                }),
-              }
-            );
-
-            console.log("📡 Token sent to backend for", user, "in room", room);
-            localStorage.setItem("fcm_token", token.value); // save for unregister later
-          } catch (err) {
-            console.error("❌ Failed to send token:", err);
-          }
+            const room = localStorage.getItem("chat_room") || null;
+            await fetch("https://realtime-chat-1mv3.onrender.com/api/register-fcm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ token: token.value, user, room }),
+            });
+            localStorage.setItem("fcm_token", token.value);
+          } catch (err) { console.error("❌ Failed to send token:", err); }
         });
-
-        // Errors
-        PushNotifications.addListener("registrationError", (err) => {
-          console.error("❌ Registration error:", err.error);
-        });
-
-        // Foreground push (optional: show notification immediately)
-        PushNotifications.addListener(
-          "pushNotificationReceived",
-          (notification) => {
-            console.log("📩 Push received (foreground):", notification);
-          }
-        );
-
-        // Notification tapped
-        PushNotifications.addListener(
-          "pushNotificationActionPerformed",
-          (action) => {
-            console.log("👉 Notification tapped:", action.notification);
-          }
-        );
-
-        // Example clear function
+        PushNotifications.addListener("registrationError", (err) => { console.error("❌ Registration error:", err.error); });
+        PushNotifications.addListener("pushNotificationReceived", (notification) => {});
+        PushNotifications.addListener("pushNotificationActionPerformed", (action) => {});
         window.clearNotifications = async () => {
-          try {
-            await PushNotifications.removeAllDeliveredNotifications();
-            console.log("🧹 All notifications cleared");
-          } catch (err) {
-            console.error("❌ Failed to clear notifications:", err);
-          }
+          try { await PushNotifications.removeAllDeliveredNotifications(); } catch (err) { console.error("❌ Failed to clear notifications:", err); }
         };
       });
     </script>
+
+    <!-- Capacitor Storage Module -->
     <script type="module">
       import { Storage } from "@capacitor/storage";
-      import {
-        PushNotifications,
-        LocalNotifications,
-      } from "@capacitor/push-notifications";
+      import { PushNotifications, LocalNotifications } from "@capacitor/push-notifications";
 
       async function saveChatState(username, room, lastTs) {
-        await Storage.set({
-          key: "chatState",
-          value: JSON.stringify({ username, room, lastTs }),
-        });
+        await Storage.set({ key: "chatState", value: JSON.stringify({ username, room, lastTs }) });
       }
 
       async function loadChatState() {
@@ -3227,47 +2066,20 @@
         return value ? JSON.parse(value) : null;
       }
 
-      // When joining a room (first time)
-      const fcmToken = localStorage.getItem("fcm_token") || null;
-      socket.emit("join", {
-        room,
-        sender: username,
-        lastTs,
-        fcmToken, // ✅ Include token
-      });
-
-      // Save state after join
-      saveChatState(username, room, new Date().toISOString());
-
-      // On app startup, auto rejoin if state exists
       const API_BASE_CAP = "https://realtime-chat-1mv3.onrender.com";
       const state = await loadChatState();
       if (state) {
         try {
-          const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-            cache: "no-store",
-          });
+          const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
           const json = await res.json();
           const destroyed = json.destroyed || [];
           if (!destroyed.includes(state.room)) {
             const fcmToken = localStorage.getItem("fcm_token") || null;
-            socket.emit("join", {
-              room: state.room,
-              sender: state.username,
-              lastTs: state.lastTs,
-              fcmToken, // ✅ include token here too
-            });
+            socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken });
           } else {
-            // room was destroyed remotely - clear saved state so we don't auto-rejoin next time
             await Storage.remove({ key: "chatState" });
-            console.log(
-              "[startup] cleared local chatState because server reports room destroyed"
-            );
           }
-        } catch (err) {
-          console.warn("Failed to check destroyed rooms on startup:", err);
-          // optionally proceed with join or defer until you can check
-        }
+        } catch (err) { console.warn("Failed to check destroyed rooms on startup:", err); }
       }
     </script>
   </body>
