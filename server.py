@@ -156,10 +156,12 @@ def cleanup_old_destroyed_rooms():
                 # ✅ IMPORTANT: Remove from DESTROYED_ROOMS set
                 if room in DESTROYED_ROOMS:
                     DESTROYED_ROOMS.remove(room)
-                
+
                 print(f"🧹 Completely cleaned up room: {room}")
 
-            print(f"✅ Cleaned up {len(rooms_to_delete)} destroyed rooms and all related data")
+            print(
+                f"✅ Cleaned up {len(rooms_to_delete)} destroyed rooms and all related data"
+            )
         else:
             print("✅ No old destroyed rooms to clean up")
 
@@ -1352,21 +1354,23 @@ async def get_room_status(room: str):
             c.execute("SELECT destroyed_at FROM destroyed_rooms WHERE room=?", (room,))
             row = c.fetchone()
             conn.close()
-            
+
             if row:
                 destroyed_at = datetime.fromisoformat(row[0])
                 now = datetime.now(timezone.utc)
                 time_elapsed = (now - destroyed_at).total_seconds()
-                time_remaining = max(0, 180 - time_elapsed)  # 3 minutes = 180 seconds
-                
-                return JSONResponse({
-                    "destroyed": True,
-                    "destroyed_at": row[0],
-                    "time_remaining": time_remaining
-                })
+                time_remaining = max(0, 300 - time_elapsed)  # 5 minutes = 300 second
+
+                return JSONResponse(
+                    {
+                        "destroyed": True,
+                        "destroyed_at": row[0],
+                        "time_remaining": time_remaining,
+                    }
+                )
         except Exception as e:
             print(f"Error getting room status: {e}")
-    
+
     return JSONResponse({"destroyed": False})
 
 
