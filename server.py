@@ -558,9 +558,8 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-   # ✅ EXPLICIT CHECK - Immediately reject destroyed rooms
+    # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
-        print(f"🚫 BLOCKED join attempt to destroyed room: {room} by {username}")
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
@@ -938,7 +937,7 @@ async def startup_tasks():
                     },
                 )
 
-            # Clean up old destroyed rooms (every 5 minutes)
+            # Clean up old destroyed rooms (every 2 minutes)
             deleted_rooms = cleanup_old_destroyed_rooms()
             if deleted_rooms > 0:
                 print(
@@ -1355,23 +1354,31 @@ async def get_destroyed_rooms():
 
 
 @app.get("/room-status/{room}")
-async def get_room_status(room: str):
-    """Check if a room is destroyed"""
-    is_destroyed = room in DESTROYED_ROOMS
-    return JSONResponse({
-        "room": room,
-        "destroyed": is_destroyed,
-        "message": "Room is permanently destroyed" if is_destroyed else "Room is active"
-    })
-
-
-@app.get("/sync-destroyed-rooms")
-async def sync_destroyed_rooms():
-    """Force sync destroyed rooms (for clients)"""
-    global DESTROYED_ROOMS
-    DESTROYED_ROOMS = load_destroyed_rooms()
-    return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
-
+async def room_status(room: str):
+    """Check if a room is destroyed and return destruction time"""
+    if room in DESTROYED_ROOMS:
+        # Get the destruction time from DB
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT destroyed_at FROM destroyed_rooms WHERE room = ?", (room,))
+        row = c.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "destroyed": True,
+                "destroyed_at": row[0],
+                "message": f"Room {room} was destroyed and will be available in 2 minutes"
+            }
+        else:
+            return {
+                "destroyed": True,
+                "destroyed_at": datetime.now(timezone.utc).isoformat(),
+                "message": f"Room {room} was destroyed and will be available in 2 minutes"
+            }
+    else:
+        return {"destroyed": False, "message": "Room is available"}
+    
 
 @app.post("/revive-room/{room}")
 async def revive_room(room: str):
