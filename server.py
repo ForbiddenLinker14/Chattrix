@@ -1382,25 +1382,7 @@ async def get_unread_counts(request: Request):
 async def get_room_status(room: str):
     """Check if room is destroyed and get destruction time"""
 
-    # ✅ Check if room was destroyed within last 1 year (WAS_DESTROYED_ROOMS)
-    if room in WAS_DESTROYED_ROOMS:
-        destroyed_at = WAS_DESTROYED_ROOMS[room]
-        now = datetime.now(timezone.utc)
-
-        # If destroyed less than 1 year ago, block auto-join
-        if (now - destroyed_at) < timedelta(days=365):
-            return JSONResponse(
-                {
-                    "destroyed": False,  # Not currently destroyed
-                    "was_destroyed": True,  # But was destroyed within 1 year
-                    "time_remaining": 0,
-                }
-            )
-        else:
-            # Remove if older than 1 year
-            del WAS_DESTROYED_ROOMS[room]
-
-    # ✅ Check if room is currently destroyed (DESTROYED_ROOMS)
+    # ✅ Check if room is currently destroyed (DESTROYED_ROOMS) - THIS SHOULD COME FIRST
     if room in DESTROYED_ROOMS:
         try:
             conn = sqlite3.connect(DB_PATH)
@@ -1420,11 +1402,29 @@ async def get_room_status(room: str):
                         "destroyed": True,  # Currently destroyed
                         "was_destroyed": True,  # And was destroyed
                         "destroyed_at": row[0],
-                        "time_remaining": time_remaining,
+                        "time_remaining": time_remaining,  # ✅ This has the actual timer value
                     }
                 )
         except Exception as e:
             print(f"Error getting room status: {e}")
+
+    # ✅ Check if room was destroyed within last 1 year (WAS_DESTROYED_ROOMS)
+    if room in WAS_DESTROYED_ROOMS:
+        destroyed_at = WAS_DESTROYED_ROOMS[room]
+        now = datetime.now(timezone.utc)
+
+        # If destroyed less than 1 year ago, block auto-join
+        if (now - destroyed_at) < timedelta(days=365):
+            return JSONResponse(
+                {
+                    "destroyed": False,  # Not currently destroyed
+                    "was_destroyed": True,  # But was destroyed within 1 year
+                    "time_remaining": 0,  # ✅ No timer for previously destroyed rooms
+                }
+            )
+        else:
+            # Remove if older than 1 year
+            del WAS_DESTROYED_ROOMS[room]
 
     # ✅ Room was never destroyed or destruction expired
     return JSONResponse({"destroyed": False, "was_destroyed": False})
