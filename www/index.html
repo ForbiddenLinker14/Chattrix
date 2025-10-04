@@ -1146,38 +1146,45 @@
         }
 
        // ✅ CHECK FOR DESTROYED ROOMS - Client-side + Server-side verification
-async function checkIfRoomDestroyed(room) {
-  // First check client-side cache
-  if (window.destroyedRooms && window.destroyedRooms.includes(room)) {
-    return true;
-  }
-  
-  // Then verify with server
-  try {
-    const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
-    if (response.ok) {
-      const roomStatus = await response.json();
-      if (roomStatus.destroyed) {
-        // Update local cache
-        if (!window.destroyedRooms) window.destroyedRooms = [];
-        if (!window.destroyedRooms.includes(room)) {
-          window.destroyedRooms.push(room);
+ async function checkIfRoomDestroyed(room) {
+    // Always check with server first for most up-to-date status
+    try {
+        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
+        if (response.ok) {
+            const roomStatus = await response.json();
+            // Update local cache based on server response
+            if (roomStatus.destroyed) {
+                if (!window.destroyedRooms) window.destroyedRooms = [];
+                if (!window.destroyedRooms.includes(room)) {
+                    window.destroyedRooms.push(room);
+                }
+            } else {
+                // Remove from cache if server says it's not destroyed
+                if (window.destroyedRooms) {
+                    const index = window.destroyedRooms.indexOf(room);
+                    if (index > -1) {
+                        window.destroyedRooms.splice(index, 1);
+                    }
+                }
+            }
+            return roomStatus.destroyed;
         }
-        return true;
-      }
+    } catch (err) {
+        console.warn("Failed to check room status, falling back to cache:", err);
+        // Fallback to cache if server is unreachable
+        if (window.destroyedRooms && window.destroyedRooms.includes(room)) {
+            return true;
+        }
     }
-  } catch (err) {
-    console.warn("Failed to check room status:", err);
-  }
-  
-  return false;
+    
+    return false;
 }
 
-// Use it in joinRoom:
-if (await checkIfRoomDestroyed(currentRoom)) {
-  showDestroyedRoomAlert(currentRoom);
-  return;
-}
+  // Use it in joinRoom:
+  if (await checkIfRoomDestroyed(currentRoom)) {
+    showDestroyedRoomAlert(currentRoom);
+    return;
+  }
 
         if (joinedRooms.has(currentRoom)) {
           alert(`You are already in room "${currentRoom}"!`);
@@ -2861,6 +2868,31 @@ async function loadDestroyedRooms() {
 }
 
 // ======================================================
+// =============== Periodic Sync Destroyed Rooms =======
+// ======================================================
+async function syncDestroyedRoomsPeriodically() {
+    try {
+        const response = await fetch(`${API_BASE}/destroyed_rooms`);
+        if (response.ok) {
+            const data = await response.json();
+            window.destroyedRooms = data.destroyed || [];
+            console.log("🔄 Synced destroyed rooms:", window.destroyedRooms);
+        }
+    } catch (err) {
+        console.warn("Failed to sync destroyed rooms:", err);
+    }
+}
+
+// Start periodic sync (every 30 seconds)
+function startDestroyedRoomsSync() {
+    // Initial sync
+    syncDestroyedRoomsPeriodically();
+    
+    // Periodic sync every 30 seconds
+    setInterval(syncDestroyedRoomsPeriodically, 30000);
+}
+
+// ======================================================
 // =============== Destroyed Room Alert ================
 // ======================================================
 function showDestroyedRoomAlert(room) {
@@ -3139,40 +3171,42 @@ function showDestroyedRoomAlert(room) {
       // =============== Initialization =======================
       // ======================================================
 window.addEventListener("load", async () => {
-  await requestNotificationPermission();
-  await loadDestroyedRooms(); // ✅ Load destroyed rooms on startup
-  
-  const savedName = Storage.get("chat_name");
-  const savedRoom = Storage.get("chat_room");
+    await requestNotificationPermission();
+    
+    // Initialize destroyed rooms sync
+    window.destroyedRooms = [];
+    startDestroyedRoomsSync();
+    
+    const savedName = Storage.get("chat_name");
+    const savedRoom = Storage.get("chat_room");
 
-  if (savedName && savedRoom) {
-    // ✅ ENHANCED CHECK: Verify room status with server before auto-joining
-    try {
-      const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`);
-      if (response.ok) {
-        const roomStatus = await response.json();
-        
-        if (roomStatus.destroyed) {
-          // Room was destroyed - clear storage and show alert
-          Storage.remove("chat_name");
-          Storage.remove("chat_room");
-          showDestroyedRoomAlert(savedRoom);
-          document.getElementById("intro").style.display = "block";
-          console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
-          return;
+    if (savedName && savedRoom) {
+        // Check room status with server before auto-joining
+        try {
+            const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`);
+            if (response.ok) {
+                const roomStatus = await response.json();
+                
+                if (roomStatus.destroyed) {
+                    Storage.remove("chat_name");
+                    Storage.remove("chat_room");
+                    showDestroyedRoomAlert(savedRoom);
+                    document.getElementById("intro").style.display = "block";
+                    console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
+                    return;
+                }
+            }
+        } catch (err) {
+            console.warn("Failed to check room status, proceeding with join:", err);
         }
-      }
-    } catch (err) {
-      console.warn("Failed to check room status, proceeding with join:", err);
-    }
 
-    // Room is safe to join
-    document.getElementById("name").value = savedName;
-    document.getElementById("room").value = savedRoom;
-    joinRoom();
-  } else {
-    document.getElementById("intro").style.display = "block";
-  }
+        // Room is safe to join
+        document.getElementById("name").value = savedName;
+        document.getElementById("room").value = savedRoom;
+        joinRoom();
+    } else {
+        document.getElementById("intro").style.display = "block";
+    }
 });
 
       // ======================================================

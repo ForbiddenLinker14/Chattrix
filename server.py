@@ -1365,6 +1365,14 @@ async def get_room_status(room: str):
     })
 
 
+@app.get("/sync-destroyed-rooms")
+async def sync_destroyed_rooms():
+    """Force sync destroyed rooms (for clients)"""
+    global DESTROYED_ROOMS
+    DESTROYED_ROOMS = load_destroyed_rooms()
+    return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
+
+
 @app.post("/revive-room/{room}")
 async def revive_room(room: str):
     """Manually revive a destroyed room (for testing)"""
