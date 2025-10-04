@@ -1157,13 +1157,24 @@ socket.on("clear_room_from_storage", (data) => {
         renderJoinedRooms();
       }
 
-      async function checkRoomStatus(room) {
-        try {
-          const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
-          if (!response.ok) throw new Error("Failed to check room status");
-          return await response.json();
-        } catch (err) { console.warn("Room status check failed:", err); return { destroyed: false }; }
-      }
+      // ✅ ENHANCED: More strict room status check
+async function checkRoomStatus(room) {
+    try {
+        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
+        if (!response.ok) throw new Error("Failed to check room status");
+        const status = await response.json();
+        
+        // ✅ If room was EVER destroyed, don't auto-join even if destruction period is over
+        if (status.destroyed || status.was_destroyed) {
+            return { destroyed: true, time_remaining: status.time_remaining || 0 };
+        }
+        return status;
+    } catch (err) { 
+        console.warn("Room status check failed:", err); 
+        // ✅ If we can't check status, assume room might be destroyed to be safe
+        return { destroyed: true, time_remaining: 0 }; 
+    }
+}
 
       function showDestroyedRoomAlert(room, initialTimeRemaining) {
         let timeRemaining = Math.floor(initialTimeRemaining);
@@ -2035,25 +2046,36 @@ window.addEventListener("load", async () => {
   
   if (savedName && savedRoom) {
     try {
-      // ✅ Check current destruction status only
+      // ✅ STRICT CHECK: Block auto-join if room was EVER destroyed
       const roomStatus = await checkRoomStatus(savedRoom);
-      if (roomStatus.destroyed) {
+      if (roomStatus.destroyed || roomStatus.was_destroyed) {
         showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
-        // Don't clear storage here - let the broadcast handle it
+        
+        // ✅ CLEAR STORAGE: If room was ever destroyed, clear it from storage
+        Storage.remove("chat_name");
+        Storage.remove("chat_room");
+        
+        // ✅ CLEAR from joinedRoomsByUser
+        if (joinedRoomsByUser[savedName]) {
+          joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+        }
+        
         document.getElementById("intro").style.display = "block";
         return;
       }
       
-      // If room is not destroyed, proceed with auto-join
+      // If room is not destroyed and was never destroyed, proceed with auto-join
       document.getElementById("name").value = savedName;
       document.getElementById("room").value = savedRoom;
       joinRoom({ preserveMessages: true });
       
     } catch (err) {
-      // If status check fails, still try to join
-      document.getElementById("name").value = savedName;
-      document.getElementById("room").value = savedRoom;
-      joinRoom({ preserveMessages: true });
+      // ✅ If status check fails, DON'T auto-join (be safe)
+      console.error("Auto-join blocked due to status check failure:", err);
+      Storage.remove("chat_name");
+      Storage.remove("chat_room");
+      document.getElementById("intro").style.display = "block";
     }
   } else {
     document.getElementById("intro").style.display = "block";

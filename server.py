@@ -23,6 +23,7 @@ from firebase_admin import credentials, messaging
 # ---------------- Globals ----------------
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
+WAS_DESTROYED_ROOMS = set()
 ROOM_USERS = {}  # { room: { username: sid } }
 LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
@@ -172,6 +173,19 @@ def cleanup_old_destroyed_rooms():
         print(f"❌ Error cleaning up destroyed rooms: {e}")
         return 0
 
+def cleanup_old_was_destroyed_rooms():
+    """Clean up WAS_DESTROYED_ROOMS after a longer period (e.g., 24 hours)"""
+    # This prevents the set from growing indefinitely
+    # You might want to persist this to DB for production use
+    global WAS_DESTROYED_ROOMS
+    
+    # For now, we'll keep it simple - in production you'd want to track timestamps
+    # and remove entries older than 24 hours
+    if len(WAS_DESTROYED_ROOMS) > 1000:  # Arbitrary limit
+        # Remove some old entries (you'd need to track creation time for proper implementation)
+        WAS_DESTROYED_ROOMS = set(list(WAS_DESTROYED_ROOMS)[-500:])
+    
+    return len(WAS_DESTROYED_ROOMS)
 
 def load_fcm_tokens():
     conn = sqlite3.connect(DB_PATH)
@@ -545,6 +559,9 @@ async def destroy_room(room: str):
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
     
+    # ✅ NEW: Track that this room was ever destroyed
+    WAS_DESTROYED_ROOMS.add(room)
+
     # ✅ NEW: Broadcast to ALL connected clients to clear this room from storage
     await sio.emit("clear_room_from_storage", {"room": room})
 
@@ -948,6 +965,9 @@ async def startup_tasks():
             else:
                 print(f"✅ No old destroyed rooms to clean up")
 
+            # ✅ NEW: Clean up WAS_DESTROYED_ROOMS
+            cleanup_old_was_destroyed_rooms()
+            
             await asyncio.sleep(120)  # Run every 2 minutes
 
     async def ping_self():
@@ -1350,6 +1370,14 @@ async def get_unread_counts(request: Request):
 @app.get("/room-status/{room}")
 async def get_room_status(room: str):
     """Check if room is destroyed and get destruction time"""
+    # ✅ NEW: Check if room was EVER destroyed
+    if room in WAS_DESTROYED_ROOMS:
+        return JSONResponse({
+            "destroyed": False,  # Not currently destroyed
+            "was_destroyed": True,  # But was destroyed before
+            "time_remaining": 0
+        })
+    
     if room in DESTROYED_ROOMS:
         try:
             conn = sqlite3.connect(DB_PATH)
@@ -1362,11 +1390,12 @@ async def get_room_status(room: str):
                 destroyed_at = datetime.fromisoformat(row[0])
                 now = datetime.now(timezone.utc)
                 time_elapsed = (now - destroyed_at).total_seconds()
-                time_remaining = max(0, 300 - time_elapsed)  # 5 minutes = 300 second
+                time_remaining = max(0, 300 - time_elapsed)  # 5 minutes = 300 seconds
 
                 return JSONResponse(
                     {
                         "destroyed": True,
+                        "was_destroyed": True,
                         "destroyed_at": row[0],
                         "time_remaining": time_remaining,
                     }
@@ -1374,7 +1403,10 @@ async def get_room_status(room: str):
         except Exception as e:
             print(f"Error getting room status: {e}")
 
-    return JSONResponse({"destroyed": False})
+    return JSONResponse({
+        "destroyed": False,
+        "was_destroyed": False
+    })
 
 
 @app.get("/destroyed_rooms")
