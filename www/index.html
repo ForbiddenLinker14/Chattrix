@@ -1096,8 +1096,21 @@
         // ✅ Check if room is destroyed before joining
     const roomStatus = await checkRoomStatus(currentRoom);
     if (roomStatus.destroyed) {
-        showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
-        return; // Prevent joining
+        // Check if timer has ended (0 or negative time remaining)
+        if (roomStatus.time_remaining <= 0) {
+            // Timer ended, but room might still be in destroyed set due to server cleanup delay
+            // Allow the join to proceed - server will reject if still destroyed
+            console.log(`⏰ Timer ended for room ${currentRoom}, attempting join...`);
+            closeDestroyedRoomAlert();
+            // Continue with join - server will handle the final check
+        } else {
+            // Room is still destroyed with time remaining
+            showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
+            return; // Prevent joining
+        }
+    } else {
+        // Room is not destroyed, close any existing alert
+        closeDestroyedRoomAlert();
     }
 
         Storage.set("chat_name", currentName);
@@ -1352,6 +1365,9 @@ async function checkRoomStatus(room) {
 function showDestroyedRoomAlert(room, initialTimeRemaining) {
     let timeRemaining = Math.floor(initialTimeRemaining);
     
+    // Close any existing alert first
+    closeDestroyedRoomAlert();
+    
     // Create alert overlay
     const overlay = document.createElement('div');
     overlay.id = 'destroyed-room-alert';
@@ -1383,7 +1399,7 @@ function showDestroyedRoomAlert(room, initialTimeRemaining) {
         <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
         <p>Room <strong>"${room}"</strong> has been destroyed and cannot be joined yet.</p>
         <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
-        <p style="font-size: 12px; color: #888;">Checking server status every 30 seconds...</p>
+        <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
         <button onclick="closeDestroyedRoomAlert()" style="
             background: #27ae60;
             color: white;
@@ -1398,6 +1414,9 @@ function showDestroyedRoomAlert(room, initialTimeRemaining) {
     overlay.appendChild(alertBox);
     document.body.appendChild(overlay);
     
+    // Store room name for later reference
+    overlay._room = room;
+    
     // Start countdown
     const countdownEl = document.getElementById('countdown-timer');
     const countdownInterval = setInterval(() => {
@@ -1407,19 +1426,41 @@ function showDestroyedRoomAlert(room, initialTimeRemaining) {
         }
         if (timeRemaining <= 0) {
             clearInterval(countdownInterval);
+            // When timer ends, update message
+            if (countdownEl) {
+                countdownEl.textContent = '0';
+                countdownEl.style.color = '#e74c3c';
+            }
         }
     }, 1000);
     
-    // Check server status every 30 seconds
+    // Check server status every 10 seconds (more frequent)
     const statusCheckInterval = setInterval(async () => {
-        const status = await checkRoomStatus(room);
-        if (!status.destroyed) {
-            clearInterval(countdownInterval);
-            clearInterval(statusCheckInterval);
-            closeDestroyedRoomAlert();
-            // Room is no longer destroyed, user can try to join again
+        try {
+            const status = await checkRoomStatus(room);
+            if (!status.destroyed) {
+                clearInterval(countdownInterval);
+                clearInterval(statusCheckInterval);
+                closeDestroyedRoomAlert();
+                console.log(`✅ Room ${room} is no longer destroyed, alert closed`);
+            } else {
+                // Update timer with actual remaining time from server
+                if (countdownEl && status.time_remaining) {
+                    const serverTimeRemaining = Math.floor(status.time_remaining);
+                    if (serverTimeRemaining !== timeRemaining) {
+                        timeRemaining = serverTimeRemaining;
+                        countdownEl.textContent = serverTimeRemaining;
+                        
+                        if (serverTimeRemaining <= 0) {
+                            countdownEl.style.color = '#e74c3c';
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('Room status check failed:', err);
         }
-    }, 30000);
+    }, 10000); // Check every 10 seconds
     
     // Store intervals for cleanup
     overlay._intervals = [countdownInterval, statusCheckInterval];

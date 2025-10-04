@@ -106,13 +106,13 @@ def remove_destroyed_room(room: str):
 
 
 def cleanup_old_destroyed_rooms():
-    """Remove destroyed rooms that are older than 2 minutes (for testing) and clean up all related data"""
+    """Remove destroyed rooms that are older than 1.5 minutes and clean up all related data"""
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
-        # First, get the rooms that will be deleted (2 minutes for testing)
-        cutoff_time = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        # First, get the rooms that will be deleted (1.5 minutes for testing)
+        cutoff_time = (datetime.now(timezone.utc) - timedelta(minutes=1.5)).isoformat()
         c.execute(
             "SELECT room FROM destroyed_rooms WHERE destroyed_at < ?", (cutoff_time,)
         )
@@ -153,20 +153,17 @@ def cleanup_old_destroyed_rooms():
                 for key in room_message_keys:
                     LAST_MESSAGE.pop(key, None)
 
+                # ✅ IMPORTANT: Remove from DESTROYED_ROOMS set
+                if room in DESTROYED_ROOMS:
+                    DESTROYED_ROOMS.remove(room)
+                
                 print(f"🧹 Completely cleaned up room: {room}")
 
-            print(
-                f"✅ Cleaned up {len(rooms_to_delete)} destroyed rooms and all related data"
-            )
+            print(f"✅ Cleaned up {len(rooms_to_delete)} destroyed rooms and all related data")
         else:
             print("✅ No old destroyed rooms to clean up")
 
         conn.close()
-
-        # Also update in-memory set
-        global DESTROYED_ROOMS
-        DESTROYED_ROOMS = load_destroyed_rooms()
-
         return len(rooms_to_delete)
 
     except Exception as e:
