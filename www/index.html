@@ -1113,82 +1113,43 @@
       const overlay = document.createElement("div");
       overlay.id = "destroyed-room-alert";
       overlay.style = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;`;
-
-      // ✅ DYNAMIC MESSAGE based on timeRemaining
-      let messageHtml;
-      if (timeRemaining > 0) {
-        messageHtml = `
-            <p>Room <strong>"${room}"</strong> is currently destroyed and cannot be joined yet.</p>
-            <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
-            <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
-        `;
-      } else {
-        messageHtml = `
-            <p>Room <strong>"${room}"</strong> was previously destroyed.</p>
-            <p>Auto-join is blocked. You can manually join after the destruction period.</p>
-            <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
-        `;
-      }
-
       const alertBox = document.createElement("div");
       alertBox.style = `background: #1a1812; padding: 20px; border-radius: 12px; border: 2px solid #e74c3c; max-width: 400px; text-align: center; color: #eaeaea;`;
-      alertBox.innerHTML = `
-        <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
-        ${messageHtml}
-        <button onclick="closeDestroyedRoomAlert()" style="background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 10px;">Close</button>
-    `;
-
+      alertBox.innerHTML = `<h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
+        <p>Room <strong>"${room}"</strong> has been destroyed and cannot be joined yet.</p>
+        <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
+        <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
+        <button onclick="closeDestroyedRoomAlert()" style="background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 10px;">Close</button>`;
       overlay.appendChild(alertBox);
       document.body.appendChild(overlay);
       overlay._room = room;
-
-      // ✅ Only start countdown if there's actual time remaining
       const countdownEl = document.getElementById("countdown-timer");
-      let countdownInterval;
-
-      if (timeRemaining > 0 && countdownEl) {
-        countdownInterval = setInterval(() => {
-          timeRemaining--;
-          countdownEl.textContent = timeRemaining;
-          if (timeRemaining <= 0) {
-            clearInterval(countdownInterval);
-            countdownEl.textContent = "0";
-            countdownEl.style.color = "#e74c3c";
-          }
-        }, 1000);
-      }
-
-      // ✅ FIXED: Check BOTH destroyed AND was_destroyed
+      const countdownInterval = setInterval(() => {
+        timeRemaining--;
+        if (countdownEl) countdownEl.textContent = timeRemaining;
+        if (timeRemaining <= 0) {
+          clearInterval(countdownInterval);
+          if (countdownEl) { countdownEl.textContent = "0"; countdownEl.style.color = "#e74c3c"; }
+        }
+      }, 1000);
       const statusCheckInterval = setInterval(async () => {
         try {
           const status = await checkRoomStatus(room);
-
-          // ✅ CLOSE ALERT only if room is NOT destroyed AND was NEVER destroyed
           if (!status.destroyed && !status.was_destroyed) {
-            clearInterval(countdownInterval);
-            clearInterval(statusCheckInterval);
-            closeDestroyedRoomAlert();
+            clearInterval(countdownInterval); clearInterval(statusCheckInterval); closeDestroyedRoomAlert();
           } else {
-            // Update countdown if room is currently destroyed
-            if (countdownEl && status.destroyed && status.time_remaining) {
+            if (countdownEl && status.time_remaining) {
               const serverTimeRemaining = Math.floor(status.time_remaining);
               if (serverTimeRemaining !== timeRemaining) {
                 timeRemaining = serverTimeRemaining;
                 countdownEl.textContent = serverTimeRemaining;
-                if (serverTimeRemaining <= 0) {
-                  countdownEl.style.color = "#e74c3c";
-                } else {
-                  countdownEl.style.color = "#25d366";
-                }
+                if (serverTimeRemaining <= 0) countdownEl.style.color = "#e74c3c";
               }
             }
           }
-        } catch (err) {
-          console.warn("Room status check failed:", err);
-        }
+        } catch (err) { console.warn("Room status check failed:", err); }
       }, 10000);
-
-      overlay._intervals = [countdownInterval, statusCheckInterval].filter(Boolean);
+      overlay._intervals = [countdownInterval, statusCheckInterval];
     }
 
     function closeDestroyedRoomAlert() {
