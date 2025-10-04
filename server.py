@@ -558,9 +558,9 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-     # ✅ Check if room was permanently destroyed - REJECT JOIN immediately
+   # ✅ EXPLICIT CHECK - Immediately reject destroyed rooms
     if room in DESTROYED_ROOMS:
-        print(f"🚫 Blocked join attempt to destroyed room: {room} by {username}")
+        print(f"🚫 BLOCKED join attempt to destroyed room: {room} by {username}")
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
@@ -1352,6 +1352,17 @@ async def get_destroyed_rooms():
     Clients call this on startup to remove stale rooms from localStorage.
     """
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
+
+
+@app.get("/room-status/{room}")
+async def get_room_status(room: str):
+    """Check if a room is destroyed"""
+    is_destroyed = room in DESTROYED_ROOMS
+    return JSONResponse({
+        "room": room,
+        "destroyed": is_destroyed,
+        "message": "Room is permanently destroyed" if is_destroyed else "Room is active"
+    })
 
 
 @app.post("/revive-room/{room}")

@@ -1136,7 +1136,7 @@
       // =============== Room Management ======================
       // ======================================================
       // ----------------- Join Room -----------------
-      function joinRoom() {
+      async function joinRoom() {
         currentName = document.getElementById("name").value.trim();
         currentRoom = document.getElementById("room").value.trim();
 
@@ -1145,11 +1145,39 @@
           return;
         }
 
-       // ✅ ADD THIS CHECK - Prevent joining destroyed rooms
-  if (window.destroyedRooms && window.destroyedRooms.includes(currentRoom)) {
-    showDestroyedRoomAlert(currentRoom);
-    return;
+       // ✅ CHECK FOR DESTROYED ROOMS - Client-side + Server-side verification
+async function checkIfRoomDestroyed(room) {
+  // First check client-side cache
+  if (window.destroyedRooms && window.destroyedRooms.includes(room)) {
+    return true;
   }
+  
+  // Then verify with server
+  try {
+    const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
+    if (response.ok) {
+      const roomStatus = await response.json();
+      if (roomStatus.destroyed) {
+        // Update local cache
+        if (!window.destroyedRooms) window.destroyedRooms = [];
+        if (!window.destroyedRooms.includes(room)) {
+          window.destroyedRooms.push(room);
+        }
+        return true;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to check room status:", err);
+  }
+  
+  return false;
+}
+
+// Use it in joinRoom:
+if (await checkIfRoomDestroyed(currentRoom)) {
+  showDestroyedRoomAlert(currentRoom);
+  return;
+}
 
         if (joinedRooms.has(currentRoom)) {
           alert(`You are already in room "${currentRoom}"!`);
@@ -1218,6 +1246,8 @@
         // Add this socket event listener in your joinRoom function
         socket.on("room_permanently_destroyed", (data) => {
           console.log(`💥 Room ${data.room} was permanently destroyed`);
+          console.log(`💥 Server rejected join: Room ${data.room} was permanently destroyed`);
+          showDestroyedRoomAlert(data.room);
 
           // Clear local storage
           Storage.remove("chat_name");
@@ -2974,7 +3004,7 @@ function showDestroyedRoomAlert(room) {
           console.log("✅", data.message);
 
           unsubscribeUser(currentName, currentRoom);
-
+          await loadDestroyedRooms();
           // reset UI
           document.getElementById("messages").innerHTML = "";
           addMessage({
@@ -3116,60 +3146,30 @@ window.addEventListener("load", async () => {
   const savedRoom = Storage.get("chat_room");
 
   if (savedName && savedRoom) {
-    // ✅ Check if room is destroyed before auto-joining
-    if (window.destroyedRooms && window.destroyedRooms.includes(savedRoom)) {
-      Storage.remove("chat_name");
-      Storage.remove("chat_room");
-      document.getElementById("intro").style.display = "block";
-      console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
-      return;
-    }
-
-    // ✅ NEW: Check if room exists and is not permanently destroyed
+    // ✅ ENHANCED CHECK: Verify room status with server before auto-joining
     try {
-      const response = await fetch(
-        `${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`
-      );
+      const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`);
       if (response.ok) {
         const roomStatus = await response.json();
-
+        
         if (roomStatus.destroyed) {
-          // Room was permanently destroyed - clear storage
+          // Room was destroyed - clear storage and show alert
           Storage.remove("chat_name");
           Storage.remove("chat_room");
-
-          // Remove from joined rooms
-          joinedRoomsByUser = JSON.parse(
-            localStorage.getItem("joinedRoomsByUser") || "{}"
-          );
-          if (joinedRoomsByUser[savedName]) {
-            joinedRoomsByUser[savedName] = joinedRoomsByUser[
-              savedName
-            ].filter((r) => r !== savedRoom);
-            localStorage.setItem(
-              "joinedRoomsByUser",
-              JSON.stringify(joinedRoomsByUser)
-            );
-          }
-
+          showDestroyedRoomAlert(savedRoom);
           document.getElementById("intro").style.display = "block";
-          console.log(
-            `⚠️ Room ${savedRoom} was permanently destroyed, preventing auto-join`
-          );
+          console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
           return;
         }
       }
     } catch (err) {
-      console.warn(
-        "Failed to check room status, proceeding with join:",
-        err
-      );
+      console.warn("Failed to check room status, proceeding with join:", err);
     }
 
     // Room is safe to join
     document.getElementById("name").value = savedName;
     document.getElementById("room").value = savedRoom;
-    joinRoom({ preserveMessages: true });
+    joinRoom();
   } else {
     document.getElementById("intro").style.display = "block";
   }
