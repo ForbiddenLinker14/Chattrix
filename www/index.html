@@ -623,6 +623,63 @@
         color: #fff;
         font-weight: bold;
       }
+
+      /* Destroyed Room Alert Styles */
+.destroyed-room-alert {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  font-family: Arial, sans-serif;
+}
+
+.destroyed-room-alert-box {
+  background: #1a1812;
+  border: 2px solid #e74c3c;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+  color: #eaeaea;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.destroyed-room-title {
+  color: #e74c3c;
+  margin: 0 0 15px 0;
+  font-size: 1.3em;
+}
+
+.destroyed-room-countdown {
+  font-size: 1.1em;
+  margin: 15px 0;
+  padding: 10px;
+  background: #2c3e50;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+.destroyed-room-button {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  margin-top: 10px;
+}
+
+.destroyed-room-button:hover {
+  background: #c0392b;
+}
     </style>
   </head>
 
@@ -1087,6 +1144,12 @@
           alert("Enter name and room first!");
           return;
         }
+
+        // ✅ Check if room is in destroyed rooms list
+  if (window.destroyedRooms && window.destroyedRooms.includes(currentRoom)) {
+    showDestroyedRoomAlert(currentRoom);
+    return;
+  }
 
         if (joinedRooms.has(currentRoom)) {
           alert(`You are already in room "${currentRoom}"!`);
@@ -2750,6 +2813,139 @@
         }
       };
 
+      // ======================================================
+// =============== Destroyed Room Alert ================
+// ======================================================
+function showDestroyedRoomAlert(room) {
+  let secondsLeft = 120;
+  
+  // Create alert overlay
+  const alertOverlay = document.createElement("div");
+  alertOverlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    font-family: Arial, sans-serif;
+  `;
+  
+  const alertBox = document.createElement("div");
+  alertBox.style.cssText = `
+    background: #1a1812;
+    border: 2px solid #e74c3c;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    color: #eaeaea;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  `;
+  
+  const title = document.createElement("h3");
+  title.textContent = "🚫 Room Destroyed";
+  title.style.cssText = `
+    color: #e74c3c;
+    margin: 0 0 15px 0;
+    font-size: 1.3em;
+  `;
+  
+  const message = document.createElement("p");
+  message.textContent = `Room "${room}" has been permanently destroyed.`;
+  message.style.cssText = `
+    margin: 0 0 15px 0;
+    line-height: 1.4;
+  `;
+  
+  const countdown = document.createElement("div");
+  countdown.style.cssText = `
+    font-size: 1.1em;
+    margin: 15px 0;
+    padding: 10px;
+    background: #2c3e50;
+    border-radius: 8px;
+    font-weight: bold;
+  `;
+  
+  const okButton = document.createElement("button");
+  okButton.textContent = "OK";
+  okButton.style.cssText = `
+    background: #e74c3c;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 10px;
+  `;
+  
+  okButton.onclick = () => {
+    document.body.removeChild(alertOverlay);
+  };
+  
+  alertBox.appendChild(title);
+  alertBox.appendChild(message);
+  alertBox.appendChild(countdown);
+  alertBox.appendChild(okButton);
+  alertOverlay.appendChild(alertBox);
+  document.body.appendChild(alertOverlay);
+  
+  // Start countdown
+  const updateCountdown = () => {
+    countdown.textContent = `Try again in: ${secondsLeft} seconds`;
+    secondsLeft--;
+    
+    if (secondsLeft >= 0) {
+      setTimeout(updateCountdown, 1000);
+    } else {
+      countdown.textContent = "You can now try to join again";
+      countdown.style.background = "#27ae60";
+    }
+  };
+  
+  updateCountdown();
+  
+  // Close on outside click
+  alertOverlay.onclick = (e) => {
+    if (e.target === alertOverlay) {
+      document.body.removeChild(alertOverlay);
+    }
+  };
+  
+  // Close on Escape key
+  const handleKeydown = (e) => {
+    if (e.key === "Escape") {
+      document.body.removeChild(alertOverlay);
+      window.removeEventListener("keydown", handleKeydown);
+    }
+  };
+  window.addEventListener("keydown", handleKeydown);
+}
+
+// ======================================================
+// =============== Load Destroyed Rooms ================
+// ======================================================
+async function loadDestroyedRooms() {
+  try {
+    const response = await fetch(`${API_BASE}/destroyed_rooms`);
+    if (response.ok) {
+      const data = await response.json();
+      window.destroyedRooms = data.destroyed || [];
+      console.log("🚫 Loaded destroyed rooms:", window.destroyedRooms);
+    }
+  } catch (err) {
+    console.warn("Failed to load destroyed rooms:", err);
+    window.destroyedRooms = [];
+  }
+}
+
       window.destroyRoom = async function destroyRoom() {
         if (!currentRoom) {
           alert("Join a room first!");
@@ -2911,61 +3107,72 @@
       // ======================================================
       // =============== Initialization =======================
       // ======================================================
-      window.addEventListener("load", async () => {
-        await requestNotificationPermission();
-        const savedName = Storage.get("chat_name");
-        const savedRoom = Storage.get("chat_room");
+window.addEventListener("load", async () => {
+  await requestNotificationPermission();
+  await loadDestroyedRooms(); // ✅ Load destroyed rooms on startup
+  
+  const savedName = Storage.get("chat_name");
+  const savedRoom = Storage.get("chat_room");
 
-        if (savedName && savedRoom) {
-          // ✅ NEW: Check if room exists and is not permanently destroyed
-          try {
-            const response = await fetch(
-              `${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`
-            );
-            if (response.ok) {
-              const roomStatus = await response.json();
+  if (savedName && savedRoom) {
+    // ✅ Check if room is destroyed before auto-joining
+    if (window.destroyedRooms && window.destroyedRooms.includes(savedRoom)) {
+      Storage.remove("chat_name");
+      Storage.remove("chat_room");
+      document.getElementById("intro").style.display = "block";
+      console.log(`⚠️ Room ${savedRoom} was destroyed, preventing auto-join`);
+      return;
+    }
 
-              if (roomStatus.destroyed) {
-                // Room was permanently destroyed - clear storage
-                Storage.remove("chat_name");
-                Storage.remove("chat_room");
+    // ✅ NEW: Check if room exists and is not permanently destroyed
+    try {
+      const response = await fetch(
+        `${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`
+      );
+      if (response.ok) {
+        const roomStatus = await response.json();
 
-                // Remove from joined rooms
-                joinedRoomsByUser = JSON.parse(
-                  localStorage.getItem("joinedRoomsByUser") || "{}"
-                );
-                if (joinedRoomsByUser[savedName]) {
-                  joinedRoomsByUser[savedName] = joinedRoomsByUser[
-                    savedName
-                  ].filter((r) => r !== savedRoom);
-                  localStorage.setItem(
-                    "joinedRoomsByUser",
-                    JSON.stringify(joinedRoomsByUser)
-                  );
-                }
+        if (roomStatus.destroyed) {
+          // Room was permanently destroyed - clear storage
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
 
-                document.getElementById("intro").style.display = "block";
-                console.log(
-                  `⚠️ Room ${savedRoom} was permanently destroyed, preventing auto-join`
-                );
-                return;
-              }
-            }
-          } catch (err) {
-            console.warn(
-              "Failed to check room status, proceeding with join:",
-              err
+          // Remove from joined rooms
+          joinedRoomsByUser = JSON.parse(
+            localStorage.getItem("joinedRoomsByUser") || "{}"
+          );
+          if (joinedRoomsByUser[savedName]) {
+            joinedRoomsByUser[savedName] = joinedRoomsByUser[
+              savedName
+            ].filter((r) => r !== savedRoom);
+            localStorage.setItem(
+              "joinedRoomsByUser",
+              JSON.stringify(joinedRoomsByUser)
             );
           }
 
-          // Room is safe to join
-          document.getElementById("name").value = savedName;
-          document.getElementById("room").value = savedRoom;
-          joinRoom({ preserveMessages: true });
-        } else {
           document.getElementById("intro").style.display = "block";
+          console.log(
+            `⚠️ Room ${savedRoom} was permanently destroyed, preventing auto-join`
+          );
+          return;
         }
-      });
+      }
+    } catch (err) {
+      console.warn(
+        "Failed to check room status, proceeding with join:",
+        err
+      );
+    }
+
+    // Room is safe to join
+    document.getElementById("name").value = savedName;
+    document.getElementById("room").value = savedRoom;
+    joinRoom({ preserveMessages: true });
+  } else {
+    document.getElementById("intro").style.display = "block";
+  }
+});
 
       // ======================================================
       // =============== Capacitor Push Notifications =========

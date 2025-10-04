@@ -558,8 +558,9 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # ✅ Check if room was permanently destroyed - REJECT JOIN
+     # ✅ Check if room was permanently destroyed - REJECT JOIN immediately
     if room in DESTROYED_ROOMS:
+        print(f"🚫 Blocked join attempt to destroyed room: {room} by {username}")
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
@@ -946,7 +947,7 @@ async def startup_tasks():
             else:
                 print(f"✅ No old destroyed rooms to clean up")
 
-            await asyncio.sleep(60)  # Run every 1 minutes
+            await asyncio.sleep(120)  # Run every 2 minutes
 
     async def ping_self():
         url = "https://realtime-chat-1mv3.onrender.com"
