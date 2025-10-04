@@ -1079,7 +1079,7 @@
       // =============== Room Management ======================
       // ======================================================
       // ----------------- Join Room -----------------
-     async function joinRoom() {
+      async function joinRoom() {
         currentName = document.getElementById("name").value.trim();
         currentRoom = document.getElementById("room").value.trim();
 
@@ -1088,26 +1088,17 @@
           return;
         }
 
-          // ✅ NEW: Check if room is destroyed before joining
-  try {
-    const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(currentRoom)}`);
-    if (response.ok) {
-      const roomStatus = await response.json();
-      
-      if (roomStatus.destroyed) {
-        // Room is destroyed - show countdown alert
-        showDestroyedRoomAlert(currentRoom, roomStatus.destroyed_at);
-        return;
-      }
-    }
-  } catch (err) {
-    console.warn("Failed to check room status, proceeding with join:", err);
-  }
-
         if (joinedRooms.has(currentRoom)) {
           alert(`You are already in room "${currentRoom}"!`);
           return;
         }
+
+        // ✅ Check if room is destroyed before joining
+    const roomStatus = await checkRoomStatus(currentRoom);
+    if (roomStatus.destroyed) {
+        showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
+        return; // Prevent joining
+    }
 
         Storage.set("chat_name", currentName);
         Storage.set("chat_room", currentRoom);
@@ -1341,40 +1332,44 @@
         renderJoinedRooms();
       }
 
-// ✅ NEW: Show countdown alert for destroyed rooms
-function showDestroyedRoomAlert(room, destroyedAt) {
-    const destroyedTime = new Date(destroyedAt);
-    const now = new Date();
-    const timeSinceDestroy = now - destroyedTime;
-    const twoMinutes = 2 * 60 * 1000; // 2 minutes in milliseconds
-    
-    // Calculate remaining time
-    let remainingTime = Math.max(0, twoMinutes - timeSinceDestroy);
-    const remainingSeconds = Math.ceil(remainingTime / 1000);
-    
-    if (remainingSeconds <= 0) {
-        // Room should be available now, try joining
-        joinRoom();
-        return;
+      // ======================================================
+// =============== Check Room Status ====================
+// ======================================================
+async function checkRoomStatus(room) {
+    try {
+        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
+        if (!response.ok) throw new Error('Failed to check room status');
+        return await response.json();
+    } catch (err) {
+        console.warn('Room status check failed:', err);
+        return { destroyed: false };
     }
+}
+
+// ======================================================
+// =============== Show Destroyed Room Alert ============
+// ======================================================
+function showDestroyedRoomAlert(room, initialTimeRemaining) {
+    let timeRemaining = Math.floor(initialTimeRemaining);
     
     // Create alert overlay
-    const alertOverlay = document.createElement("div");
-    alertOverlay.style.cssText = `
+    const overlay = document.createElement('div');
+    overlay.id = 'destroyed-room-alert';
+    overlay.style = `
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.8);
+        background: rgba(0,0,0,0.8);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 10000;
     `;
     
-    const alertBox = document.createElement("div");
-    alertBox.style.cssText = `
+    const alertBox = document.createElement('div');
+    alertBox.style = `
         background: #1a1812;
         padding: 20px;
         border-radius: 12px;
@@ -1384,147 +1379,60 @@ function showDestroyedRoomAlert(room, destroyedAt) {
         color: #eaeaea;
     `;
     
-    const countdownEl = document.createElement("div");
-    countdownEl.id = "destroyed-room-countdown";
-    countdownEl.style.cssText = `
-        font-size: 24px;
-        font-weight: bold;
-        color: #e74c3c;
-        margin: 15px 0;
-    `;
-    countdownEl.textContent = `${remainingSeconds}s`;
-    
     alertBox.innerHTML = `
         <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
-        <p>Room <strong>"${room}"</strong> has been destroyed.</p>
-        <p>Please wait while the room is being cleared...</p>
-        <p style="font-size: 12px; color: #999; margin: 10px 0;">
-            Checking room status every 30 seconds...
-        </p>
+        <p>Room <strong>"${room}"</strong> has been destroyed and cannot be joined yet.</p>
+        <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
+        <p style="font-size: 12px; color: #888;">Checking server status every 30 seconds...</p>
+        <button onclick="closeDestroyedRoomAlert()" style="
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-top: 10px;
+        ">Close</button>
     `;
     
-    alertBox.appendChild(countdownEl);
-    alertBox.innerHTML += `
-        <p style="font-size: 14px; color: #999; margin-top: 10px;">
-            You can try again in: 
-        </p>
-        <button onclick="closeDestroyedRoomAlert()" 
-                style="background: #e74c3c; color: white; border: none; 
-                       padding: 8px 16px; border-radius: 6px; cursor: pointer; 
-                       margin-top: 10px;">
-            Close
-        </button>
-    `;
+    overlay.appendChild(alertBox);
+    document.body.appendChild(overlay);
     
-    alertOverlay.appendChild(alertBox);
-    alertOverlay.id = "destroyed-room-alert";
-    document.body.appendChild(alertOverlay);
-    
-    // Start countdown with 30-second status checks
-    startCountdown(remainingSeconds, room);
-}
-
-// ✅ NEW: Start countdown timer with 30-second status checks
-function startCountdown(seconds, room) {
-    let timeLeft = seconds;
-    const countdownEl = document.getElementById("destroyed-room-countdown");
-    
+    // Start countdown
+    const countdownEl = document.getElementById('countdown-timer');
     const countdownInterval = setInterval(() => {
-        timeLeft--;
+        timeRemaining--;
         if (countdownEl) {
-            countdownEl.textContent = `${timeLeft}s`;
+            countdownEl.textContent = timeRemaining;
         }
-        
-        // Check room status every 30 seconds
-        const now = Date.now();
-        if (now - lastStatusCheck >= STATUS_CHECK_INTERVAL) {
-            lastStatusCheck = now;
-            checkRoomStatus(room);
-        }
-        
-        if (timeLeft <= 0) {
+        if (timeRemaining <= 0) {
             clearInterval(countdownInterval);
-            closeDestroyedRoomAlert();
-            // Auto-retry joining
-            joinRoom();
         }
     }, 1000);
     
-    // Store interval ID for cleanup
-    window.destroyedRoomCountdown = countdownInterval;
-}
-
-function startStatusCheck(room) {
-  let isChecking = true;
-  
-  const check = async () => {
-    if (!isChecking) return;
-    
-    await checkRoomStatus(room);
-    
-    if (isChecking) {
-      window.destroyedRoomStatusTimeout = setTimeout(check, 30000);
-    }
-  };
-  
-  // Start first check
-  check();
-  
-  // Return function to stop checking
-  return () => {
-    isChecking = false;
-    if (window.destroyedRoomStatusTimeout) {
-      clearTimeout(window.destroyedRoomStatusTimeout);
-    }
-  };
-}
-
-// ✅ NEW: Function to check room status periodically
-async function checkRoomStatus(room) {
-    try {
-        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
-        if (response.ok) {
-            const roomStatus = await response.json();
-            
-            if (!roomStatus.destroyed) {
-                // Room is no longer destroyed - close alert and allow join
-                console.log("✅ Room is now available!");
-                closeDestroyedRoomAlert();
-                
-                // Update the countdown display to show it's available
-                const countdownEl = document.getElementById("destroyed-room-countdown");
-                if (countdownEl) {
-                    countdownEl.textContent = "Room available!";
-                    countdownEl.style.color = "#25d366";
-                }
-                
-                // Clear the interval since room is available
-                if (window.destroyedRoomCountdown) {
-                    clearInterval(window.destroyedRoomCountdown);
-                    window.destroyedRoomCountdown = null;
-                }
-                
-                // Auto-join after a brief delay
-                setTimeout(() => {
-                    joinRoom();
-                }, 2000);
-            }
+    // Check server status every 30 seconds
+    const statusCheckInterval = setInterval(async () => {
+        const status = await checkRoomStatus(room);
+        if (!status.destroyed) {
+            clearInterval(countdownInterval);
+            clearInterval(statusCheckInterval);
+            closeDestroyedRoomAlert();
+            // Room is no longer destroyed, user can try to join again
         }
-    } catch (err) {
-        console.warn("Failed to check room status:", err);
-    }
+    }, 30000);
+    
+    // Store intervals for cleanup
+    overlay._intervals = [countdownInterval, statusCheckInterval];
 }
 
-// ✅ NEW: Close alert
 function closeDestroyedRoomAlert() {
-  const alert = document.getElementById("destroyed-room-alert");
-  if (alert) {
-    alert.remove();
-  }
-  if (window.destroyedRoomCountdown) {
-    clearInterval(window.destroyedRoomCountdown);
-    window.destroyedRoomCountdown = null;
-  }
+    const alert = document.getElementById('destroyed-room-alert');
+    if (alert && alert._intervals) {
+        alert._intervals.forEach(clearInterval);
+    }
+    if (alert) {
+        alert.remove();
+    }
 }
 
       // ======================================================
@@ -3113,61 +3021,59 @@ function closeDestroyedRoomAlert() {
       // ======================================================
       // =============== Initialization =======================
       // ======================================================
-      window.addEventListener("load", async () => {
-        await requestNotificationPermission();
-        const savedName = Storage.get("chat_name");
-        const savedRoom = Storage.get("chat_room");
+window.addEventListener("load", async () => {
+    await requestNotificationPermission();
+    const savedName = Storage.get("chat_name");
+    const savedRoom = Storage.get("chat_room");
 
-        if (savedName && savedRoom) {
-          // ✅ NEW: Check if room exists and is not permanently destroyed
-          try {
-            const response = await fetch(
-              `${API_BASE}/room-status/${encodeURIComponent(savedRoom)}`
-            );
-            if (response.ok) {
-              const roomStatus = await response.json();
-
-              if (roomStatus.destroyed) {
-                // Room was permanently destroyed - clear storage
+    if (savedName && savedRoom) {
+        // ✅ Check if room exists and is not permanently destroyed
+        try {
+            const roomStatus = await checkRoomStatus(savedRoom);
+            
+            if (roomStatus.destroyed) {
+                // Room is temporarily destroyed - show alert
+                showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
+                
+                // Clear storage to prevent auto-join attempts
                 Storage.remove("chat_name");
                 Storage.remove("chat_room");
-
+                
                 // Remove from joined rooms
                 joinedRoomsByUser = JSON.parse(
-                  localStorage.getItem("joinedRoomsByUser") || "{}"
+                    localStorage.getItem("joinedRoomsByUser") || "{}"
                 );
                 if (joinedRoomsByUser[savedName]) {
-                  joinedRoomsByUser[savedName] = joinedRoomsByUser[
-                    savedName
-                  ].filter((r) => r !== savedRoom);
-                  localStorage.setItem(
-                    "joinedRoomsByUser",
-                    JSON.stringify(joinedRoomsByUser)
-                  );
+                    joinedRoomsByUser[savedName] = joinedRoomsByUser[
+                        savedName
+                    ].filter((r) => r !== savedRoom);
+                    localStorage.setItem(
+                        "joinedRoomsByUser",
+                        JSON.stringify(joinedRoomsByUser)
+                    );
                 }
-
+                
                 document.getElementById("intro").style.display = "block";
-                console.log(
-                  `⚠️ Room ${savedRoom} was permanently destroyed, preventing auto-join`
-                );
+                console.log(`⚠️ Room ${savedRoom} is temporarily destroyed, preventing auto-join`);
                 return;
-              }
             }
-          } catch (err) {
-            console.warn(
-              "Failed to check room status, proceeding with join:",
-              err
-            );
-          }
-
-          // Room is safe to join
-          document.getElementById("name").value = savedName;
-          document.getElementById("room").value = savedRoom;
-          joinRoom({ preserveMessages: true });
-        } else {
-          document.getElementById("intro").style.display = "block";
+            
+            // Room is safe to join
+            document.getElementById("name").value = savedName;
+            document.getElementById("room").value = savedRoom;
+            joinRoom({ preserveMessages: true });
+            
+        } catch (err) {
+            console.warn("Failed to check room status, proceeding with join:", err);
+            // Fallback: proceed with join if status check fails
+            document.getElementById("name").value = savedName;
+            document.getElementById("room").value = savedRoom;
+            joinRoom({ preserveMessages: true });
         }
-      });
+    } else {
+        document.getElementById("intro").style.display = "block";
+    }
+});
 
       // ======================================================
       // =============== Capacitor Push Notifications =========
