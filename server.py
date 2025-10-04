@@ -1357,7 +1357,7 @@ async def get_room_status(room: str):
                 destroyed_at = datetime.fromisoformat(row[0])
                 now = datetime.now(timezone.utc)
                 time_elapsed = (now - destroyed_at).total_seconds()
-                time_remaining = max(0, 120 - time_elapsed)  # 2 minutes = 120 seconds
+                time_remaining = max(0, 180 - time_elapsed)  # 3 minutes = 180 seconds
                 
                 return JSONResponse({
                     "destroyed": True,
