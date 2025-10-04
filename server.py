@@ -1378,20 +1378,29 @@ async def get_unread_counts(request: Request):
     return JSONResponse({"unreadCounts": unread_counts})
 
 
-# Add this endpoint to check room status with destruction time
 @app.get("/room-status/{room}")
 async def get_room_status(room: str):
     """Check if room is destroyed and get destruction time"""
-    # ✅ NEW: Check if room was EVER destroyed
-    if room in WAS_DESTROYED_ROOMS:
-        return JSONResponse(
-            {
-                "destroyed": False,  # Not currently destroyed
-                "was_destroyed": True,  # But was destroyed before
-                "time_remaining": 0,
-            }
-        )
 
+    # ✅ Check if room was destroyed within last 1 year (WAS_DESTROYED_ROOMS)
+    if room in WAS_DESTROYED_ROOMS:
+        destroyed_at = WAS_DESTROYED_ROOMS[room]
+        now = datetime.now(timezone.utc)
+
+        # If destroyed less than 1 year ago, block auto-join
+        if (now - destroyed_at) < timedelta(days=365):
+            return JSONResponse(
+                {
+                    "destroyed": False,  # Not currently destroyed
+                    "was_destroyed": True,  # But was destroyed within 1 year
+                    "time_remaining": 0,
+                }
+            )
+        else:
+            # Remove if older than 1 year
+            del WAS_DESTROYED_ROOMS[room]
+
+    # ✅ Check if room is currently destroyed (DESTROYED_ROOMS)
     if room in DESTROYED_ROOMS:
         try:
             conn = sqlite3.connect(DB_PATH)
@@ -1408,8 +1417,8 @@ async def get_room_status(room: str):
 
                 return JSONResponse(
                     {
-                        "destroyed": True,
-                        "was_destroyed": True,
+                        "destroyed": True,  # Currently destroyed
+                        "was_destroyed": True,  # And was destroyed
                         "destroyed_at": row[0],
                         "time_remaining": time_remaining,
                     }
@@ -1417,6 +1426,7 @@ async def get_room_status(room: str):
         except Exception as e:
             print(f"Error getting room status: {e}")
 
+    # ✅ Room was never destroyed or destruction expired
     return JSONResponse({"destroyed": False, "was_destroyed": False})
 
 
