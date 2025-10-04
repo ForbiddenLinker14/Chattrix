@@ -1341,106 +1341,155 @@
         renderJoinedRooms();
       }
 
-      // ✅ NEW: Show countdown alert for destroyed rooms
+// ✅ NEW: Show countdown alert for destroyed rooms
 function showDestroyedRoomAlert(room, destroyedAt) {
-  const destroyedTime = new Date(destroyedAt);
-  const now = new Date();
-  const timeSinceDestroy = now - destroyedTime;
-  const twoMinutes = 2 * 60 * 1000; // 2 minutes in milliseconds
-  
-  // Calculate remaining time
-  let remainingTime = Math.max(0, twoMinutes - timeSinceDestroy);
-  const remainingSeconds = Math.ceil(remainingTime / 1000);
-  
-  if (remainingSeconds <= 0) {
-    // Room should be available now, try joining
-    joinRoom();
-    return;
-  }
-  
-  // Create alert overlay
-  const alertOverlay = document.createElement("div");
-  alertOverlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  `;
-  
-  const alertBox = document.createElement("div");
-  alertBox.style.cssText = `
-    background: #1a1812;
-    padding: 20px;
-    border-radius: 12px;
-    border: 2px solid #e74c3c;
-    max-width: 400px;
-    text-align: center;
-    color: #eaeaea;
-  `;
-  
-  const countdownEl = document.createElement("div");
-  countdownEl.id = "destroyed-room-countdown";
-  countdownEl.style.cssText = `
-    font-size: 24px;
-    font-weight: bold;
-    color: #e74c3c;
-    margin: 15px 0;
-  `;
-  countdownEl.textContent = `${remainingSeconds}s`;
-  
-  alertBox.innerHTML = `
-    <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
-    <p>Room <strong>"${room}"</strong> has been destroyed.</p>
-    <p>Please wait while the room is being cleared...</p>
-  `;
-  
-  alertBox.appendChild(countdownEl);
-  alertBox.innerHTML += `
-    <p style="font-size: 14px; color: #999; margin-top: 10px;">
-      You can try again in: 
-    </p>
-    <button onclick="closeDestroyedRoomAlert()" 
-            style="background: #e74c3c; color: white; border: none; 
-                   padding: 8px 16px; border-radius: 6px; cursor: pointer; 
-                   margin-top: 10px;">
-      Close
-    </button>
-  `;
-  
-  alertOverlay.appendChild(alertBox);
-  alertOverlay.id = "destroyed-room-alert";
-  document.body.appendChild(alertOverlay);
-  
-  // Start countdown
-  startCountdown(remainingSeconds, room);
-}
-
-// ✅ NEW: Start countdown timer
-function startCountdown(seconds, room) {
-  let timeLeft = seconds;
-  const countdownEl = document.getElementById("destroyed-room-countdown");
-  const countdownInterval = setInterval(() => {
-    timeLeft--;
-    if (countdownEl) {
-      countdownEl.textContent = `${timeLeft}s`;
+    const destroyedTime = new Date(destroyedAt);
+    const now = new Date();
+    const timeSinceDestroy = now - destroyedTime;
+    const twoMinutes = 2 * 60 * 1000; // 2 minutes in milliseconds
+    
+    // Calculate remaining time
+    let remainingTime = Math.max(0, twoMinutes - timeSinceDestroy);
+    const remainingSeconds = Math.ceil(remainingTime / 1000);
+    
+    if (remainingSeconds <= 0) {
+        // Room should be available now, try joining
+        joinRoom();
+        return;
     }
     
-    if (timeLeft <= 0) {
-      clearInterval(countdownInterval);
-      closeDestroyedRoomAlert();
-      // Auto-retry joining
-      joinRoom();
+    // Create alert overlay
+    const alertOverlay = document.createElement("div");
+    alertOverlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+    `;
+    
+    const alertBox = document.createElement("div");
+    alertBox.style.cssText = `
+        background: #1a1812;
+        padding: 20px;
+        border-radius: 12px;
+        border: 2px solid #e74c3c;
+        max-width: 400px;
+        text-align: center;
+        color: #eaeaea;
+    `;
+    
+    const countdownEl = document.createElement("div");
+    countdownEl.id = "destroyed-room-countdown";
+    countdownEl.style.cssText = `
+        font-size: 24px;
+        font-weight: bold;
+        color: #e74c3c;
+        margin: 15px 0;
+    `;
+    countdownEl.textContent = `${remainingSeconds}s`;
+    
+    alertBox.innerHTML = `
+        <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
+        <p>Room <strong>"${room}"</strong> has been destroyed.</p>
+        <p>Please wait while the room is being cleared...</p>
+        <p style="font-size: 12px; color: #999; margin: 10px 0;">
+            Checking room status every 30 seconds...
+        </p>
+    `;
+    
+    alertBox.appendChild(countdownEl);
+    alertBox.innerHTML += `
+        <p style="font-size: 14px; color: #999; margin-top: 10px;">
+            You can try again in: 
+        </p>
+        <button onclick="closeDestroyedRoomAlert()" 
+                style="background: #e74c3c; color: white; border: none; 
+                       padding: 8px 16px; border-radius: 6px; cursor: pointer; 
+                       margin-top: 10px;">
+            Close
+        </button>
+    `;
+    
+    alertOverlay.appendChild(alertBox);
+    alertOverlay.id = "destroyed-room-alert";
+    document.body.appendChild(alertOverlay);
+    
+    // Start countdown with 30-second status checks
+    startCountdown(remainingSeconds, room);
+}
+
+// ✅ NEW: Start countdown timer with 30-second status checks
+function startCountdown(seconds, room) {
+    let timeLeft = seconds;
+    const countdownEl = document.getElementById("destroyed-room-countdown");
+    let lastStatusCheck = 0;
+    const STATUS_CHECK_INTERVAL = 30000; // 30 seconds
+    
+    const countdownInterval = setInterval(() => {
+        timeLeft--;
+        if (countdownEl) {
+            countdownEl.textContent = `${timeLeft}s`;
+        }
+        
+        // Check room status every 30 seconds
+        const now = Date.now();
+        if (now - lastStatusCheck >= STATUS_CHECK_INTERVAL) {
+            lastStatusCheck = now;
+            checkRoomStatus(room);
+        }
+        
+        if (timeLeft <= 0) {
+            clearInterval(countdownInterval);
+            closeDestroyedRoomAlert();
+            // Auto-retry joining
+            joinRoom();
+        }
+    }, 1000);
+    
+    // Store interval ID for cleanup
+    window.destroyedRoomCountdown = countdownInterval;
+}
+
+// ✅ NEW: Function to check room status periodically
+async function checkRoomStatus(room) {
+    try {
+        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
+        if (response.ok) {
+            const roomStatus = await response.json();
+            
+            if (!roomStatus.destroyed) {
+                // Room is no longer destroyed - close alert and allow join
+                console.log("✅ Room is now available!");
+                closeDestroyedRoomAlert();
+                
+                // Update the countdown display to show it's available
+                const countdownEl = document.getElementById("destroyed-room-countdown");
+                if (countdownEl) {
+                    countdownEl.textContent = "Room available!";
+                    countdownEl.style.color = "#25d366";
+                }
+                
+                // Clear the interval since room is available
+                if (window.destroyedRoomCountdown) {
+                    clearInterval(window.destroyedRoomCountdown);
+                    window.destroyedRoomCountdown = null;
+                }
+                
+                // Auto-join after a brief delay
+                setTimeout(() => {
+                    joinRoom();
+                }, 2000);
+            }
+        }
+    } catch (err) {
+        console.warn("Failed to check room status:", err);
     }
-  }, 30000);
-  
-  // Store interval ID for cleanup
-  window.destroyedRoomCountdown = countdownInterval;
 }
 
 // ✅ NEW: Close alert
