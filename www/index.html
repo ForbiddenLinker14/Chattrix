@@ -2101,7 +2101,7 @@
         }
       }
 
-      function showUpdateBox(versionName, versionCode) {
+      function showUpdateBox(versionName, versionCode,latestVersionName) {
         if (overlay) return;
         overlay = document.createElement("div");
         overlay.style = `
@@ -2191,7 +2191,7 @@
 
         const currentCode = parseInt(manifest.versionCode || 0);
         const currentName = parseFloat(manifest.versionName || 0);
-        const latestVersionName = manifest.latestVersionName || currentName;
+        const latestVersionName = parseFloat(manifest.latestVersionName || currentName).toFixed(1);
 
         const outdated = currentCode < requiredVersionCode || currentName < requiredVersionName;
 
