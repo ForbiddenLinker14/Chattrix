@@ -81,7 +81,7 @@ def load_room_locks():
         c.execute("SELECT room, locked FROM room_locks")
         rows = c.fetchall()
         conn.close()
-        
+
         locks = {}
         for room, locked in rows:
             locks[room] = bool(locked)
@@ -89,22 +89,26 @@ def load_room_locks():
     except sqlite3.OperationalError:
         return {}
 
+
 # Add function to save room lock
 def save_room_lock(room: str, locked: bool, locked_by: str):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
+
     if locked:
         c.execute(
             "INSERT OR REPLACE INTO room_locks (room, locked, locked_by, locked_at) VALUES (?, ?, ?, ?)",
-            (room, 1, locked_by, datetime.now(timezone.utc).isoformat())
+            (room, 1, locked_by, datetime.now(timezone.utc).isoformat()),
         )
     else:
         c.execute("DELETE FROM room_locks WHERE room = ?", (room,))
-    
+
     conn.commit()
     conn.close()
+
+
 ROOM_LOCKS = load_room_locks()
+
 
 def load_destroyed_rooms():
     """Load all permanently destroyed rooms from DB"""
@@ -434,14 +438,16 @@ def init_db():
     )
 
     # Room locks table
-    c.execute('''
+    c.execute(
+        """
         CREATE TABLE IF NOT EXISTS room_locks (
             room TEXT PRIMARY KEY,
             locked BOOLEAN DEFAULT 0,
             locked_by TEXT,
             locked_at TEXT
         )
-    ''')
+    """
+    )
 
     conn.commit()
     conn.close()
@@ -639,34 +645,33 @@ async def join(sid, data):
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
-        # ✅ Check if room is locked - only block NEW users
+    # ✅ Check if room is locked - only block NEW users
     if ROOM_LOCKS.get(room, False):
-        # 🔥 FIX: More robust check for existing users
-        is_existing_user = False
-        
-        # Check room history first
-        if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
-            is_existing_user = True
-        else:
-            # Also check database messages to see if user has ever been in this room
+        # Check if user is already in room history (existing user)
+        is_existing_user = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+
+        # 🔴 FIX: Also check if user was previously in the room (for reconnects)
+        if not is_existing_user:
+            # Check database for previous membership
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
-            c.execute("SELECT COUNT(*) FROM messages WHERE room=? AND sender=?", (room, username))
-            message_count = c.fetchone()[0]
+            c.execute(
+                "SELECT COUNT(*) FROM messages WHERE room=? AND sender=?",
+                (room, username),
+            )
+            has_previous_messages = c.fetchone()[0] > 0
             conn.close()
-            
-            # If user has sent messages in this room before, consider them existing
-            if message_count > 0:
-                is_existing_user = True
-                # Add to room history for future checks
+
+            if not has_previous_messages:
+                await sio.emit(
+                    "room_locked",
+                    {"room": room, "message": "Room is locked. No new users can join."},
+                    to=sid,
+                )
+                return {"success": False, "error": "Room is locked"}
+            else:
+                # User has previous messages, allow rejoining
                 ROOM_HISTORY.setdefault(room, set()).add(username)
-        
-        if not is_existing_user:
-            await sio.emit("room_locked", {
-                "room": room, 
-                "message": "Room is locked. No new users can join."
-            }, to=sid)
-            return {"success": False, "error": "Room is locked"}
 
     # ✅ Simply ensure history exists and add user (no aggressive cleanup)
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -1421,6 +1426,7 @@ async def get_room_lock_status(room: str):
     is_locked = ROOM_LOCKS.get(room, False)
     return JSONResponse({"locked": is_locked})
 
+
 # Add this API endpoint to toggle room lock
 @app.post("/toggle-room-lock/{room}")
 async def toggle_room_lock(room: str, request: Request):
@@ -1428,20 +1434,20 @@ async def toggle_room_lock(room: str, request: Request):
     body = await request.json()
     username = body.get("username")
     lock_status = body.get("lock")
-    
+
     if not username:
         return JSONResponse({"error": "Username required"}, status_code=400)
-    
+
     ROOM_LOCKS[room] = lock_status
     save_room_lock(room, lock_status, username)
-    
+
     # Notify all users in the room about lock status change
-    await sio.emit("room_lock_updated", {
-        "room": room, 
-        "locked": lock_status,
-        "locked_by": username
-    }, room=room)
-    
+    await sio.emit(
+        "room_lock_updated",
+        {"room": room, "locked": lock_status, "locked_by": username},
+        room=room,
+    )
+
     return JSONResponse({"status": "success", "locked": lock_status})
 
 
