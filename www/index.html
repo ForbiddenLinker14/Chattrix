@@ -2082,15 +2082,17 @@
     });
   </script>
 
-  <script>
-    // Version Update Check System
-    document.addEventListener('DOMContentLoaded', function () {
-      // Create update alert element dynamically
-      const updateAlert = document.createElement('div');
-      updateAlert.id = 'update-alert';
-      updateAlert.style.cssText = 'display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10000; justify-content: center; align-items: center;';
-
-      updateAlert.innerHTML = `
+<script>
+// Enhanced Version Update Check System with Detailed Logging
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("🚀 ===== VERSION CHECK SYSTEM INITIALIZED =====");
+  
+  // Create update alert element dynamically
+  const updateAlert = document.createElement('div');
+  updateAlert.id = 'update-alert';
+  updateAlert.style.cssText = 'display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 10000; justify-content: center; align-items: center;';
+  
+  updateAlert.innerHTML = `
     <div style="background: #1a1812; padding: 30px; border-radius: 12px; border: 2px solid #e74c3c; max-width: 400px; text-align: center; color: #eaeaea;">
       <h3 style="color: #e74c3c; margin-top: 0;">📱 Update Required</h3>
       <p>Your app version is outdated. Please update to continue using all features.</p>
@@ -2104,151 +2106,272 @@
       </button>
     </div>
   `;
+  
+  document.body.appendChild(updateAlert);
+  console.log("✅ Update alert HTML created and added to DOM");
 
-      document.body.appendChild(updateAlert);
+  // Version configuration
+  const VERSION_CONFIG = {
+    minVersionCode: 12,
+    minVersionName: "7.0",
+    updateUrl: "https://indusapp.store/3ylw7f8l"
+  };
 
-      // Version configuration
-      const VERSION_CONFIG = {
-        minVersionCode: 12,
-        minVersionName: "7.0",
-        updateUrl: "https://indusapp.store/3ylw7f8l"
-      };
+  console.log("📋 Version Configuration:", VERSION_CONFIG);
 
-      // Function to check if version meets requirements
-      function checkVersion(currentVersionCode, currentVersionName) {
-        console.log("🔍 Version Check:", {
-          currentVersionCode,
-          currentVersionName,
-          requiredVersionCode: VERSION_CONFIG.minVersionCode,
-          requiredVersionName: VERSION_CONFIG.minVersionName
-        });
+  // Function to check if version meets requirements
+  function checkVersion(currentVersionCode, currentVersionName) {
+    console.log("🔍 ===== VERSION VALIDATION START =====");
+    console.log("📊 Current Version:", { code: currentVersionCode, name: currentVersionName });
+    console.log("🎯 Required Version:", { code: VERSION_CONFIG.minVersionCode, name: VERSION_CONFIG.minVersionName });
 
-        // Convert version name to comparable format
-        const currentVersion = parseFloat(currentVersionName);
-        const requiredVersion = parseFloat(VERSION_CONFIG.minVersionName);
+    // Convert version name to comparable format
+    const currentVersion = parseFloat(currentVersionName);
+    const requiredVersion = parseFloat(VERSION_CONFIG.minVersionName);
 
-        // Check if both version code and version name meet minimum requirements
-        const isVersionCodeValid = currentVersionCode >= VERSION_CONFIG.minVersionCode;
-        const isVersionNameValid = currentVersion >= requiredVersion;
-
-        return isVersionCodeValid && isVersionNameValid;
-      }
-
-      // Function to show update alert
-      function showUpdateAlert(currentVersionCode, currentVersionName) {
-        const currentVersionSpan = document.getElementById('current-version');
-
-        if (currentVersionSpan) {
-          currentVersionSpan.textContent = `${currentVersionName} (Code: ${currentVersionCode})`;
-        }
-
-        updateAlert.style.display = 'flex';
-        console.log("⚠️ Update required - showing alert");
-      }
-
-      // Function to close update alert
-      function closeUpdateAlert() {
-        updateAlert.style.display = 'none';
-        console.log("📱 Update alert closed by user");
-      }
-
-      // Function to redirect to update
-      function updateApp() {
-        console.log("🔄 Redirecting to update URL:", VERSION_CONFIG.updateUrl);
-        window.open(VERSION_CONFIG.updateUrl, '_blank');
-      }
-
-      // Add event listeners to buttons
-      document.getElementById('update-now-btn')?.addEventListener('click', updateApp);
-      document.getElementById('update-later-btn')?.addEventListener('click', closeUpdateAlert);
-
-      // Initialize version check when page loads
-      function initVersionCheck() {
-        // Try to get version from multiple possible sources
-        let versionCode, versionName;
-
-        // Method 1: Check if Capacitor provides version info
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-          window.Capacitor.Plugins.App.getInfo().then(info => {
-            versionCode = info.build;
-            versionName = info.version;
-            performVersionCheck(versionCode, versionName);
-          }).catch(error => {
-            console.warn("❌ Could not get version from Capacitor:", error);
-            fallbackVersionCheck();
-          });
-        }
-        // Method 2: Check if Cordova provides version info
-        else if (window.cordova && window.cordova.getAppVersion) {
-          cordova.getAppVersion.getVersionNumber().then(version => {
-            versionName = version;
-            cordova.getAppVersion.getVersionCode().then(code => {
-              versionCode = code;
-              performVersionCheck(versionCode, versionName);
-            });
-          }).catch(error => {
-            console.warn("❌ Could not get version from Cordova:", error);
-            fallbackVersionCheck();
-          });
-        }
-        // Method 3: Check for custom version injection
-        else if (window.appVersion && window.appVersion.code && window.appVersion.name) {
-          versionCode = window.appVersion.code;
-          versionName = window.appVersion.name;
-          performVersionCheck(versionCode, versionName);
-        }
-        // Method 4: Check URL parameters (for testing)
-        else {
-          fallbackVersionCheck();
-        }
-      }
-
-      // Perform the actual version check
-      function performVersionCheck(versionCode, versionName) {
-        console.log("🔍 Performing version check:", { versionCode, versionName });
-
-        if (!versionCode || !versionName) {
-          console.log("ℹ️ Version info not available, skipping version check");
-          return;
-        }
-
-        const isValidVersion = checkVersion(versionCode, versionName);
-
-        if (!isValidVersion) {
-          console.log("🚨 Version check failed - showing update alert");
-          showUpdateAlert(versionCode, versionName);
-        } else {
-          console.log("✅ Version check passed - no update needed");
-        }
-      }
-
-      // Fallback version check for testing
-      function fallbackVersionCheck() {
-        console.log("🔧 Using fallback version check");
-
-        // For testing purposes, use URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const testVersionCode = urlParams.get('testVersionCode');
-        const testVersionName = urlParams.get('testVersionName');
-
-        if (testVersionCode && testVersionName) {
-          // Test with URL parameters: ?testVersionCode=11&testVersionName=6.9
-          performVersionCheck(parseInt(testVersionCode), testVersionName);
-        } else {
-          console.log("ℹ️ No version info available - assuming web browser, skipping version check");
-        }
-      }
-
-      // Initialize version check
-      console.log("🚀 Initializing version check system...");
-      initVersionCheck();
-
-      // For manual testing in console
-      window.testVersionCheck = function (code, name) {
-        performVersionCheck(code, name);
-      };
+    console.log("📐 Parsed Versions:", { 
+      currentVersion, 
+      requiredVersion 
     });
-  </script>
+
+    // Check if both version code and version name meet minimum requirements
+    const isVersionCodeValid = currentVersionCode >= VERSION_CONFIG.minVersionCode;
+    const isVersionNameValid = currentVersion >= requiredVersion;
+
+    console.log("✅ Version Validation Results:", {
+      isVersionCodeValid,
+      isVersionNameValid,
+      versionCodeCheck: `${currentVersionCode} >= ${VERSION_CONFIG.minVersionCode} = ${isVersionCodeValid}`,
+      versionNameCheck: `${currentVersion} >= ${requiredVersion} = ${isVersionNameValid}`
+    });
+
+    const finalResult = isVersionCodeValid && isVersionNameValid;
+    console.log("🎯 Final Validation Result:", finalResult);
+    console.log("🔍 ===== VERSION VALIDATION END =====");
+
+    return finalResult;
+  }
+
+  // Function to show update alert
+  function showUpdateAlert(currentVersionCode, currentVersionName) {
+    console.log("⚠️ ===== SHOWING UPDATE ALERT =====");
+    
+    const currentVersionSpan = document.getElementById('current-version');
+    
+    if (currentVersionSpan) {
+      currentVersionSpan.textContent = `${currentVersionName} (Code: ${currentVersionCode})`;
+      console.log("📝 Set current version display:", currentVersionSpan.textContent);
+    }
+    
+    updateAlert.style.display = 'flex';
+    console.log("✅ Update alert is now visible");
+  }
+
+  // Function to close update alert
+  function closeUpdateAlert() {
+    console.log("📱 User closed update alert");
+    updateAlert.style.display = 'none';
+  }
+
+  // Function to redirect to update
+  function updateApp() {
+    console.log("🔄 Redirecting to update URL:", VERSION_CONFIG.updateUrl);
+    window.open(VERSION_CONFIG.updateUrl, '_blank');
+  }
+
+  // Add event listeners to buttons
+  const updateBtn = document.getElementById('update-now-btn');
+  const laterBtn = document.getElementById('update-later-btn');
+  
+  if (updateBtn) {
+    updateBtn.addEventListener('click', updateApp);
+    console.log("✅ Update button event listener added");
+  } else {
+    console.log("❌ Update button not found!");
+  }
+  
+  if (laterBtn) {
+    laterBtn.addEventListener('click', closeUpdateAlert);
+    console.log("✅ Later button event listener added");
+  } else {
+    console.log("❌ Later button not found!");
+  }
+
+  // Enhanced version detection with detailed logging
+  function initVersionCheck() {
+    console.log("🕵️ ===== VERSION DETECTION START =====");
+    
+    // Log all available detection methods
+    console.log("🔧 Available Detection Methods:", {
+      hasCapacitor: !!window.Capacitor,
+      hasCapacitorAppPlugin: !!(window.Capacitor?.Plugins?.App),
+      hasCordova: !!window.cordova,
+      hasCordovaGetAppVersion: !!(window.cordova?.getAppVersion),
+      hasManualAppVersion: !!window.appVersion,
+      manualAppVersionValue: window.appVersion
+    });
+
+    // Method 1: Check if Capacitor provides version info
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+      console.log("📱 Attempting Capacitor App plugin detection...");
+      window.Capacitor.Plugins.App.getInfo().then(info => {
+        console.log("✅ Capacitor App plugin SUCCESS - Version info:", info);
+        const versionCode = info.build;
+        const versionName = info.version;
+        console.log("📱 Extracted from Capacitor:", { versionCode, versionName });
+        performVersionCheck(versionCode, versionName);
+      }).catch(error => {
+        console.error("❌ Capacitor App plugin ERROR:", error);
+        console.error("❌ Error details:", {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        });
+        checkAlternativeMethods();
+      });
+    }
+    // Method 2: Check if Cordova provides version info
+    else if (window.cordova && window.cordova.getAppVersion) {
+      console.log("📱 Attempting Cordova plugin detection...");
+      cordova.getAppVersion.getVersionNumber().then(version => {
+        cordova.getAppVersion.getVersionCode().then(code => {
+          console.log("✅ Cordova plugin SUCCESS - Version info:", { code, version });
+          performVersionCheck(code, version);
+        }).catch(codeError => {
+          console.error("❌ Cordova version code ERROR:", codeError);
+          checkAlternativeMethods();
+        });
+      }).catch(versionError => {
+        console.error("❌ Cordova version name ERROR:", versionError);
+        checkAlternativeMethods();
+      });
+    }
+    // Method 3: Check for custom version injection
+    else if (window.appVersion && window.appVersion.code && window.appVersion.name) {
+      console.log("✅ Manual version injection detected:", window.appVersion);
+      const versionCode = window.appVersion.code;
+      const versionName = window.appVersion.name;
+      performVersionCheck(versionCode, versionName);
+    }
+    // Method 4: Fallback to other methods
+    else {
+      console.log("🔧 No primary detection methods available, using fallback...");
+      checkAlternativeMethods();
+    }
+  }
+
+  // Check alternative detection methods
+  function checkAlternativeMethods() {
+    console.log("🔄 Checking alternative version detection methods...");
+    
+    // Check URL parameters for testing
+    const urlParams = new URLSearchParams(window.location.search);
+    const testVersionCode = urlParams.get('testVersionCode');
+    const testVersionName = urlParams.get('testVersionName');
+    
+    if (testVersionCode && testVersionName) {
+      console.log("🧪 Using test version from URL parameters:", { testVersionCode, testVersionName });
+      performVersionCheck(parseInt(testVersionCode), testVersionName);
+      return;
+    }
+    
+    // Check for any global version-related variables
+    const versionRelatedKeys = Object.keys(window).filter(key => 
+      key.toLowerCase().includes('version') || 
+      key.toLowerCase().includes('build') ||
+      key.toLowerCase().includes('app')
+    );
+    
+    console.log("🔍 Global scope version-related variables:", versionRelatedKeys);
+    
+    // Log values of version-related variables
+    versionRelatedKeys.forEach(key => {
+      try {
+        console.log(`🔍 ${key}:`, window[key]);
+      } catch (e) {
+        console.log(`🔍 ${key}: [Cannot access]`);
+      }
+    });
+
+    console.log("❌ No version information detected from any method");
+    console.log("💡 Possible reasons:");
+    console.log("   - App is running in web browser (not native app)");
+    console.log("   - Capacitor/Cordova plugins not properly installed");
+    console.log("   - Version information not injected into WebView");
+    console.log("   - JavaScript injection failed in native code");
+    
+    // FOR DEBUGGING: Uncomment to test the alert manually
+    // console.log("🧪 DEBUG: Manually triggering update alert for testing");
+    // showUpdateAlert(11, "6.5");
+  }
+
+  // Perform the actual version check
+  function performVersionCheck(versionCode, versionName) {
+    console.log("🎯 ===== PERFORMING VERSION CHECK =====");
+    console.log("📦 Input versions:", { versionCode, versionName });
+    
+    if (!versionCode || !versionName) {
+      console.log("❌ Version info incomplete - cannot perform check");
+      console.log("   versionCode:", versionCode);
+      console.log("   versionName:", versionName);
+      return;
+    }
+
+    // Convert to proper types
+    const numericVersionCode = Number(versionCode);
+    const stringVersionName = String(versionName);
+    
+    console.log("🔢 Converted versions:", { 
+      numericVersionCode, 
+      stringVersionName 
+    });
+
+    const isValidVersion = checkVersion(numericVersionCode, stringVersionName);
+    
+    if (!isValidVersion) {
+      console.log("🚨 VERSION CHECK FAILED - Showing update alert");
+      showUpdateAlert(numericVersionCode, stringVersionName);
+    } else {
+      console.log("✅ VERSION CHECK PASSED - No update needed");
+    }
+    
+    console.log("🎯 ===== VERSION CHECK COMPLETE =====");
+  }
+
+  // Initialize version check with delay to ensure everything is loaded
+  setTimeout(() => {
+    console.log("⏰ Starting version check after timeout...");
+    initVersionCheck();
+  }, 1500);
+
+  // Debug functions for manual testing
+  window.debugVersionCheck = function() {
+    console.log("🐛 ===== MANUAL DEBUG INFO =====");
+    console.log("Window.Capacitor:", window.Capacitor);
+    console.log("Window.Capacitor.Plugins:", window.Capacitor?.Plugins);
+    console.log("Window.Capacitor.Plugins.App:", window.Capacitor?.Plugins?.App);
+    console.log("Window.cordova:", window.cordova);
+    console.log("Window.appVersion:", window.appVersion);
+    console.log("All window keys:", Object.keys(window));
+    console.log("🐛 ===== DEBUG INFO END =====");
+  };
+
+  window.forceUpdateAlert = function() {
+    console.log("🧪 Manually forcing update alert");
+    showUpdateAlert(11, "6.5");
+  };
+
+  window.testVersionCheck = function(code, name) {
+    console.log("🧪 Manual version test:", { code, name });
+    performVersionCheck(code, name);
+  };
+
+  console.log("🎉 Version check system ready - debug functions available:");
+  console.log("   - debugVersionCheck() - Show detection methods");
+  console.log("   - forceUpdateAlert() - Manually show update alert"); 
+  console.log("   - testVersionCheck(11, '6.5') - Test version check");
+});
+</script>
 
   <!-- Capacitor Storage Module -->
   <script type="module">
