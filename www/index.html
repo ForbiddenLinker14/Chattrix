@@ -1028,10 +1028,8 @@ async function joinRoom() {
     }
   } else { closeDestroyedRoomAlert(); }
 
-  // ✅ Check room lock status but don't block join attempt
-  // The server will handle the actual blocking for new users
+  // ✅ Check room lock status but don't update UI yet
   const isLocked = await checkRoomLockStatus(currentRoom);
-  updateLockUI(isLocked);
   
   if (isLocked) {
     // Check if user is existing (in room history)
@@ -1040,6 +1038,8 @@ async function joinRoom() {
     
     if (!isExistingUser) {
       alert("🚫 This room is locked. No new users can join.");
+      // 🔥 FIX: Reset lock UI to default state since join failed
+      updateLockUI(false);
       return;
     }
   }
@@ -1087,9 +1087,10 @@ async function joinRoom() {
           Storage.remove("chat_room");
           currentRoom = "";
           currentName = "";
+          updateLockUI(false);
           return;
         }
-        setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+         setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
       }
     });
   }
@@ -1467,13 +1468,29 @@ async function restoreChatState(socket) {
       } else if (ack && ack.error === "Room is locked") {
         // User was blocked from rejoining locked room
         console.log("Reconnection blocked: Room is locked and user is not existing member");
+        
+        // 🔥 FIX: Show user-friendly message and clear invalid state
+        setTimeout(() => {
+          alert("🚫 Room is locked. You cannot rejoin this room as a new user.");
+        }, 1000);
+        
+        // Clear the invalid stored state
         Storage.remove("chat_name");
         Storage.remove("chat_room");
         
-        // Show user-friendly message
-        setTimeout(() => {
-          alert("🚫 Room is locked. You cannot rejoin this room.");
-        }, 1000);
+        // Reset UI
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+        document.getElementById("messages").innerHTML = "";
+        document.getElementById("user-list").innerHTML = "";
+        
+        // Update joined rooms list
+        if (joinedRoomsByUser[state.username]) {
+          joinedRoomsByUser[state.username] = joinedRoomsByUser[state.username].filter(r => r !== state.room);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+        }
+        renderJoinedRooms();
       }
     });
   }

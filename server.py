@@ -639,10 +639,27 @@ async def join(sid, data):
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
-    # ✅ Check if room is locked - only block NEW users
+        # ✅ Check if room is locked - only block NEW users
     if ROOM_LOCKS.get(room, False):
-        # Check if user is already in room history (existing user)
-        is_existing_user = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+        # 🔥 FIX: More robust check for existing users
+        is_existing_user = False
+        
+        # Check room history first
+        if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
+            is_existing_user = True
+        else:
+            # Also check database messages to see if user has ever been in this room
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM messages WHERE room=? AND sender=?", (room, username))
+            message_count = c.fetchone()[0]
+            conn.close()
+            
+            # If user has sent messages in this room before, consider them existing
+            if message_count > 0:
+                is_existing_user = True
+                # Add to room history for future checks
+                ROOM_HISTORY.setdefault(room, set()).add(username)
         
         if not is_existing_user:
             await sio.emit("room_locked", {
