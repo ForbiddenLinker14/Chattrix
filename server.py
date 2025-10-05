@@ -1439,15 +1439,31 @@ async def get_destroyed_rooms():
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
-@app.post("/revive-room/{room}")
-async def revive_room(room: str):
-    """Manually revive a destroyed room (for testing)"""
-    if room in DESTROYED_ROOMS:
-        DESTROYED_ROOMS.remove(room)
-        remove_destroyed_room(room)
-        return {"status": "ok", "message": f"Room {room} revived"}
-    else:
-        return {"status": "error", "message": "Room not found in destroyed rooms"}
+# @app.post("/revive-room/{room}")
+# async def revive_room(room: str):
+#     """Manually revive a destroyed room (for testing)"""
+#     if room in DESTROYED_ROOMS:
+#         DESTROYED_ROOMS.remove(room)
+#         remove_destroyed_room(room)
+#         return {"status": "ok", "message": f"Room {room} revived"}
+#     else:
+#         return {"status": "error", "message": "Room not found in destroyed rooms"}
+
+
+# --- ✅ Force Update API ---
+@app.get("/api/app/version")
+async def get_app_version():
+    """
+    Returns the latest allowed app version info.
+    versionName = string version (like '6.2')
+    versionCode = integer (like 11)
+    """
+    return {
+        "latest_version": "7.0",  # match Gradle versionName
+        "latest_code": 12,  # match Gradle versionCode
+        "force_update": True,  # block outdated versions
+        "update_url": "https://indusapp.store/3ylw7f8l",  # your update link
+    }
 
 
 # serve /icons/*
