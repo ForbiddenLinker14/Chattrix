@@ -2096,8 +2096,8 @@
     const manifest = await res.json();
 
     // Try to extract version info (fallbacks if not present)
-    const currentVersionCode = parseInt(manifest.versionCode || 10);
-    const currentVersionName = parseFloat(manifest.versionName || 6.5);
+    const currentVersionCode = parseInt(manifest.versionCode || 11);
+    const currentVersionName = parseFloat(manifest.versionName || 6.2);
 
     // Check if version is outdated
     if (currentVersionCode < requiredVersionCode || currentVersionName < requiredVersionName) {
