@@ -632,22 +632,24 @@ async def join(sid, data):
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")  # 🔑 client should send token when joining
-
-    # ✅ Check if room is locked
-    if ROOM_LOCKS.get(room, False):
-        # Check if user is already in room history (existing user)
-        if room not in ROOM_HISTORY or username not in ROOM_HISTORY[room]:
-            await sio.emit("room_locked", {
-                "room": room, 
-                "message": "Room is locked. No new users can join."
-            }, to=sid)
-            return {"success": False, "error": "Room is locked"}
+    token = data.get("fcmToken")
 
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
+
+    # ✅ Check if room is locked - only block NEW users
+    if ROOM_LOCKS.get(room, False):
+        # Check if user is already in room history (existing user)
+        is_existing_user = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+        
+        if not is_existing_user:
+            await sio.emit("room_locked", {
+                "room": room, 
+                "message": "Room is locked. No new users can join."
+            }, to=sid)
+            return {"success": False, "error": "Room is locked"}
 
     # ✅ Simply ensure history exists and add user (no aggressive cleanup)
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -700,7 +702,7 @@ async def join(sid, data):
                 to=sid,
             )
 
-    # broadcast system join
+    # broadcast system join (only for new users, not reconnects)
     if not old_sid:
         await sio.emit(
             "message",

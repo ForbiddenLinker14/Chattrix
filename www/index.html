@@ -1012,63 +1012,77 @@
     // ======================================================
     // =============== Room Management ======================
     // ======================================================
-    async function joinRoom() {
-      currentName = document.getElementById("name").value.trim();
-      currentRoom = document.getElementById("room").value.trim();
-      if (!currentName || !currentRoom) { alert("Enter name and room first!"); return; }
-      if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
+async function joinRoom() {
+  currentName = document.getElementById("name").value.trim();
+  currentRoom = document.getElementById("room").value.trim();
+  if (!currentName || !currentRoom) { alert("Enter name and room first!"); return; }
+  if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
 
-      // ✅ Check if room is locked for new users
-  const isLocked = await checkRoomLockStatus(currentRoom);
-  if (isLocked) {
-    // Check if user is existing (in room history)
-    const isExistingUser = joinedRoomsByUser[currentName] && 
-                          joinedRoomsByUser[currentName].includes(currentRoom);
-    
-    if (!isExistingUser) {
-      alert("🚫 This room is locked. No new users can join.");
+  const roomStatus = await checkRoomStatus(currentRoom);
+  if (roomStatus.destroyed) {
+    if (roomStatus.time_remaining <= 0) {
+      closeDestroyedRoomAlert();
+    } else {
+      showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
       return;
     }
-  }
+  } else { closeDestroyedRoomAlert(); }
 
-      const roomStatus = await checkRoomStatus(currentRoom);
-      if (roomStatus.destroyed) {
-        if (roomStatus.time_remaining <= 0) {
-          closeDestroyedRoomAlert();
-        } else {
-          showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
+  // ✅ Check room lock status but don't block join attempt
+  // The server will handle the actual blocking for new users
+  const isLocked = await checkRoomLockStatus(currentRoom);
+  updateLockUI(isLocked);
+
+  Storage.set("chat_name", currentName);
+  Storage.set("chat_room", currentRoom);
+  document.getElementById("chat-container").style.display = "flex";
+  document.getElementById("input-area").style.display = "flex";
+  document.getElementById("intro").style.display = "none";
+  document.getElementById("messages").style.display = "block";
+  document.getElementById("messages").innerHTML = "";
+  lastPersistedTs = null;
+  alreadyFetchingHistory = false;
+  document.getElementById("input").disabled = false;
+  document.getElementById("send").disabled = false;
+  document.getElementById("attach").disabled = false;
+  document.getElementById("user-list").innerHTML = "";
+
+  if (socket) { socket.off(); socket.disconnect(); }
+  socket = io("https://realtime-chat-1mv3.onrender.com", { path: "/socket.io", transports: ["websocket"] });
+
+  subscribeUser(currentName, currentRoom).catch((err) => console.warn("⚠️ Subscription failed in joinRoom:", err));
+
+  function safeJoinWithRetry(attempt = 1) {
+    if (!socket || !socket.connected) return;
+    if (joinedRooms.has(currentRoom)) return;
+    const fcmToken = localStorage.getItem("fcm_token") || null;
+    socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+      if (ack && ack.success) { 
+        joinedRooms.add(currentRoom); 
+        sendActive(!document.hidden); 
+        
+        // Update lock status after successful join
+        checkRoomLockStatus(currentRoom).then(updateLockUI);
+      } else {
+        if (ack && ack.error === "Room is locked") {
+          // Server rejected due to lock - handle gracefully
+          alert("🚫 Room is locked. No new users can join.");
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+          document.getElementById("messages").innerHTML = "";
+          document.getElementById("user-list").innerHTML = "";
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
+          currentRoom = "";
+          currentName = "";
           return;
         }
-      } else { closeDestroyedRoomAlert(); }
-
-      Storage.set("chat_name", currentName);
-      Storage.set("chat_room", currentRoom);
-      document.getElementById("chat-container").style.display = "flex";
-      document.getElementById("input-area").style.display = "flex";
-      document.getElementById("intro").style.display = "none";
-      document.getElementById("messages").style.display = "block";
-      document.getElementById("messages").innerHTML = "";
-      lastPersistedTs = null;
-      alreadyFetchingHistory = false;
-      document.getElementById("input").disabled = false;
-      document.getElementById("send").disabled = false;
-      document.getElementById("attach").disabled = false;
-      document.getElementById("user-list").innerHTML = "";
-
-      if (socket) { socket.off(); socket.disconnect(); }
-      socket = io("https://realtime-chat-1mv3.onrender.com", { path: "/socket.io", transports: ["websocket"] });
-
-      subscribeUser(currentName, currentRoom).catch((err) => console.warn("⚠️ Subscription failed in joinRoom:", err));
-
-      function safeJoinWithRetry(attempt = 1) {
-        if (!socket || !socket.connected) return;
-        if (joinedRooms.has(currentRoom)) return;
-        const fcmToken = localStorage.getItem("fcm_token") || null;
-        socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
-          if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); }
-          else { setTimeout(() => safeJoinWithRetry(attempt + 1), 500); }
-        });
+        setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
       }
+    });
+  }
+
 
       socket.on("room_permanently_destroyed", (data) => {
         Storage.remove("chat_name"); Storage.remove("chat_room");
@@ -1183,7 +1197,7 @@
         localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       }
       renderJoinedRooms();
-
+      safeJoinWithRetry();
       const lockStatus = await checkRoomLockStatus(currentRoom);
       updateLockUI(lockStatus);
     }
@@ -1430,26 +1444,27 @@
       updateBadge(currentRoom);
     }
 
-    async function restoreChatState(socket) {
+async function restoreChatState(socket) {
   const state = await loadChatState();
   if (state) {
-    // Check if room is locked and user is not existing
-    const isLocked = await checkRoomLockStatus(state.room);
-    if (isLocked) {
-      const isExistingUser = joinedRoomsByUser[state.username] && 
-                            joinedRoomsByUser[state.username].includes(state.room);
-      
-      if (!isExistingUser) {
-        // Don't auto-join locked rooms for non-existing users
-        console.log("Skipping auto-join: Room is locked and user is not existing member");
+    // Always attempt to reconnect - let server decide if user can join
+    const fcmToken = localStorage.getItem("fcm_token") || null;
+    socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken: fcmToken }, (ack) => {
+      if (ack && ack.success) {
+        // Successfully rejoined - update lock status
+        checkRoomLockStatus(state.room).then(updateLockUI);
+      } else if (ack && ack.error === "Room is locked") {
+        // User was blocked from rejoining locked room
+        console.log("Reconnection blocked: Room is locked and user is not existing member");
         Storage.remove("chat_name");
         Storage.remove("chat_room");
-        return;
+        
+        // Show user-friendly message
+        setTimeout(() => {
+          alert("🚫 Room is locked. You cannot rejoin this room.");
+        }, 1000);
       }
-    }
-    
-    const fcmToken = localStorage.getItem("fcm_token") || null;
-    socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken: fcmToken });
+    });
   }
 }
 
@@ -2195,7 +2210,7 @@
 
 
 
-    // ======================================================
+// ======================================================
 // =============== Room Lock Functions ==================
 // ======================================================
 
@@ -2286,7 +2301,7 @@ socket.on("room_lock_updated", (data) => {
   }
 });
 
-// Listen for room locked error
+// Listen for room locked error - only for NEW users
 socket.on("room_locked", (data) => {
   if (data.room === currentRoom) {
     alert(`🚫 ${data.message}`);
