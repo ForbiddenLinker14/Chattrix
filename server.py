@@ -73,6 +73,21 @@ if not firebase_admin._apps:  # <-- check before init
 
 # ---------------- Helpers for FCM tokens ----------------
 # Add function to load room locks on startup
+def debug_room_membership(room, username):
+    """Debug function to check room membership status"""
+    in_history = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+    in_active = room in ROOM_USERS and username in ROOM_USERS[room]
+    is_locked = ROOM_LOCKS.get(room, False)
+
+    print(f"🔍 Room Membership Debug - Room: {room}, User: {username}")
+    print(f"   - In ROOM_HISTORY: {in_history}")
+    print(f"   - In ROOM_USERS: {in_active}")
+    print(f"   - Room Locked: {is_locked}")
+    print(f"   - Should Allow: {in_history or in_active}")
+
+    return in_history or in_active
+
+
 def load_room_locks():
     """Load all room locks from DB"""
     try:
@@ -640,16 +655,23 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
-    # ✅ Check if room is locked
+    # ✅ IMPROVED: Check if room is locked
     if ROOM_LOCKS.get(room, False):
         # Check if user is already in room history (existing user)
-        if room not in ROOM_HISTORY or username not in ROOM_HISTORY[room]:
+        is_existing_user = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+
+        if not is_existing_user:
             await sio.emit(
                 "room_locked",
                 {"room": room, "message": "Room is locked. No new users can join."},
                 to=sid,
             )
             return {"success": False, "error": "Room is locked"}
+        else:
+            print(f"✅ Allowing existing user {username} to rejoin locked room {room}")
+
+    # ✅ DEBUG: Check room membership
+    debug_room_membership(room, username)
 
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
