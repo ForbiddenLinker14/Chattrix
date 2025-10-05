@@ -2083,6 +2083,7 @@
   </script>
 
   <!-- Improved Version Check Script -->
+  <!-- Forced Update Check Script -->
   <script>
     async function checkForAppUpdate() {
       try {
@@ -2096,23 +2097,23 @@
         const latestVersionInfo = await fetchLatestVersionInfo();
         console.log("🔄 Latest version info:", latestVersionInfo);
 
-        const { latest_version, latest_code, force_update, update_url } = latestVersionInfo;
+        const { latest_version, latest_code, update_url } = latestVersionInfo;
 
-        if (force_update) {
-          const isVersionOutdated = isVersionOutdatedCheck(
-            currentVersion.versionName,
-            latest_version,
-            currentVersion.versionCode,
-            latest_code
-          );
+        // Show update alert if current version is less than 7.0 and 12
+        const isVersionOutdated = isVersionOutdatedCheck(
+          currentVersion.versionName,
+          latest_version,
+          currentVersion.versionCode,
+          latest_code
+        );
 
-          if (isVersionOutdated) {
-            console.log("⚠️ Update required! Showing update dialog...");
-            showUpdateDialog(update_url);
-          } else {
-            console.log("✅ App is up to date");
-          }
+        if (isVersionOutdated) {
+          console.log("⚠️ Update required! Showing forced update dialog...");
+          showForcedUpdateDialog(update_url);
+        } else {
+          console.log("✅ App is up to date (7.0/12)");
         }
+
       } catch (error) {
         console.error("❌ Version check failed:", error);
       }
@@ -2123,28 +2124,20 @@
         // Try Capacitor App plugin first
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
           const info = await window.Capacitor.Plugins.App.getInfo();
+          console.log("📱 Capacitor app info:", info);
           return {
-            versionName: info.version || "0.0",
-            versionCode: parseInt(info.build) || 0
+            versionName: info.version || "6.2",
+            versionCode: parseInt(info.build) || 11
           };
         }
 
-        // Fallback: Try to get from app context
-        if (window.getAppVersion) {
-          const version = await window.getAppVersion();
-          return {
-            versionName: version.versionName || "0.0",
-            versionCode: version.versionCode || 0
-          };
-        }
-
-        // Final fallback
-        console.warn("⚠️ Could not detect app version, using fallback");
-        return { versionName: "0.0", versionCode: 0 };
+        // Final fallback - hardcode your current version
+        console.warn("⚠️ Could not detect app version, using fallback (6.2/11)");
+        return { versionName: "6.2", versionCode: 11 };
 
       } catch (error) {
         console.warn("⚠️ Could not get app version info:", error);
-        return { versionName: "0.0", versionCode: 0 };
+        return { versionName: "6.2", versionCode: 11 };
       }
     }
 
@@ -2157,12 +2150,11 @@
         return await response.json();
       } catch (error) {
         console.error("❌ Failed to fetch latest version:", error);
-        // Return a safe fallback that won't block the app
+        // Return server requirements as fallback
         return {
-          latest_version: "0.0",
-          latest_code: 0,
-          force_update: false,
-          update_url: "#"
+          latest_version: "7.0",
+          latest_code: 12,
+          update_url: "https://indusapp.store/3ylw7f8l"
         };
       }
     }
@@ -2170,9 +2162,8 @@
     function isVersionOutdatedCheck(currentName, latestName, currentCode, latestCode) {
       console.log(`🔍 Comparing versions: ${currentName} (${currentCode}) vs ${latestName} (${latestCode})`);
 
-      // First check version code (most reliable)
+      // Check version code first
       if (currentCode < latestCode) {
-        console.log("📱 Version code outdated");
         return true;
       }
 
@@ -2185,7 +2176,6 @@
         const latestPart = latestParts[i] || 0;
 
         if (currentPart < latestPart) {
-          console.log("📱 Version name outdated");
           return true;
         }
         if (currentPart > latestPart) {
@@ -2196,100 +2186,97 @@
       return false;
     }
 
-    function showUpdateDialog(updateUrl) {
-      console.log("🔄 Showing update dialog");
+    function showForcedUpdateDialog(updateUrl) {
+      console.log("🔄 Showing forced update dialog");
 
       // Remove any existing update dialog
-      const existingDialog = document.getElementById('app-update-dialog');
+      const existingDialog = document.getElementById('forced-update-dialog');
       if (existingDialog) {
         existingDialog.remove();
       }
 
       const overlay = document.createElement("div");
-      overlay.id = "app-update-dialog";
+      overlay.id = "forced-update-dialog";
       overlay.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.95);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 10000;
-        padding: 20px;
-        box-sizing: border-box;
-      `;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.95);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      padding: 20px;
+      box-sizing: border-box;
+    `;
 
       overlay.innerHTML = `
-        <div style="
-          background: #1a1812;
-          padding: 30px;
-          border-radius: 16px;
-          border: 2px solid #25d366;
-          max-width: 450px;
-          width: 100%;
-          text-align: center;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-          color: #eaeaea;
-          font-family: Arial, sans-serif;
-        ">
-          <div style="margin-bottom: 20px;">
-            <h2 style="color: #25d366; margin: 0 0 15px 0; font-size: 1.6em; font-weight: bold;">
-              ⚠️ Update Required
-            </h2>
-            <p style="margin: 0 0 12px 0; line-height: 1.5; font-size: 1.1em;">
-              Please update Chattrix to the latest version to continue using all features.
-            </p>
-            <p style="margin: 0; color: #ccc; font-size: 0.95em; line-height: 1.4;">
-              Your current version is outdated and may not work properly.
-            </p>
-          </div>
-          <button id="update-now-btn" style="
-            background: #25d366;
-            color: white;
-            border: none;
-            padding: 14px 28px;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            width: 100%;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.3);
-          ">Update Now</button>
+      <div style="
+        background: #1a1812;
+        padding: 30px;
+        border-radius: 16px;
+        border: 2px solid #e74c3c;
+        max-width: 450px;
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        color: #eaeaea;
+        font-family: Arial, sans-serif;
+      ">
+        <div style="margin-bottom: 25px;">
+          <h2 style="color: #e74c3c; margin: 0 0 15px 0; font-size: 1.6em; font-weight: bold;">
+            🚫 Update Required
+          </h2>
+          <p style="margin: 0 0 12px 0; line-height: 1.5; font-size: 1.1em;">
+            This version of Chattrix is no longer supported.
+          </p>
+          <p style="margin: 0; color: #ccc; font-size: 0.95em; line-height: 1.4;">
+            You must update to version 7.0 to continue using the app.
+          </p>
         </div>
-      `;
+        <button id="forced-update-btn" style="
+          background: #e74c3c;
+          color: white;
+          border: none;
+          padding: 16px 32px;
+          border-radius: 10px;
+          font-size: 16px;
+          font-weight: bold;
+          cursor: pointer;
+          width: 100%;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+        ">Update Now</button>
+      </div>
+    `;
 
       document.body.appendChild(overlay);
 
       // Add event listener for update button
-      document.getElementById('update-now-btn').onclick = () => {
+      document.getElementById('forced-update-btn').onclick = () => {
         console.log("🔄 Redirecting to update URL:", updateUrl);
         window.location.href = updateUrl;
       };
 
       // Prevent closing by clicking outside
       overlay.onclick = (e) => {
-        if (e.target === overlay) {
+        e.stopPropagation();
+      };
+
+      // Prevent closing with escape key
+      const escapeHandler = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
           e.stopPropagation();
         }
       };
 
-      // Add hover effect for the button
-      const updateBtn = document.getElementById('update-now-btn');
-      updateBtn.addEventListener('mouseenter', () => {
-        updateBtn.style.background = '#2ecc71';
-        updateBtn.style.transform = 'translateY(-2px)';
-        updateBtn.style.boxShadow = '0 6px 20px rgba(37, 211, 102, 0.4)';
-      });
+      document.addEventListener('keydown', escapeHandler);
 
-      updateBtn.addEventListener('mouseleave', () => {
-        updateBtn.style.background = '#25d366';
-        updateBtn.style.transform = 'translateY(0)';
-        updateBtn.style.boxShadow = '0 4px 15px rgba(37, 211, 102, 0.3)';
-      });
+      // Store the handler for cleanup
+      overlay._escapeHandler = escapeHandler;
     }
 
     // Initialize when DOM is ready
@@ -2299,10 +2286,9 @@
       checkForAppUpdate();
     }
 
-    // Also check when the app becomes visible (if returning from background)
+    // Also check when the app becomes visible
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
-        // Re-check after a short delay when app becomes visible
         setTimeout(checkForAppUpdate, 1000);
       }
     });
