@@ -1,6 +1,8 @@
 {
   "name": "Room Chat",
   "short_name": "Chat",
+  "versionCode": 11,
+  "versionName": "6.5",
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
