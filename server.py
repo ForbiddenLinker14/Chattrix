@@ -1459,8 +1459,8 @@ async def get_app_version():
     versionCode = integer (like 11)
     """
     return {
-        "latest_version": "7.0",  # match Gradle versionName
-        "latest_code": 12,  # match Gradle versionCode
+        "latest_version": "6.2",  # match Gradle versionName
+        "latest_code": 11,  # match Gradle versionCode
         "force_update": True,  # block outdated versions
         "update_url": "https://indusapp.store/3ylw7f8l",  # your update link
     }

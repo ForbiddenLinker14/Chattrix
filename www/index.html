@@ -2090,7 +2090,7 @@
         const info = await App.getInfo();
         return {
           versionName: info.version,   // e.g., "6.2"
-          versionCode: info.build || 12 // optional if Capacitor build info available
+          versionCode: info.build || 11 // optional if Capacitor build info available
         };
       } catch (e) {
         console.warn("Could not get version info:", e);
