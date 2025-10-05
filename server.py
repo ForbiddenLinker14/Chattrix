@@ -36,6 +36,7 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
+ROOM_LOCKS = {}  # { room: locked_status }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -71,6 +72,40 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
+# Add function to load room locks on startup
+def load_room_locks():
+    """Load all room locks from DB"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT room, locked FROM room_locks")
+        rows = c.fetchall()
+        conn.close()
+        
+        locks = {}
+        for room, locked in rows:
+            locks[room] = bool(locked)
+        return locks
+    except sqlite3.OperationalError:
+        return {}
+
+# Add function to save room lock
+def save_room_lock(room: str, locked: bool, locked_by: str):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    if locked:
+        c.execute(
+            "INSERT OR REPLACE INTO room_locks (room, locked, locked_by, locked_at) VALUES (?, ?, ?, ?)",
+            (room, 1, locked_by, datetime.now(timezone.utc).isoformat())
+        )
+    else:
+        c.execute("DELETE FROM room_locks WHERE room = ?", (room,))
+    
+    conn.commit()
+    conn.close()
+ROOM_LOCKS = load_room_locks()
+
 def load_destroyed_rooms():
     """Load all permanently destroyed rooms from DB"""
     try:
@@ -398,6 +433,16 @@ def init_db():
     """
     )
 
+    # Room locks table
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS room_locks (
+            room TEXT PRIMARY KEY,
+            locked BOOLEAN DEFAULT 0,
+            locked_by TEXT,
+            locked_at TEXT
+        )
+    ''')
+
     conn.commit()
     conn.close()
 
@@ -588,6 +633,16 @@ async def join(sid, data):
     username = data["sender"]
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
+
+    # ✅ Check if room is locked
+    if ROOM_LOCKS.get(room, False):
+        # Check if user is already in room history (existing user)
+        if room not in ROOM_HISTORY or username not in ROOM_HISTORY[room]:
+            await sio.emit("room_locked", {
+                "room": room, 
+                "message": "Room is locked. No new users can join."
+            }, to=sid)
+            return {"success": False, "error": "Room is locked"}
 
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
@@ -1338,6 +1393,37 @@ async def unregister_fcm(request: Request):
             del FCM_TOKENS[user]
 
     return {"status": "ok"}
+
+
+# Add this API endpoint for room lock status
+@app.get("/room-lock-status/{room}")
+async def get_room_lock_status(room: str):
+    """Get room lock status"""
+    is_locked = ROOM_LOCKS.get(room, False)
+    return JSONResponse({"locked": is_locked})
+
+# Add this API endpoint to toggle room lock
+@app.post("/toggle-room-lock/{room}")
+async def toggle_room_lock(room: str, request: Request):
+    """Toggle room lock status"""
+    body = await request.json()
+    username = body.get("username")
+    lock_status = body.get("lock")
+    
+    if not username:
+        return JSONResponse({"error": "Username required"}, status_code=400)
+    
+    ROOM_LOCKS[room] = lock_status
+    save_room_lock(room, lock_status, username)
+    
+    # Notify all users in the room about lock status change
+    await sio.emit("room_lock_updated", {
+        "room": room, 
+        "locked": lock_status,
+        "locked_by": username
+    }, room=room)
+    
+    return JSONResponse({"status": "success", "locked": lock_status})
 
 
 # ---------------- Static / PWA assets ----------------
