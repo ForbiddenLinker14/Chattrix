@@ -13,6 +13,9 @@
       "backgroundColor": "#000000",
       "style": "DARK",
       "overlaysWebView": true
+    },
+    "App": {
+      "enabled": true
     }
   },
   "android": {
