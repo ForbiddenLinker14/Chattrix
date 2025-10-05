@@ -574,6 +574,7 @@ async def clear_messages(room: str):
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
 
+@app.delete("/destroy/{room}")
 async def destroy_room(room: str):
     # 0. Clear webpush subscriptions
     if room in subscriptions:
@@ -598,9 +599,8 @@ async def destroy_room(room: str):
     save_destroyed_room(room)
     DESTROYED_ROOMS.add(room)
 
-    # 3. Remove user mapping and history
+    # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
-    ROOM_HISTORY.pop(room, None)  # 🔴 CLEAR HISTORY ONLY ON ROOM DESTRUCTION
 
     # 4. Notify clients + force disconnect
     await sio.emit(
@@ -617,8 +617,8 @@ async def destroy_room(room: str):
     # can remove it from their sidebar.
     await sio.emit("room_destroyed", {"room": room})
     namespace = "/"
-    if namespace in sio.manager.rooms and room in sio.manager.manager.rooms[namespace]:
-        sids = list(sio.manager.manager.rooms[namespace][room])
+    if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
+        sids = list(sio.manager.rooms[namespace][room])
         for sid in sids:
             await sio.leave_room(sid, room, namespace=namespace)
 
@@ -638,43 +638,23 @@ async def join(sid, data):
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")
+    token = data.get("fcmToken")  # 🔑 client should send token when joining
+
+    # ✅ Check if room is locked
+    if ROOM_LOCKS.get(room, False):
+        # Check if user is already in room history (existing user)
+        if room not in ROOM_HISTORY or username not in ROOM_HISTORY[room]:
+            await sio.emit(
+                "room_locked",
+                {"room": room, "message": "Room is locked. No new users can join."},
+                to=sid,
+            )
+            return {"success": False, "error": "Room is locked"}
 
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
-
-    # ✅ Check if room is locked - only block NEW users
-    if ROOM_LOCKS.get(room, False):
-        # Check if user is already in room history (existing user)
-        is_existing_user = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
-
-        # 🔴 ENHANCED CHECK: Also check database for previous activity
-        if not is_existing_user:
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            # Check if user has ever sent messages in this room
-            c.execute(
-                "SELECT COUNT(*) FROM messages WHERE room=? AND sender=?",
-                (room, username),
-            )
-            has_previous_messages = c.fetchone()[0] > 0
-            conn.close()
-
-            if not has_previous_messages:
-                await sio.emit(
-                    "room_locked",
-                    {"room": room, "message": "Room is locked. No new users can join."},
-                    to=sid,
-                )
-                return {"success": False, "error": "Room is locked"}
-            else:
-                # User has previous messages, add to history and allow rejoining
-                ROOM_HISTORY.setdefault(room, set()).add(username)
-                print(
-                    f"🔓 Allowing existing user {username} to rejoin locked room {room}"
-                )
 
     # ✅ Simply ensure history exists and add user (no aggressive cleanup)
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -727,7 +707,7 @@ async def join(sid, data):
                 to=sid,
             )
 
-    # broadcast system join (only for new users, not reconnects)
+    # broadcast system join
     if not old_sid:
         await sio.emit(
             "message",
@@ -940,14 +920,14 @@ async def leave(sid, data):
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         del ROOM_USERS[room][username]
-        # 🔴 REMOVE THIS: Don't remove from ROOM_HISTORY on leave/disconnect
-        # if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
-        #     ROOM_HISTORY[room].remove(username)
+        # 🔥 NEW: Remove from ROOM_HISTORY to ensure they disappear from user list
+        if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
+            ROOM_HISTORY[room].remove(username)
         if not ROOM_USERS[room]:
             del ROOM_USERS[room]
 
     await sio.leave_room(sid, room)
-    await broadcast_users(room)  # This will show user as offline but still in history
+    await broadcast_users(room)  # This will now properly update without the left user
     await sio.emit("left_room", {"room": room}, to=sid)
 
     # 🛑 Only cleanup tokens/subscriptions on a *real leave*
