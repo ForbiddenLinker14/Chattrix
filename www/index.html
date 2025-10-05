@@ -2088,70 +2088,132 @@
     async function getCurrentVersion() {
       try {
         const info = await App.getInfo();
+        console.log("App Info:", info);
         return {
           versionName: info.version,   // e.g., "6.2"
-          versionCode: info.build || 12 // optional if Capacitor build info available
+          versionCode: parseInt(info.build) || 11 // Ensure it's a number
         };
       } catch (e) {
         console.warn("Could not get version info:", e);
-        return { versionName: "0.0", versionCode: 0 };
+        // Fallback to your current version
+        return { versionName: "6.2", versionCode: 11 };
       }
     }
 
     async function fetchLatestVersion() {
-      const res = await fetch("https://realtime-chat-1mv3.onrender.com/api/app/version");
-      return await res.json();
+      try {
+        const res = await fetch("https://realtime-chat-1mv3.onrender.com/api/app/version");
+        if (!res.ok) throw new Error('Failed to fetch version');
+        return await res.json();
+      } catch (error) {
+        console.error("Fetch error:", error);
+        return null;
+      }
     }
 
     function isOutdated(current, latest) {
+      console.log(`Comparing: current=${current}, latest=${latest}`);
       const c = current.split('.').map(Number);
       const l = latest.split('.').map(Number);
-      for (let i = 0; i < l.length; i++) {
-        if ((c[i] || 0) < (l[i] || 0)) return true;
-        if ((c[i] || 0) > (l[i] || 0)) return false;
+
+      for (let i = 0; i < Math.max(c.length, l.length); i++) {
+        const currentPart = c[i] || 0;
+        const latestPart = l[i] || 0;
+
+        if (currentPart < latestPart) return true;
+        if (currentPart > latestPart) return false;
       }
       return false;
     }
 
     function showUpdateDialog(updateUrl) {
+      console.log("Showing update dialog");
+
+      // Prevent multiple dialogs
+      if (document.querySelector('.update-overlay')) return;
+
       const overlay = document.createElement("div");
+      overlay.className = "update-overlay";
       overlay.style = `
-      position:fixed;inset:0;background:rgba(0,0,0,0.9);
-      color:white;display:flex;flex-direction:column;
-      justify-content:center;align-items:center;z-index:9999;
-      text-align:center;padding:20px;
-    `;
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.95);
+                color: white;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
+                text-align: center;
+                padding: 20px;
+                font-family: Arial, sans-serif;
+            `;
+
       overlay.innerHTML = `
-      <h2>⚠️ Update Required</h2>
-      <p>Please update Chattrix to the latest version to continue.</p>
-      <button style="
-        background:#25d366;border:none;color:white;
-        padding:10px 20px;border-radius:8px;font-size:16px;cursor:pointer;
-      ">Update Now</button>
-    `;
-      overlay.querySelector("button").onclick = () => window.location.href = updateUrl;
+                <h2 style="color: #ff4444; margin-bottom: 20px;">⚠️ Update Required</h2>
+                <p style="margin-bottom: 25px; line-height: 1.5;">
+                    Please update Chattrix to the latest version to continue.
+                    <br><br>
+                    <strong>Current: 6.2 → Latest: 7.0</strong>
+                </p>
+                <button style="
+                    background: #25d366;
+                    border: none;
+                    color: white;
+                    padding: 12px 24px;
+                    border-radius: 8px;
+                    font-size: 16px;
+                    cursor: pointer;
+                    font-weight: bold;
+                ">Update Now</button>
+            `;
+
+      overlay.querySelector("button").onclick = () => {
+        window.location.href = updateUrl;
+      };
+
       document.body.appendChild(overlay);
     }
 
     async function checkForUpdate() {
       try {
-        const current = await getCurrentVersion();
-        const { latest_version, latest_code, force_update, update_url } = await fetchLatestVersion();
+        console.log("Starting version check...");
 
-        if (force_update && (
-          isOutdated(current.versionName, latest_version) ||
-          current.versionCode < latest_code
-        )) {
-          showUpdateDialog(update_url);
+        const current = await getCurrentVersion();
+        console.log("Current version:", current);
+
+        const latestData = await fetchLatestVersion();
+        console.log("Latest version data:", latestData);
+
+        if (!latestData) {
+          console.log("No latest version data received");
+          return;
         }
+
+        const versionOutdated = isOutdated(current.versionName, latestData.latest_version);
+        const codeOutdated = current.versionCode < latestData.latest_code;
+
+        console.log(`Version outdated: ${versionOutdated}, Code outdated: ${codeOutdated}`);
+        console.log(`Force update enabled: ${latestData.force_update}`);
+
+        if (latestData.force_update && (versionOutdated || codeOutdated)) {
+          console.log("UPDATE REQUIRED - Showing dialog");
+          showUpdateDialog(latestData.update_url);
+        } else {
+          console.log("No update required");
+        }
+
       } catch (err) {
         console.error("Version check failed:", err);
       }
     }
 
-    document.addEventListener("DOMContentLoaded", checkForUpdate);
+    // Wait for DOM and Capacitor to be ready
+    document.addEventListener("DOMContentLoaded", function () {
+      // Small delay to ensure everything is loaded
+      setTimeout(checkForUpdate, 1000);
+    });
   </script>
-
 
   <!-- Capacitor Storage Module -->
   <script type="module">

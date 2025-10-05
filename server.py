@@ -1455,8 +1455,6 @@ async def get_destroyed_rooms():
 async def get_app_version():
     """
     Returns the latest allowed app version info.
-    versionName = string version (like '6.2')
-    versionCode = integer (like 11)
     """
     return {
         "latest_version": "7.0",  # match Gradle versionName
