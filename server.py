@@ -1450,22 +1450,6 @@ async def get_destroyed_rooms():
 #         return {"status": "error", "message": "Room not found in destroyed rooms"}
 
 
-# --- ✅ Force Update API ---
-@app.get("/api/app/version")
-async def get_app_version():
-    """
-    Returns the latest allowed app version info.
-    versionName = string version (like '7.2')
-    versionCode = integer (like 12)
-    """
-    return {
-        "latest_version": "7.0",  # match Gradle versionName
-        "latest_code": 12,  # match Gradle versionCode
-        "force_update": False,  # block outdated versions
-        "update_url": "https://indusapp.store/3ylw7f8l",  # your update link
-    }
-
-
 # serve /icons/*
 app.mount(
     "/icons", StaticFiles(directory=os.path.join(BASE_DIR, "icons")), name="icons"
