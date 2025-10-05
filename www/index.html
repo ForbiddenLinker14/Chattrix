@@ -2083,121 +2083,139 @@
   </script>
 
   <!-- Improved Version Check Script -->
-  <!-- Forced Update Check Script -->
-  <script>
-    async function checkForAppUpdate() {
-      try {
-        console.log("🔍 Checking for app updates...");
+  <!-- Fixed Version Check Script -->
+<script>
+  async function checkForAppUpdate() {
+    try {
+      console.log("🔍 Checking for app updates...");
 
-        // Get current app version
-        const currentVersion = await getCurrentAppVersion();
-        console.log("📱 Current app version:", currentVersion);
+      // Get current app version
+      const currentVersion = await getCurrentAppVersion();
+      console.log("📱 Current app version:", currentVersion);
 
-        // Fetch latest version from server
-        const latestVersionInfo = await fetchLatestVersionInfo();
-        console.log("🔄 Latest version info:", latestVersionInfo);
+      // Fetch latest version from server
+      const latestVersionInfo = await fetchLatestVersionInfo();
+      console.log("🔄 Latest version info:", latestVersionInfo);
 
-        const { latest_version, latest_code, update_url } = latestVersionInfo;
+      const { latest_version, latest_code, update_url } = latestVersionInfo;
 
-        // Show update alert if current version is less than 7.0 and 12
-        const isVersionOutdated = isVersionOutdatedCheck(
-          currentVersion.versionName,
-          latest_version,
-          currentVersion.versionCode,
-          latest_code
-        );
+      // Show update alert if current version is less than 7.0 and 12
+      const isVersionOutdated = isVersionOutdatedCheck(
+        currentVersion.versionName,
+        latest_version,
+        currentVersion.versionCode,
+        latest_code
+      );
 
-        if (isVersionOutdated) {
-          console.log("⚠️ Update required! Showing forced update dialog...");
-          showForcedUpdateDialog(update_url);
-        } else {
-          console.log("✅ App is up to date (7.0/12)");
-        }
+      console.log(`📊 Final result: isVersionOutdated = ${isVersionOutdated}`);
 
-      } catch (error) {
-        console.error("❌ Version check failed:", error);
+      if (isVersionOutdated) {
+        console.log("⚠️ Update required! Showing forced update dialog...");
+        showForcedUpdateDialog(update_url);
+      } else {
+        console.log("✅ App is up to date - no update needed");
       }
+
+    } catch (error) {
+      console.error("❌ Version check failed:", error);
     }
+  }
 
-    async function getCurrentAppVersion() {
-      try {
-        // Try Capacitor App plugin first
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-          const info = await window.Capacitor.Plugins.App.getInfo();
-          console.log("📱 Capacitor app info:", info);
-          return {
-            versionName: info.version || "6.2",
-            versionCode: parseInt(info.build) || 11
-          };
-        }
-
-        // Final fallback - hardcode your current version
-        console.warn("⚠️ Could not detect app version, using fallback (6.2/11)");
-        return { versionName: "6.2", versionCode: 11 };
-
-      } catch (error) {
-        console.warn("⚠️ Could not get app version info:", error);
-        return { versionName: "6.2", versionCode: 11 };
-      }
-    }
-
-    async function fetchLatestVersionInfo() {
-      try {
-        const response = await fetch("https://realtime-chat-1mv3.onrender.com/api/app/version");
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return await response.json();
-      } catch (error) {
-        console.error("❌ Failed to fetch latest version:", error);
-        // Return server requirements as fallback
+  async function getCurrentAppVersion() {
+    try {
+      // Try Capacitor App plugin first
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+        const info = await window.Capacitor.Plugins.App.getInfo();
+        console.log("📱 Capacitor app info:", info);
         return {
-          latest_version: "7.0",
-          latest_code: 12,
-          update_url: "https://indusapp.store/3ylw7f8l"
+          versionName: info.version || "7.0", // Changed to 7.0 for testing
+          versionCode: parseInt(info.build) || 12 // Changed to 12 for testing
         };
       }
+
+      // Final fallback - hardcode to 7.0/12 for testing
+      console.warn("⚠️ Could not detect app version, using fallback (7.0/12)");
+      return { versionName: "7.0", versionCode: 12 };
+
+    } catch (error) {
+      console.warn("⚠️ Could not get app version info:", error);
+      return { versionName: "7.0", versionCode: 12 };
     }
+  }
 
-    function isVersionOutdatedCheck(currentName, latestName, currentCode, latestCode) {
-      console.log(`🔍 Comparing versions: ${currentName} (${currentCode}) vs ${latestName} (${latestCode})`);
-
-      // Check version code first
-      if (currentCode < latestCode) {
-        return true;
+  async function fetchLatestVersionInfo() {
+    try {
+      const response = await fetch("https://realtime-chat-1mv3.onrender.com/api/app/version");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      return await response.json();
+    } catch (error) {
+      console.error("❌ Failed to fetch latest version:", error);
+      // Return server requirements as fallback
+      return {
+        latest_version: "7.0",
+        latest_code: 12,
+        update_url: "https://indusapp.store/3ylw7f8l"
+      };
+    }
+  }
 
-      // Then check version name
-      const currentParts = currentName.split('.').map(Number);
-      const latestParts = latestName.split('.').map(Number);
+  function isVersionOutdatedCheck(currentName, latestName, currentCode, latestCode) {
+    console.log(`🔍 Comparing versions: ${currentName} (${currentCode}) vs ${latestName} (${latestCode})`);
 
-      for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
-        const currentPart = currentParts[i] || 0;
-        const latestPart = latestParts[i] || 0;
-
-        if (currentPart < latestPart) {
-          return true;
-        }
-        if (currentPart > latestPart) {
-          return false;
-        }
-      }
-
+    // First check version code (most reliable)
+    if (currentCode < latestCode) {
+      console.log("📱 Version code outdated");
+      return true;
+    }
+    
+    // If version code is higher, not outdated
+    if (currentCode > latestCode) {
+      console.log("📱 Version code is newer");
       return false;
     }
 
-    function showForcedUpdateDialog(updateUrl) {
-      console.log("🔄 Showing forced update dialog");
+    // Version codes are equal, now check version names
+    const currentParts = currentName.split('.').map(Number);
+    const latestParts = latestName.split('.').map(Number);
 
-      // Remove any existing update dialog
-      const existingDialog = document.getElementById('forced-update-dialog');
-      if (existingDialog) {
-        existingDialog.remove();
+    console.log("📱 Current version parts:", currentParts);
+    console.log("📱 Latest version parts:", latestParts);
+
+    for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
+      const currentPart = currentParts[i] || 0;
+      const latestPart = latestParts[i] || 0;
+
+      console.log(`📱 Comparing part ${i}: ${currentPart} vs ${latestPart}`);
+
+      if (currentPart < latestPart) {
+        console.log("📱 Version name outdated");
+        return true;
       }
+      if (currentPart > latestPart) {
+        console.log("📱 Version name is newer");
+        return false;
+      }
+    }
 
-      const overlay = document.createElement("div");
-      overlay.id = "forced-update-dialog";
-      overlay.style.cssText = `
+    // If we get here, versions are exactly equal - NOT outdated
+    console.log("📱 Versions are exactly equal - NOT outdated");
+    return false;
+  }
+
+  function showForcedUpdateDialog(updateUrl) {
+    console.log("🔄 Showing forced update dialog");
+
+    // Remove any existing update dialog
+    const existingDialog = document.getElementById('forced-update-dialog');
+    if (existingDialog) {
+      existingDialog.remove();
+    }
+
+    const overlay = document.createElement("div");
+    overlay.id = "forced-update-dialog";
+    overlay.style.cssText = `
       position: fixed;
       top: 0;
       left: 0;
@@ -2212,7 +2230,7 @@
       box-sizing: border-box;
     `;
 
-      overlay.innerHTML = `
+    overlay.innerHTML = `
       <div style="
         background: #1a1812;
         padding: 30px;
@@ -2252,47 +2270,47 @@
       </div>
     `;
 
-      document.body.appendChild(overlay);
+    document.body.appendChild(overlay);
 
-      // Add event listener for update button
-      document.getElementById('forced-update-btn').onclick = () => {
-        console.log("🔄 Redirecting to update URL:", updateUrl);
-        window.location.href = updateUrl;
-      };
+    // Add event listener for update button
+    document.getElementById('forced-update-btn').onclick = () => {
+      console.log("🔄 Redirecting to update URL:", updateUrl);
+      window.location.href = updateUrl;
+    };
 
-      // Prevent closing by clicking outside
-      overlay.onclick = (e) => {
+    // Prevent closing by clicking outside
+    overlay.onclick = (e) => {
+      e.stopPropagation();
+    };
+
+    // Prevent closing with escape key
+    const escapeHandler = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
         e.stopPropagation();
-      };
-
-      // Prevent closing with escape key
-      const escapeHandler = (e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      };
-
-      document.addEventListener('keydown', escapeHandler);
-
-      // Store the handler for cleanup
-      overlay._escapeHandler = escapeHandler;
-    }
-
-    // Initialize when DOM is ready
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', checkForAppUpdate);
-    } else {
-      checkForAppUpdate();
-    }
-
-    // Also check when the app becomes visible
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) {
-        setTimeout(checkForAppUpdate, 1000);
       }
-    });
-  </script>
+    };
+    
+    document.addEventListener('keydown', escapeHandler);
+    
+    // Store the handler for cleanup
+    overlay._escapeHandler = escapeHandler;
+  }
+
+  // Initialize when DOM is ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkForAppUpdate);
+  } else {
+    checkForAppUpdate();
+  }
+
+  // Also check when the app becomes visible
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      setTimeout(checkForAppUpdate, 1000);
+    }
+  });
+</script>
 
   <!-- Capacitor Storage Module -->
   <script type="module">
