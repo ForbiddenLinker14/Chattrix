@@ -2084,90 +2084,114 @@
 
   <script>
     // =============================
-    // 🔔 Auto Update Alert (Manifest-based with Button)
+    // 🔔 Auto Update Alert (Manifest-based with Auto Fade-Out)
     // =============================
     (async function () {
       const requiredVersionCode = 12;
       const requiredVersionName = 7.0;
+      const manifestURL = '/manifest.json';
+      let overlay = null, fadeOutTimer = null;
 
-      try {
-        // Load manifest.json dynamically
-        const res = await fetch('/manifest.json');
-        const manifest = await res.json();
-
-        // Extract version info (fallbacks for browsers)
-        const currentVersionCode = parseInt(manifest.versionCode || 11);
-        const currentVersionName = parseFloat(manifest.versionName || 6.2);
-
-        // Show alert only if outdated
-        if (currentVersionCode < requiredVersionCode || currentVersionName < requiredVersionName) {
-          const overlay = document.createElement("div");
-          overlay.style = `
-        position: fixed;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background: rgba(0,0,0,0.85);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        z-index: 99999;
-        font-family: Arial, sans-serif;
-      `;
-
-          const box = document.createElement("div");
-          box.style = `
-        background: #1a1812;
-        color: #fff;
-        border: 2px solid #25d366;
-        border-radius: 12px;
-        padding: 25px 30px;
-        max-width: 350px;
-        text-align: center;
-        box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        animation: fadeIn 0.5s ease;
-      `;
-
-          box.innerHTML = `
-        <h2 style="color:#25d366; font-size:1.6em; margin:0 0 10px;">⚠️ Update Required</h2>
-        <p style="font-size:1.05em; line-height:1.5; margin-bottom:20px;">
-          Your app version (<b>${currentVersionName}</b> / code <b>${currentVersionCode}</b>) is outdated.
-          Please update to the latest version for the best experience.
-        </p>
-        <a href="https://indusapp.store/3ylw7f8l" target="_blank"
-          style="
-            background:#25d366;
-            color:#000;
-            text-decoration:none;
-            padding:10px 20px;
-            border-radius:8px;
-            font-weight:bold;
-            display:inline-block;
-            transition:background 0.3s;
-          "
-          onmouseover="this.style.background='#1dd85e'"
-          onmouseout="this.style.background='#25d366'">
-          🔄 Update Now
-        </a>
-      `;
-
-          // Add fade animation (optional)
-          const style = document.createElement("style");
-          style.textContent = `
-        @keyframes fadeIn {
-          from {opacity:0; transform:scale(0.9);}
-          to {opacity:1; transform:scale(1);}
+      async function getManifest() {
+        try {
+          const res = await fetch(manifestURL + '?_=' + Date.now(), { cache: 'no-store' });
+          return await res.json();
+        } catch {
+          return null;
         }
-      `;
-          document.head.appendChild(style);
-
-          overlay.appendChild(box);
-          document.body.appendChild(overlay);
-        }
-      } catch (err) {
-        console.warn("Update check failed:", err);
       }
+
+      function showUpdateBox(versionName, versionCode) {
+        if (overlay) return;
+        overlay = document.createElement("div");
+        overlay.style = `
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 99999;
+      font-family: Arial, sans-serif;
+      opacity: 1;
+      transition: opacity 0.8s ease;
+    `;
+
+        const box = document.createElement("div");
+        box.style = `
+      background: #1a1812;
+      color: #fff;
+      border: 2px solid #25d366;
+      border-radius: 12px;
+      padding: 25px 30px;
+      max-width: 350px;
+      text-align: center;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      animation: fadeIn 0.5s ease;
+    `;
+        box.innerHTML = `
+      <h2 style="color:#25d366; font-size:1.6em; margin:0 0 10px;">⚠️ Update Required</h2>
+      <p style="font-size:1.05em; line-height:1.5; margin-bottom:20px;">
+        Your app version (<b>${versionName}</b> / code <b>${versionCode}</b>) is outdated.
+        Please update to the latest version for the best experience.
+      </p>
+      <a href="https://indusapp.store/3ylw7f8l" target="_blank"
+        style="
+          background:#25d366;
+          color:#000;
+          text-decoration:none;
+          padding:10px 20px;
+          border-radius:8px;
+          font-weight:bold;
+          display:inline-block;
+          transition:background 0.3s;
+        "
+        onmouseover="this.style.background='#1dd85e'"
+        onmouseout="this.style.background='#25d366'">
+        🔄 Update Now
+      </a>
+    `;
+        const style = document.createElement("style");
+        style.textContent = `
+      @keyframes fadeIn {from{opacity:0;transform:scale(.9);}to{opacity:1;transform:scale(1);}}
+    `;
+        document.head.appendChild(style);
+
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+      }
+
+      function fadeOutOverlay() {
+        if (!overlay) return;
+        overlay.style.opacity = "0";
+        clearTimeout(fadeOutTimer);
+        fadeOutTimer = setTimeout(() => {
+          overlay.remove();
+          overlay = null;
+        }, 800);
+      }
+
+      async function checkVersion() {
+        const manifest = await getManifest();
+        if (!manifest) return;
+
+        const currentCode = parseInt(manifest.versionCode || 0);
+        const currentName = parseFloat(manifest.versionName || 0);
+
+        const outdated = currentCode < requiredVersionCode || currentName < requiredVersionName;
+
+        if (outdated && !overlay) {
+          showUpdateBox(currentName, currentCode);
+        } else if (!outdated && overlay) {
+          fadeOutOverlay();
+        }
+      }
+
+      // initial check + repeat every 10 s
+      await checkVersion();
+      setInterval(checkVersion, 10000);
     })();
   </script>
-
 
   <!-- Capacitor Storage Module -->
   <script type="module">
