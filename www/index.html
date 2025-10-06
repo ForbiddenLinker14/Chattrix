@@ -615,77 +615,6 @@
       color: #fff;
       font-weight: bold;
     }
-
-    .lock-toggle-container {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 10px 0;
-      padding: 8px;
-      background: #1a1812;
-      border-radius: 8px;
-    }
-
-    .lock-toggle {
-      position: relative;
-      display: inline-block;
-      width: 50px;
-      height: 24px;
-    }
-
-    .lock-toggle input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .lock-slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: #ccc;
-      transition: 0.4s;
-      border-radius: 24px;
-    }
-
-    .lock-slider:before {
-      position: absolute;
-      content: "";
-      height: 16px;
-      width: 16px;
-      left: 4px;
-      bottom: 4px;
-      background-color: white;
-      transition: 0.4s;
-      border-radius: 50%;
-    }
-
-    input:checked+.lock-slider {
-      background-color: #25d366;
-    }
-
-    input:checked+.lock-slider:before {
-      transform: translateX(26px);
-    }
-
-    .lock-label {
-      font-size: 14px;
-      color: #eaeaea;
-    }
-
-    .lock-status {
-      margin-left: auto;
-      font-size: 12px;
-      color: #25d366;
-      display: none;
-    }
-
-    .lock-status.locked {
-      display: inline;
-    }
   </style>
 </head>
 
@@ -710,16 +639,6 @@
     </script>
 
     <input id="room" type="text" placeholder="Unique Personal Id" />
-
-    <div class="lock-toggle-container">
-      <label class="lock-label">🔒 Lock Room:</label>
-      <label class="lock-toggle">
-        <input type="checkbox" id="roomLockToggle" onchange="toggleRoomLock()" />
-        <span class="lock-slider"></span>
-      </label>
-      <span id="lockStatus" class="lock-status">Locked</span>
-    </div>
-
     <button onclick="joinRoom()" style="width: 100%">Enter</button>
     <button onclick="leaveRoom()" style="width: 100%; background: #ff9800; color: white">
       Leave Room
@@ -910,30 +829,18 @@
     // ======================================================
     const Storage = {
       set(k, v) {
-        try {
-          localStorage.setItem(k, v);
-          return;
-        } catch { }
-        try {
-          sessionStorage.setItem(k, v);
-          return;
-        } catch { }
+        try { localStorage.setItem(k, v); return; } catch { }
+        try { sessionStorage.setItem(k, v); return; } catch { }
         document.cookie = `${k}=${encodeURIComponent(v)}; path=/`;
       },
       get(k) {
-        try {
-          return localStorage.getItem(k) || sessionStorage.getItem(k);
-        } catch { }
+        try { return localStorage.getItem(k) || sessionStorage.getItem(k); } catch { }
         const m = document.cookie.match(new RegExp("(^| )" + k + "=([^;]+)"));
         return m ? decodeURIComponent(m[2]) : null;
       },
       remove(k) {
-        try {
-          localStorage.removeItem(k);
-        } catch { }
-        try {
-          sessionStorage.removeItem(k);
-        } catch { }
+        try { localStorage.removeItem(k); } catch { }
+        try { sessionStorage.removeItem(k); } catch { }
         document.cookie = `${k}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
       },
     };
@@ -941,14 +848,11 @@
     // ======================================================
     // =============== Push Notifications ===================
     // ======================================================
-    const VAPID_PUBLIC_KEY =
-      "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
+    const VAPID_PUBLIC_KEY = "BG2UPultjn00ejdUX4YQhGrQRPaJnLHA4n1afkUeni6YjsXnn-b9PInolQ-P79zvJD63LF5nZuI3iun0_TU81Lw";
 
     function urlBase64ToUint8Array(base64String) {
       const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-      const base64 = (base64String + padding)
-        .replace(/-/g, "+")
-        .replace(/_/g, "/");
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
       const rawData = atob(base64);
       return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
     }
@@ -963,16 +867,8 @@
         });
       }
       localStorage.setItem("pushSub", JSON.stringify(subscription.toJSON()));
-      const body = {
-        sender: sender || "anonymous",
-        room: room || null,
-        subscription: subscription.toJSON(),
-      };
-      const response = await fetch("/api/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const body = { sender: sender || "anonymous", room: room || null, subscription: subscription.toJSON() };
+      const response = await fetch("/api/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error || "subscribe failed");
       return subscription;
@@ -983,19 +879,12 @@
         const savedSub = localStorage.getItem("pushSub");
         if (!savedSub) return;
         const subscription = JSON.parse(savedSub);
-        await fetch("/api/unsubscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sender, room, subscription }),
-        });
-      } catch (err) {
-        console.error("❌ Failed to unsubscribe:", err);
-      }
+        await fetch("/api/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sender, room, subscription }) });
+      } catch (err) { console.error("❌ Failed to unsubscribe:", err); }
     }
 
     async function requestNotificationPermission() {
-      if (!("Notification" in window) || !("serviceWorker" in navigator))
-        return;
+      if (!("Notification" in window) || !("serviceWorker" in navigator)) return;
       const permission = await Notification.requestPermission();
       if (permission === "granted") {
         const registration = await navigator.serviceWorker.register("/sw.js");
@@ -1005,9 +894,7 @@
     // ======================================================
     // =============== Chat Application State ===============
     // ======================================================
-    let socket,
-      currentRoom = "",
-      currentName = "";
+    let socket, currentRoom = "", currentName = "";
     let joinedRooms = new Set();
     let lastPersistedTs = null;
     let alreadyFetchingHistory = false;
@@ -1020,28 +907,11 @@
     // =============== Utility Functions ====================
     // ======================================================
     function escapeHtml(s) {
-      return (s ?? "").replace(
-        /[&<>"']/g,
-        (c) =>
-        ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          '"': "&quot;",
-          "'": "&#39;",
-        }[c])
-      );
+      return (s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
-    function escapeAttr(s) {
-      return escapeHtml(s).replace(/"/g, "&quot;");
-    }
-    function bumpTs(ts) {
-      if (ts && (!lastPersistedTs || ts > lastPersistedTs))
-        lastPersistedTs = ts;
-    }
-    function sendActive(active) {
-      if (socket) socket.emit("status", { active });
-    }
+    function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+    function bumpTs(ts) { if (ts && (!lastPersistedTs || ts > lastPersistedTs)) lastPersistedTs = ts; }
+    function sendActive(active) { if (socket) socket.emit("status", { active }); }
 
     // ======================================================
     // =============== UI Functions =========================
@@ -1064,30 +934,8 @@
     async function joinRoom() {
       currentName = document.getElementById("name").value.trim();
       currentRoom = document.getElementById("room").value.trim();
-      if (!currentName || !currentRoom) {
-        alert("Enter name and room first!");
-        return;
-      }
-      if (joinedRooms.has(currentRoom)) {
-        alert(`You are already in room "${currentRoom}"!`);
-        return;
-      }
-
-      // ✅ IMPROVED: Check if room is locked for new users
-      const isLocked = await checkRoomLockStatus(currentRoom);
-      if (isLocked) {
-        // Check if user is existing (in room history OR currently in joined rooms)
-        const isExistingUser =
-          (joinedRoomsByUser[currentName] && joinedRoomsByUser[currentName].includes(currentRoom)) ||
-          joinedRooms.has(currentRoom);
-
-        if (!isExistingUser) {
-          alert("🚫 This room is locked. No new users can join.");
-          return;
-        } else {
-          console.log(`✅ Allowing existing user ${currentName} to rejoin locked room ${currentRoom}`);
-        }
-      }
+      if (!currentName || !currentRoom) { alert("Enter name and room first!"); return; }
+      if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
 
       const roomStatus = await checkRoomStatus(currentRoom);
       if (roomStatus.destroyed) {
@@ -1097,9 +945,7 @@
           showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
           return;
         }
-      } else {
-        closeDestroyedRoomAlert();
-      }
+      } else { closeDestroyedRoomAlert(); }
 
       Storage.set("chat_name", currentName);
       Storage.set("chat_room", currentRoom);
@@ -1115,53 +961,26 @@
       document.getElementById("attach").disabled = false;
       document.getElementById("user-list").innerHTML = "";
 
-      if (socket) {
-        socket.off();
-        socket.disconnect();
-      }
-      socket = io("https://realtime-chat-1mv3.onrender.com", {
-        path: "/socket.io",
-        transports: ["websocket"],
-      });
+      if (socket) { socket.off(); socket.disconnect(); }
+      socket = io("https://realtime-chat-1mv3.onrender.com", { path: "/socket.io", transports: ["websocket"] });
 
-      subscribeUser(currentName, currentRoom).catch((err) =>
-        console.warn("⚠️ Subscription failed in joinRoom:", err)
-      );
+      subscribeUser(currentName, currentRoom).catch((err) => console.warn("⚠️ Subscription failed in joinRoom:", err));
 
       function safeJoinWithRetry(attempt = 1) {
         if (!socket || !socket.connected) return;
         if (joinedRooms.has(currentRoom)) return;
         const fcmToken = localStorage.getItem("fcm_token") || null;
-        socket.emit(
-          "join",
-          {
-            room: currentRoom,
-            sender: currentName,
-            lastTs: lastPersistedTs || null,
-            fcmToken: fcmToken,
-          },
-          (ack) => {
-            if (ack && ack.success) {
-              joinedRooms.add(currentRoom);
-              sendActive(!document.hidden);
-            } else {
-              setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
-            }
-          }
-        );
+        socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+          if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); }
+          else { setTimeout(() => safeJoinWithRetry(attempt + 1), 500); }
+        });
       }
 
       socket.on("room_permanently_destroyed", (data) => {
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
+        Storage.remove("chat_name"); Storage.remove("chat_room");
         if (joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== data.room);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== data.room);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
         document.getElementById("chat-container").style.display = "none";
         document.getElementById("input-area").style.display = "none";
@@ -1173,10 +992,7 @@
       });
 
       socket.on("users_update", updateUserList);
-      socket.on("left_room", (data) => {
-        if (data.room === currentRoom)
-          document.getElementById("user-list").innerHTML = "";
-      });
+      socket.on("left_room", (data) => { if (data.room === currentRoom) document.getElementById("user-list").innerHTML = ""; });
       socket.on("room_destroyed", handleRoomDestroyed);
       socket.on("clear", handleRoomCleared);
 
@@ -1194,13 +1010,8 @@
         // Clear from joinedRoomsByUser
         const currentName = Storage.get("chat_name") || currentName;
         if (currentName && joinedRoomsByUser[currentName]) {
-          joinedRoomsByUser[currentName] = joinedRoomsByUser[
-            currentName
-          ].filter((r) => r !== roomToClear);
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== roomToClear);
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
         }
 
         // If currently in this room, leave it
@@ -1221,38 +1032,17 @@
       socket.on("connect", () => {
         if (currentRoom && currentName) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit(
-            "join",
-            {
-              room: currentRoom,
-              sender: currentName,
-              lastTs: lastPersistedTs || null,
-              fcmToken: fcmToken,
-            },
-            (ack) => {
-              if (ack && ack.success) {
-                joinedRooms.add(currentRoom);
-                sendActive(!document.hidden);
-                fetchUnreadCounts();
-              } else {
-                setTimeout(() => {
-                  socket.disconnect();
-                  socket.connect();
-                }, 500);
-              }
-            }
-          );
-        } else {
-          restoreChatState(socket);
-        }
+          socket.emit("join", { room: currentRoom, sender: currentName, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+            if (ack && ack.success) { joinedRooms.add(currentRoom); sendActive(!document.hidden); fetchUnreadCounts(); }
+            else { setTimeout(() => { socket.disconnect(); socket.connect(); }, 500); }
+          });
+        } else { restoreChatState(socket); }
       });
 
       socket.on("room_message_meta", (data) => {
         try {
           if (!currentName) return;
-          joinedRoomsByUser =
-            joinedRoomsByUser ||
-            JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+          joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
           const myRooms = joinedRoomsByUser[currentName] || [];
           if (!myRooms.includes(data.room)) return;
           if (data.room === currentRoom) return;
@@ -1261,54 +1051,28 @@
           updateBadge(data.room);
           const title = `Room ${data.room}`;
           const body = `${data.sender}: ${data.text}`;
-          if (
-            "Notification" in window &&
-            Notification.permission === "granted"
-          ) {
+          if ("Notification" in window && Notification.permission === "granted") {
             try {
-              const n = new Notification(title, {
-                body,
-                tag: `room-${data.room}`,
-              });
-              n.onclick = () => {
-                window.focus();
-                switchRoom(data.room);
-                n.close();
-              };
-            } catch (e) {
-              console.warn("Notification failed:", e);
-            }
+              const n = new Notification(title, { body, tag: `room-${data.room}` });
+              n.onclick = () => { window.focus(); switchRoom(data.room); n.close(); };
+            } catch (e) { console.warn("Notification failed:", e); }
           } else {
             const original = document.title;
             document.title = `${data.room}: ${data.sender}`;
             setTimeout(() => (document.title = original), 2500);
           }
-        } catch (err) {
-          console.warn("room_message_meta handler err:", err);
-        }
+        } catch (err) { console.warn("room_message_meta handler err:", err); }
       });
 
       socket.on("message", addMessage);
       socket.on("file", addFileMessage);
       document.getElementById("send").onclick = sendMessage;
-      document.getElementById("input").onkeydown = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          sendMessage();
-        }
-      };
-      document.getElementById("attach").onclick = (e) => {
-        e.preventDefault();
-        document.getElementById("fileInput").click();
-      };
+      document.getElementById("input").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } };
+      document.getElementById("attach").onclick = (e) => { e.preventDefault(); document.getElementById("fileInput").click(); };
       document.getElementById("fileInput").onchange = handleFileUpload;
 
       const joinedList = document.getElementById("joined-rooms");
-      if (
-        ![...joinedList.children].some(
-          (li) => li.dataset.room === currentRoom
-        )
-      ) {
+      if (![...joinedList.children].some((li) => li.dataset.room === currentRoom)) {
         const li = document.createElement("li");
         li.textContent = currentRoom;
         li.dataset.room = currentRoom;
@@ -1318,30 +1082,19 @@
         joinedList.appendChild(li);
       }
 
-      joinedRoomsByUser = JSON.parse(
-        localStorage.getItem("joinedRoomsByUser") || "{}"
-      );
-      if (!joinedRoomsByUser[currentName])
-        joinedRoomsByUser[currentName] = [];
+      joinedRoomsByUser = JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+      if (!joinedRoomsByUser[currentName]) joinedRoomsByUser[currentName] = [];
       if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
         joinedRoomsByUser[currentName].push(currentRoom);
-        localStorage.setItem(
-          "joinedRoomsByUser",
-          JSON.stringify(joinedRoomsByUser)
-        );
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       }
       renderJoinedRooms();
-
-      const lockStatus = await checkRoomLockStatus(currentRoom);
-      updateLockUI(lockStatus);
     }
 
     // ✅ ENHANCED: More strict room status check
     async function checkRoomStatus(room) {
       try {
-        const response = await fetch(
-          `${API_BASE}/room-status/${encodeURIComponent(room)}`
-        );
+        const response = await fetch(`${API_BASE}/room-status/${encodeURIComponent(room)}`);
         if (!response.ok) throw new Error("Failed to check room status");
         const status = await response.json();
 
@@ -1402,8 +1155,7 @@
             countdownEl.textContent = "0";
             countdownEl.style.color = "#e74c3c";
             // ✅ Update message when timer finishes
-            countdownEl.closest("p").innerHTML =
-              "Auto-join is now available!";
+            countdownEl.closest('p').innerHTML = 'Auto-join is now available!';
           }
         }, 1000);
       }
@@ -1417,11 +1169,7 @@
             if (countdownInterval) clearInterval(countdownInterval);
             clearInterval(statusCheckInterval);
             closeDestroyedRoomAlert();
-          } else if (
-            status.destroyed &&
-            countdownEl &&
-            status.time_remaining
-          ) {
+          } else if (status.destroyed && countdownEl && status.time_remaining) {
             // ✅ Update timer if room is currently destroyed
             const serverTimeRemaining = Math.floor(status.time_remaining);
             if (serverTimeRemaining !== timeRemaining) {
@@ -1439,9 +1187,7 @@
         }
       }, 10000);
 
-      overlay._intervals = [countdownInterval, statusCheckInterval].filter(
-        Boolean
-      );
+      overlay._intervals = [countdownInterval, statusCheckInterval].filter(Boolean);
     }
 
     function closeDestroyedRoomAlert() {
@@ -1452,26 +1198,14 @@
 
     async function syncDestroyedRooms() {
       try {
-        const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-          cache: "no-store",
-        });
-        if (!res.ok) {
-          console.warn("syncDestroyedRooms: server returned", res.status);
-          return;
-        }
+        const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
+        if (!res.ok) { console.warn("syncDestroyedRooms: server returned", res.status); return; }
         const data = await res.json();
         const destroyed = data.destroyed || [];
         if (destroyed.length && currentName) {
-          joinedRoomsByUser =
-            joinedRoomsByUser ||
-            JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
-          joinedRoomsByUser[currentName] = (
-            joinedRoomsByUser[currentName] || []
-          ).filter((room) => !destroyed.includes(room));
-          localStorage.setItem(
-            "joinedRoomsByUser",
-            JSON.stringify(joinedRoomsByUser)
-          );
+          joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+          joinedRoomsByUser[currentName] = (joinedRoomsByUser[currentName] || []).filter((room) => !destroyed.includes(room));
+          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
           if (destroyed.includes(currentRoom)) {
             currentRoom = "";
             document.getElementById("chat-container").style.display = "none";
@@ -1481,28 +1215,18 @@
             document.getElementById("user-list").innerHTML = "";
           }
         }
-      } catch (err) {
-        console.warn("Failed to sync destroyed rooms:", err);
-      }
+      } catch (err) { console.warn("Failed to sync destroyed rooms:", err); }
     }
 
     // ======================================================
     // =============== Badge Management =====================
     // ======================================================
-    function unreadKey() {
-      return "unreadCounts_" + (currentName || "anon");
-    }
+    function unreadKey() { return "unreadCounts_" + (currentName || "anon"); }
     function loadUnread() {
-      try {
-        unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}");
-      } catch (e) {
-        unreadCounts = {};
-      }
+      try { unreadCounts = JSON.parse(localStorage.getItem(unreadKey()) || "{}"); } catch (e) { unreadCounts = {}; }
     }
     function saveUnread() {
-      try {
-        localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts));
-      } catch (e) { }
+      try { localStorage.setItem(unreadKey(), JSON.stringify(unreadCounts)); } catch (e) { }
     }
     function updateBadge(room) {
       const list = document.getElementById("joined-rooms");
@@ -1513,8 +1237,7 @@
       if (!badge) {
         badge = document.createElement("span");
         badge.className = "room-badge";
-        badge.style.cssText =
-          "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
+        badge.style.cssText = "float:right;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:12px;font-size:12px;min-width:20px;text-align:center;display:inline-block";
         li.appendChild(badge);
       }
       const count = unreadCounts[room] || 0;
@@ -1525,26 +1248,19 @@
     async function fetchUnreadCounts() {
       if (!currentName || !socket || !socket.connected) return;
       try {
-        const response = await fetch(
-          `${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`
-        );
+        const response = await fetch(`${API_BASE}/unread-counts?user=${encodeURIComponent(currentName)}`);
         if (response.ok) {
           const data = await response.json();
           if (data.unreadCounts) {
             Object.keys(data.unreadCounts).forEach((room) => {
-              unreadCounts[room] =
-                (unreadCounts[room] || 0) + data.unreadCounts[room];
+              unreadCounts[room] = (unreadCounts[room] || 0) + data.unreadCounts[room];
             });
             saveUnread();
             const rooms = joinedRoomsByUser[currentName] || [];
-            rooms.forEach((room) => {
-              updateBadge(room);
-            });
+            rooms.forEach((room) => { updateBadge(room); });
           }
         }
-      } catch (err) {
-        console.warn("Failed to fetch unread counts:", err);
-      }
+      } catch (err) { console.warn("Failed to fetch unread counts:", err); }
     }
 
     // ======================================================
@@ -1584,53 +1300,33 @@
       lastPersistedTs = null;
       document.getElementById("room").value = currentRoom;
       Storage.set("chat_room", currentRoom);
-      Array.from(document.getElementById("joined-rooms").children).forEach(
-        (li) => {
-          li.style.background =
-            li.dataset.room === currentRoom ? "#256e4c" : "transparent";
-        }
-      );
+      Array.from(document.getElementById("joined-rooms").children).forEach((li) => {
+        li.style.background = li.dataset.room === currentRoom ? "#256e4c" : "transparent";
+      });
 
       if (previousRoom && socket && socket.connected) {
         try {
-          socket.emit("leave", {
-            room: previousRoom,
-            sender: currentName,
-            reason: "switch",
-          });
-        } catch (e) {
-          console.warn("Failed to emit leave for previous room:", e);
-        }
+          socket.emit("leave", { room: previousRoom, sender: currentName, reason: "switch" });
+        } catch (e) { console.warn("Failed to emit leave for previous room:", e); }
       }
 
-      if (!socket || !socket.connected) {
-        joinRoom();
-        return;
-      }
+      if (!socket || !socket.connected) { joinRoom(); return; }
 
-      socket.emit(
-        "join",
-        { room: currentRoom, sender: currentName, lastTs: null },
-        (ack) => {
-          if (ack && ack.success) {
-            joinedRooms.add(currentRoom);
-            joinedRoomsByUser[currentName] =
-              joinedRoomsByUser[currentName] || [];
-            if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-              joinedRoomsByUser[currentName].push(currentRoom);
-              localStorage.setItem(
-                "joinedRoomsByUser",
-                JSON.stringify(joinedRoomsByUser)
-              );
-            }
-            renderJoinedRooms();
-            document.getElementById("chat-container").style.display = "flex";
-            document.getElementById("input-area").style.display = "flex";
-            document.getElementById("intro").style.display = "none";
-            document.getElementById("messages").style.display = "block";
+      socket.emit("join", { room: currentRoom, sender: currentName, lastTs: null }, (ack) => {
+        if (ack && ack.success) {
+          joinedRooms.add(currentRoom);
+          joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName] || [];
+          if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
+            joinedRoomsByUser[currentName].push(currentRoom);
+            localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
           }
+          renderJoinedRooms();
+          document.getElementById("chat-container").style.display = "flex";
+          document.getElementById("input-area").style.display = "flex";
+          document.getElementById("intro").style.display = "none";
+          document.getElementById("messages").style.display = "block";
         }
-      );
+      });
 
       unreadCounts[currentRoom] = 0;
       saveUnread();
@@ -1640,31 +1336,8 @@
     async function restoreChatState(socket) {
       const state = await loadChatState();
       if (state) {
-        // Check if room is locked and user is not existing
-        const isLocked = await checkRoomLockStatus(state.room);
-        if (isLocked) {
-          const isExistingUser =
-            joinedRoomsByUser[state.username] &&
-            joinedRoomsByUser[state.username].includes(state.room);
-
-          if (!isExistingUser) {
-            // Don't auto-join locked rooms for non-existing users
-            console.log(
-              "Skipping auto-join: Room is locked and user is not existing member"
-            );
-            Storage.remove("chat_name");
-            Storage.remove("chat_room");
-            return;
-          }
-        }
-
         const fcmToken = localStorage.getItem("fcm_token") || null;
-        socket.emit("join", {
-          room: state.room,
-          sender: state.username,
-          lastTs: state.lastTs,
-          fcmToken: fcmToken,
-        });
+        socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken: fcmToken });
       }
     }
 
@@ -1679,37 +1352,19 @@
       const nowTs = new Date().toISOString();
       lastPersistedTs = nowTs;
       try {
-        localStorage.setItem(
-          "chatState",
-          JSON.stringify({
-            username: currentName,
-            room: currentRoom,
-            lastTs: lastPersistedTs,
-          })
-        );
-      } catch (e) {
-        console.warn("Could not persist chatState:", e);
-      }
+        localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
+      } catch (e) { console.warn("Could not persist chatState:", e); }
       sending = true;
       document.getElementById("send").disabled = true;
       let sub = null;
       try {
         const savedSub = localStorage.getItem("pushSub");
         sub = savedSub ? JSON.parse(savedSub) : null;
-      } catch (err) {
-        console.warn(
-          "⚠️ Subscription failed, but sending message anyway:",
-          err
-        );
-      }
-      socket.emit(
-        "message",
-        { room: currentRoom, sender: currentName, text, subscription: sub },
-        () => {
-          sending = false;
-          document.getElementById("send").disabled = false;
-        }
-      );
+      } catch (err) { console.warn("⚠️ Subscription failed, but sending message anyway:", err); }
+      socket.emit("message", { room: currentRoom, sender: currentName, text, subscription: sub }, () => {
+        sending = false;
+        document.getElementById("send").disabled = false;
+      });
       inputEl.value = "";
     }
 
@@ -1728,21 +1383,14 @@
       const now = Date.now();
       if (now - lastCopyTime < 400) return;
       lastCopyTime = now;
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          if (notice) showCopyNotice(notice);
-        })
-        .catch((err) => console.error("❌ Copy failed:", err));
+      navigator.clipboard.writeText(text).then(() => { if (notice) showCopyNotice(notice); }).catch((err) => console.error("❌ Copy failed:", err));
     }
 
     function enableCopyOnMessage(el, text) {
       el.style.userSelect = "none";
       let pressTimer;
       el.addEventListener("touchstart", () => {
-        pressTimer = setTimeout(() => {
-          copyToClipboard(text, "📋 Message copied");
-        }, 500);
+        pressTimer = setTimeout(() => { copyToClipboard(text, "📋 Message copied"); }, 500);
       });
       el.addEventListener("touchend", () => clearTimeout(pressTimer));
       el.addEventListener("contextmenu", (e) => {
@@ -1760,12 +1408,8 @@
       });
       el.addEventListener("touchstart", (e) => {
         e.stopPropagation();
-        const timer = setTimeout(() => {
-          copyToClipboard(el.href, "🔗 Link copied");
-        }, 500);
-        el.addEventListener("touchend", () => clearTimeout(timer), {
-          once: true,
-        });
+        const timer = setTimeout(() => { copyToClipboard(el.href, "🔗 Link copied"); }, 500);
+        el.addEventListener("touchend", () => clearTimeout(timer), { once: true });
       });
     }
 
@@ -1800,10 +1444,7 @@
         div.dataset.ts = data.ts;
         const safeText = escapeHtml(data.text);
         const formattedText = linkifyWithFavicon(safeText);
-        div.innerHTML = `<strong>${data.sender
-          }</strong><br>${formattedText}<br><small>${new Date(
-            data.ts
-          ).toLocaleString()}</small>`;
+        div.innerHTML = `<strong>${data.sender}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
         enableCopyOnMessage(div, data.text);
         div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
       }
@@ -1816,39 +1457,18 @@
     // ======================================================
     async function saveFileToDevice(base64Data, filename, mimeType) {
       try {
-        const cleaned = base64Data.includes(",")
-          ? base64Data.split(",")[1]
-          : base64Data;
+        const cleaned = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
         const { Filesystem, Toast } = window.Capacitor.Plugins;
         if (!Filesystem) {
-          if (Toast)
-            await Toast.show({
-              text: "❌ Filesystem plugin missing!",
-              duration: "short",
-              position: "bottom",
-            });
+          if (Toast) await Toast.show({ text: "❌ Filesystem plugin missing!", duration: "short", position: "bottom" });
           return;
         }
-        const result = await Filesystem.writeFile({
-          path: filename,
-          data: cleaned,
-          directory: "DOCUMENTS",
-        });
-        if (Toast)
-          await Toast.show({
-            text: `✅ Downloaded: ${filename}`,
-            duration: "short",
-            position: "bottom",
-          });
+        const result = await Filesystem.writeFile({ path: filename, data: cleaned, directory: "DOCUMENTS" });
+        if (Toast) await Toast.show({ text: `✅ Downloaded: ${filename}`, duration: "short", position: "bottom" });
         return result.uri;
       } catch (e) {
         const { Toast } = window.Capacitor.Plugins;
-        if (Toast)
-          await Toast.show({
-            text: `❌ Save failed: ${e.message}`,
-            duration: "short",
-            position: "bottom",
-          });
+        if (Toast) await Toast.show({ text: `❌ Save failed: ${e.message}`, duration: "short", position: "bottom" });
       }
     }
 
@@ -1864,12 +1484,7 @@
         }
       } catch (err) {
         const { Toast } = window.Capacitor.Plugins;
-        if (Toast)
-          await Toast.show({
-            text: `❌ Download error: ${err.message}`,
-            duration: "short",
-            position: "bottom",
-          });
+        if (Toast) await Toast.show({ text: `❌ Download error: ${err.message}`, duration: "short", position: "bottom" });
       }
     };
 
@@ -1877,8 +1492,7 @@
       const parts = base64Data.split(",");
       const byteCharacters = atob(parts[1]);
       const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++)
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
       const byteArray = new Uint8Array(byteNumbers);
       return new Blob([byteArray], { type: contentType });
     }
@@ -1888,9 +1502,7 @@
       video.src = videoUrl;
       video.crossOrigin = "anonymous";
       video.load();
-      video.addEventListener("loadeddata", () => {
-        video.currentTime = 1;
-      });
+      video.addEventListener("loadeddata", () => { video.currentTime = 1; });
       video.addEventListener("seeked", () => {
         const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth;
@@ -1904,8 +1516,7 @@
 
     async function generatePdfThumbnail(pdfUrl, callback) {
       const pdfjsLib = window["pdfjs-dist/build/pdf"];
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
       const loadingTask = pdfjsLib.getDocument(pdfUrl);
       const pdf = await loadingTask.promise;
       const page = await pdf.getPage(1);
@@ -1914,8 +1525,7 @@
       const context = canvas.getContext("2d");
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: context, viewport: viewport })
-        .promise;
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
       const thumbnailUrl = canvas.toDataURL("image/png");
       callback(thumbnailUrl);
     }
@@ -1927,60 +1537,40 @@
       div.className = "msg " + (isMe ? "me" : "other");
       div.dataset.ts = data.ts;
       if (data.mimetype && data.mimetype.startsWith("image/")) {
-        div.innerHTML = `<div class="username"><strong>${data.sender
-          }</strong></div>
+        div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
           <div class="image-wrapper">
-            <a href="javascript:void(0)" onclick="downloadFile('${data.data
-          }', '${escapeAttr(data.filename)}', '${data.mimetype
-          }')" class="download-icon" title="Download">
+            <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
             </a>
-            <img src="${data.data}" alt="${escapeAttr(
-            data.filename
-          )}" style="cursor:pointer;">
+            <img src="${data.data}" alt="${escapeAttr(data.filename)}" style="cursor:pointer;">
           </div>
-          <div class="timestamp"><small>${new Date(
-            data.ts
-          ).toLocaleString()}</small></div>`;
+          <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
       } else if (data.mimetype && data.mimetype.startsWith("video/")) {
         const videoBlob = base64ToBlob(data.data, data.mimetype);
         const videoUrl = URL.createObjectURL(videoBlob);
         generateVideoThumbnail(videoUrl, (thumbnailUrl) => {
-          div.innerHTML = `<div class="username"><strong>${data.sender
-            }</strong></div>
+          div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
             <div class="image-wrapper">
-              <a href="javascript:void(0)" onclick="downloadFile('${data.data
-            }', '${escapeAttr(data.filename)}', '${data.mimetype
-            }')" class="download-icon" title="Download">
+              <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
               </a>
-              <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${data.mimetype
-            }','${data.filename}')">
+              <img src="${thumbnailUrl}" style="max-width:220px;cursor:pointer;" onclick="openPreview('${videoUrl}','${data.mimetype}','${data.filename}')">
             </div>
-            <div class="timestamp"><small>${new Date(
-              data.ts
-            ).toLocaleString()}</small></div>`;
+            <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
         });
       } else if (data.mimetype === "application/pdf") {
         const pdfBlob = base64ToBlob(data.data, data.mimetype);
         const pdfUrl = URL.createObjectURL(pdfBlob);
         generatePdfThumbnail(pdfUrl, (thumbnailUrl) => {
-          div.innerHTML = `<div class="username"><strong>${data.sender
-            }</strong></div>
+          div.innerHTML = `<div class="username"><strong>${data.sender}</strong></div>
             <div class="image-wrapper">
-              <a href="javascript:void(0)" onclick="downloadFile('${data.data
-            }', '${escapeAttr(data.filename)}', '${data.mimetype
-            }')" class="download-icon" title="Download">
+              <a href="javascript:void(0)" onclick="downloadFile('${data.data}', '${escapeAttr(data.filename)}', '${data.mimetype}')" class="download-icon" title="Download">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 16l4-5h-3V4h-2v7H8l4 5zM5 18h14v2H5v-2z"/></svg>
               </a>
-              <img src="${thumbnailUrl}" style="width:220px;height:150px;object-fit:cover;cursor:pointer;border-radius:8px;" onclick="openPreview('${pdfUrl}','${data.mimetype
-            }','${data.filename}')">
-              <div style="margin-top:4px;font-size:12px;color:#fff;text-align:center;">📄 ${data.filename
-            }</div>
+              <img src="${thumbnailUrl}" style="width:220px;height:150px;object-fit:cover;cursor:pointer;border-radius:8px;" onclick="openPreview('${pdfUrl}','${data.mimetype}','${data.filename}')">
+              <div style="margin-top:4px;font-size:12px;color:#fff;text-align:center;">📄 ${data.filename}</div>
             </div>
-            <div class="timestamp"><small>${new Date(
-              data.ts
-            ).toLocaleString()}</small></div>`;
+            <div class="timestamp"><small>${new Date(data.ts).toLocaleString()}</small></div>`;
         });
       }
       const messages = document.getElementById("messages");
@@ -1993,19 +1583,8 @@
             img.dataset.mimetype = data.mimetype || "";
             img.dataset.filename = data.filename || "";
             img.addEventListener("click", (e) => {
-              try {
-                openPreview(
-                  img.src,
-                  img.dataset.mimetype || data.mimetype,
-                  img.dataset.filename || data.filename
-                );
-              } catch (err) {
-                console.error(
-                  "DEBUG_PREVIEW",
-                  "error in img click handler",
-                  err
-                );
-              }
+              try { openPreview(img.src, img.dataset.mimetype || data.mimetype, img.dataset.filename || data.filename); }
+              catch (err) { console.error("DEBUG_PREVIEW", "error in img click handler", err); }
             });
           }
         } else if (data.mimetype && data.mimetype.startsWith("video/")) {
@@ -2014,45 +1593,21 @@
             video.dataset.mimetype = data.mimetype || "";
             video.dataset.filename = data.filename || "";
             video.addEventListener("click", (e) => {
-              try {
-                openPreview(
-                  video.querySelector("source").src,
-                  video.dataset.mimetype || data.mimetype,
-                  video.dataset.filename || data.filename
-                );
-              } catch (err) {
-                console.error(
-                  "DEBUG_PREVIEW",
-                  "error in video click handler",
-                  err
-                );
-              }
+              try { openPreview(video.querySelector("source").src, video.dataset.mimetype || data.mimetype, video.dataset.filename || data.filename); }
+              catch (err) { console.error("DEBUG_PREVIEW", "error in video click handler", err); }
             });
           }
         } else if (data.mimetype === "application/pdf") {
           const link = div.querySelector(".download-link");
           if (link) {
-            link.addEventListener(
-              "click",
-              (e) => {
-                e.preventDefault();
-                try {
-                  openPreview(data.data, data.mimetype, data.filename);
-                } catch (err) {
-                  console.error(
-                    "DEBUG_PREVIEW",
-                    "error in pdf click handler",
-                    err
-                  );
-                }
-              },
-              { passive: false }
-            );
+            link.addEventListener("click", (e) => {
+              e.preventDefault();
+              try { openPreview(data.data, data.mimetype, data.filename); }
+              catch (err) { console.error("DEBUG_PREVIEW", "error in pdf click handler", err); }
+            }, { passive: false });
           }
         }
-      } catch (err) {
-        console.error("DEBUG_PREVIEW", "attach handler general error:", err);
-      }
+      } catch (err) { console.error("DEBUG_PREVIEW", "attach handler general error:", err); }
     };
 
     // ======================================================
@@ -2068,39 +1623,29 @@
         const box = document.createElement("div");
         box.style = `background:#fff;border-radius:8px;max-width:95%;max-height:95%;overflow:hidden;padding:8px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;`;
         const header = document.createElement("div");
-        header.style =
-          "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
+        header.style = "width:100%;display:flex;align-items:center;justify-content:space-between;padding:6px 8px;box-sizing:border-box;";
         const title = document.createElement("div");
         title.textContent = filename || "Preview";
-        title.style =
-          "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        title.style = "font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
         header.appendChild(title);
         box.appendChild(header);
         const contentWrapper = document.createElement("div");
         contentWrapper.style = `width:100%;flex:1 1 auto;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 6px;box-sizing:border-box;`;
         box.appendChild(contentWrapper);
         const controls = document.createElement("div");
-        controls.style =
-          "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
+        controls.style = "width:100%;display:flex;justify-content:flex-end;margin-top:8px;";
         const closeBtn = document.createElement("button");
         closeBtn.textContent = "Close";
         closeBtn.onclick = closePreview;
-        closeBtn.style =
-          "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
+        closeBtn.style = "background:#e74c3c;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;";
         controls.appendChild(closeBtn);
         box.appendChild(controls);
         overlay.appendChild(box);
         document.body.appendChild(overlay);
-        overlay.addEventListener("click", (ev) => {
-          if (ev.target === overlay) closePreview();
-        });
-        const onKey = (ev) => {
-          if (ev.key === "Escape") closePreview();
-        };
+        overlay.addEventListener("click", (ev) => { if (ev.target === overlay) closePreview(); });
+        const onKey = (ev) => { if (ev.key === "Escape") closePreview(); };
         window.addEventListener("keydown", onKey);
-        const onPop = () => {
-          closePreview();
-        };
+        const onPop = () => { closePreview(); };
         history.pushState({ preview: true }, "");
         window.addEventListener("popstate", onPop);
         overlay._cleanup = () => {
@@ -2119,18 +1664,14 @@
           return;
         }
 
-        if (
-          type === "application/pdf" ||
-          (typeof src === "string" && src.startsWith("data:application/pdf"))
-        ) {
+        if (type === "application/pdf" || (typeof src === "string" && src.startsWith("data:application/pdf"))) {
           const loadingIndicator = document.createElement("div");
           loadingIndicator.textContent = "Loading PDF…";
           loadingIndicator.style = "color:#333;padding:8px;";
           contentWrapper.appendChild(loadingIndicator);
           try {
             const pdfjsLib = window["pdfjs-dist/build/pdf"];
-            pdfjsLib.GlobalWorkerOptions.workerSrc =
-              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
             const loadingTask = pdfjsLib.getDocument(src);
             const pdf = await loadingTask.promise;
             loadingIndicator.remove();
@@ -2139,12 +1680,8 @@
               const page = await pdf.getPage(p);
               const viewport = page.getViewport({ scale: 1 });
               const devicePixelRatio = window.devicePixelRatio || 1;
-              const targetCssWidth = Math.min(
-                viewport.width,
-                maxDisplayWidth
-              );
-              const scale =
-                (targetCssWidth / viewport.width) * devicePixelRatio;
+              const targetCssWidth = Math.min(viewport.width, maxDisplayWidth);
+              const scale = (targetCssWidth / viewport.width) * devicePixelRatio;
               const renderViewport = page.getViewport({ scale });
               const canvas = document.createElement("canvas");
               canvas.width = Math.round(renderViewport.width);
@@ -2156,22 +1693,17 @@
               canvas.style.background = "#fff";
               const ctx = canvas.getContext("2d");
               ctx.clearRect(0, 0, canvas.width, canvas.height);
-              await page.render({
-                canvasContext: ctx,
-                viewport: renderViewport,
-              }).promise;
+              await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
               const label = document.createElement("div");
               label.textContent = `Page ${p} / ${pdf.numPages}`;
-              label.style =
-                "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
+              label.style = "font-size:12px;color:#333;align-self:flex-start;margin-left:8px;";
               contentWrapper.appendChild(label);
               contentWrapper.appendChild(canvas);
             }
             return;
           } catch (err) {
             console.error("DEBUG_PREVIEW", "PDF render failed:", err);
-            loadingIndicator.textContent =
-              "Failed to render PDF. Falling back to embed.";
+            loadingIndicator.textContent = "Failed to render PDF. Falling back to embed.";
           }
         }
 
@@ -2181,9 +1713,7 @@
         embed.style.width = "80vw";
         embed.style.height = "70vh";
         box.insertBefore(embed, controls);
-      } catch (err) {
-        console.error("DEBUG_PREVIEW", "openPreview error:", err);
-      }
+      } catch (err) { console.error("DEBUG_PREVIEW", "openPreview error:", err); }
     }
 
     function closePreview() {
@@ -2191,14 +1721,8 @@
       if (!overlay) return;
       try {
         if (overlay._cleanup) overlay._cleanup();
-        if (history.state && history.state.preview) {
-          try {
-            history.back();
-          } catch (e) { }
-        }
-      } finally {
-        overlay.remove();
-      }
+        if (history.state && history.state.preview) { try { history.back(); } catch (e) { } }
+      } finally { overlay.remove(); }
     }
 
     // ======================================================
@@ -2207,10 +1731,7 @@
     function handleFileUpload() {
       const fileInput = document.getElementById("fileInput");
       const file = fileInput.files && fileInput.files[0];
-      if (!file || !currentRoom) {
-        if (fileInput) fileInput.value = "";
-        return;
-      }
+      if (!file || !currentRoom) { if (fileInput) fileInput.value = ""; return; }
       const reader = new FileReader();
       reader.onload = () => {
         const overlay = document.createElement("div");
@@ -2239,8 +1760,7 @@
         } else if (file.type === "application/pdf") {
           const pdfUrl = URL.createObjectURL(file);
           const pdfjsLib = window["pdfjs-dist/build/pdf"];
-          pdfjsLib.GlobalWorkerOptions.workerSrc =
-            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
           const loadingTask = pdfjsLib.getDocument(pdfUrl);
           loadingTask.promise.then(async (pdf) => {
             const page = await pdf.getPage(1);
@@ -2285,10 +1805,7 @@
               rotatable: true,
               ready() {
                 const canvas = this.cropper.getCanvasData();
-                this.cropper.setCropBoxData({
-                  width: canvas.width,
-                  height: canvas.height,
-                });
+                this.cropper.setCropBoxData({ width: canvas.width, height: canvas.height });
               },
             });
           };
@@ -2303,9 +1820,7 @@
       window._rotation = ((window._rotation || 0) + deg) % 360;
       cropper.reset();
       cropper.rotateTo(window._rotation);
-      setTimeout(() => {
-        fitFullImageCrop();
-      }, 80);
+      setTimeout(() => { fitFullImageCrop(); }, 80);
     }
 
     function fitFullImageCrop() {
@@ -2317,17 +1832,11 @@
 
     function applyCropAndSend(filename, mimetype) {
       if (!window._cropper) return;
-      const canvas = window._cropper.getCroppedCanvas({
-        maxWidth: 1920,
-        maxHeight: 1920,
-        fillColor: "#fff",
-      });
+      const canvas = window._cropper.getCroppedCanvas({ maxWidth: 1920, maxHeight: 1920, fillColor: "#fff" });
       if (!canvas) return;
       canvas.toBlob((blob) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
-          confirmFileSend(reader.result, filename, mimetype);
-        };
+        reader.onloadend = () => { confirmFileSend(reader.result, filename, mimetype); };
         reader.readAsDataURL(blob);
       }, mimetype);
     }
@@ -2336,24 +1845,9 @@
       const nowTs = new Date().toISOString();
       lastPersistedTs = nowTs;
       try {
-        localStorage.setItem(
-          "chatState",
-          JSON.stringify({
-            username: currentName,
-            room: currentRoom,
-            lastTs: lastPersistedTs,
-          })
-        );
-      } catch (e) {
-        /* ignore */
-      }
-      socket.emit("file", {
-        room: currentRoom,
-        sender: currentName,
-        filename,
-        mimetype,
-        data,
-      });
+        localStorage.setItem("chatState", JSON.stringify({ username: currentName, room: currentRoom, lastTs: lastPersistedTs }));
+      } catch (e) { /* ignore */ }
+      socket.emit("file", { room: currentRoom, sender: currentName, filename, mimetype, data });
       closeFilePreview();
       document.getElementById("fileInput").value = "";
     }
@@ -2362,10 +1856,7 @@
       const overlay = document.getElementById("file-preview");
       if (overlay) overlay.remove();
       document.getElementById("fileInput").value = "";
-      if (window._cropper) {
-        window._cropper.destroy();
-        window._cropper = null;
-      }
+      if (window._cropper) { window._cropper.destroy(); window._cropper = null; }
       window._rotation = 0;
     }
 
@@ -2377,9 +1868,7 @@
       const list = document.getElementById("user-list");
       const seen = new Set();
       const existing = new Map();
-      list
-        .querySelectorAll("li")
-        .forEach((li) => existing.set(li.getAttribute("data-name"), li));
+      list.querySelectorAll("li").forEach((li) => existing.set(li.getAttribute("data-name"), li));
       const sortedUsers = [...data.users].sort((a, b) => {
         if (a.active === b.active) return a.name.localeCompare(b.name);
         return a.active ? -1 : 1;
@@ -2388,8 +1877,7 @@
         if (seen.has(u.name)) return;
         seen.add(u.name);
         const color = u.active ? "#25d366" : "#e74c3c";
-        const displayName =
-          u.name === currentName ? `${u.name} (Me)` : u.name;
+        const displayName = u.name === currentName ? `${u.name} (Me)` : u.name;
         let li = existing.get(u.name);
         if (li) {
           li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
@@ -2412,13 +1900,8 @@
       const destroyedRoom = data.room;
       if (joinedRooms.has(destroyedRoom)) joinedRooms.delete(destroyedRoom);
       if (joinedRoomsByUser[currentName]) {
-        joinedRoomsByUser[currentName] = joinedRoomsByUser[
-          currentName
-        ].filter((r) => r !== destroyedRoom);
-        localStorage.setItem(
-          "joinedRoomsByUser",
-          JSON.stringify(joinedRoomsByUser)
-        );
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== destroyedRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       }
       if (currentRoom === destroyedRoom) {
         currentRoom = "";
@@ -2434,11 +1917,7 @@
     function handleRoomCleared(data) {
       if (currentRoom === data.room) {
         document.getElementById("messages").innerHTML = "";
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
+        addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
         lastPersistedTs = null;
       }
     }
@@ -2449,65 +1928,27 @@
     const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
     window.clearRoom = async function clearRoom() {
-      if (!currentRoom) {
-        alert("Join a room first!");
-        return;
-      }
+      if (!currentRoom) { alert("Join a room first!"); return; }
       try {
-        const res = await fetch(
-          `${API_BASE}/clear/${encodeURIComponent(currentRoom)}`,
-          {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-            cache: "no-store",
-          }
-        );
+        const res = await fetch(`${API_BASE}/clear/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, cache: "no-store" });
         const data = await res.json();
-        if (!res.ok)
-          throw new Error(
-            data?.error || `Failed to clear room: ${res.status}`
-          );
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-      } catch (err) {
-        console.error("❌ clearRoom error:", err);
-        alert(err.message);
-      }
+        if (!res.ok) throw new Error(data?.error || `Failed to clear room: ${res.status}`);
+        addMessage({ sender: "System", text: data.message, ts: new Date().toISOString() });
+      } catch (err) { console.error("❌ clearRoom error:", err); alert(err.message); }
     };
 
     window.destroyRoom = async function destroyRoom() {
-      if (!currentRoom) {
-        alert("Join a room first!");
-        return;
-      }
-      if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`))
-        return;
+      if (!currentRoom) { alert("Join a room first!"); return; }
+      if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`)) return;
       try {
-        const res = await fetch(
-          `${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`,
-          {
-            method: "DELETE",
-            headers: { "Content-Type": "application/json" },
-          }
-        );
+        const res = await fetch(`${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`, { method: "DELETE", headers: { "Content-Type": "application/json" } });
         const data = await res.json();
-        if (!res.ok)
-          throw new Error(
-            data?.error || `Failed to destroy room: ${res.status}`
-          );
+        if (!res.ok) throw new Error(data?.error || `Failed to destroy room: ${res.status}`);
         unsubscribeUser(currentName, currentRoom);
         document.getElementById("messages").innerHTML = "";
-        addMessage({
-          sender: "System",
-          text: "Room destroyed. All messages cleared. Please join a new room.",
-          ts: new Date().toISOString(),
-        });
+        addMessage({ sender: "System", text: "Room destroyed. All messages cleared. Please join a new room.", ts: new Date().toISOString() });
         lastPersistedTs = null;
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
+        Storage.remove("chat_name"); Storage.remove("chat_room");
         joinedRooms.delete(currentRoom);
         currentRoom = "";
         document.getElementById("user-list").innerHTML = "";
@@ -2515,67 +1956,33 @@
         document.getElementById("input-area").style.display = "none";
         document.getElementById("intro").style.display = "block";
         document.getElementById("messages").style.display = "none";
-      } catch (err) {
-        console.error("❌ destroyRoom error:", err);
-        alert(err.message);
-      }
+      } catch (err) { console.error("❌ destroyRoom error:", err); alert(err.message); }
     };
 
     async function leaveRoom() {
-      if (!currentRoom) {
-        alert("You are not in a room!");
-        return;
-      }
+      if (!currentRoom) { alert("You are not in a room!"); return; }
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
       if (savedToken) {
         try {
-          await fetch("/api/unregister-fcm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token: savedToken,
-              user: currentName,
-              room: currentRoom,
-            }),
-          });
-        } catch (err) {
-          console.error("❌ Failed to unregister FCM token:", err);
-        }
+          await fetch("/api/unregister-fcm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: savedToken, user: currentName, room: currentRoom }) });
+        } catch (err) { console.error("❌ Failed to unregister FCM token:", err); }
       }
-      try {
-        await unsubscribeUser(currentName, currentRoom);
-      } catch (err) {
-        console.error("❌ Failed to unsubscribe WebPush:", err);
-      }
-      socket.emit("leave", {
-        room: currentRoom,
-        sender: currentName,
-        reason: "leave",
-      });
+      try { await unsubscribeUser(currentName, currentRoom); } catch (err) { console.error("❌ Failed to unsubscribe WebPush:", err); }
+      socket.emit("leave", { room: currentRoom, sender: currentName, reason: "leave" });
       document.getElementById("input").disabled = true;
       document.getElementById("send").disabled = true;
       document.getElementById("attach").disabled = true;
-      addMessage({
-        sender: "System",
-        text: `YOU LEFT FROM ROOM ${leftRoom}`,
-        ts: new Date().toISOString(),
-      });
+      addMessage({ sender: "System", text: `YOU LEFT FROM ROOM ${leftRoom}`, ts: new Date().toISOString() });
       lastPersistedTs = null;
       joinedRooms.delete(currentRoom);
       if (joinedRoomsByUser[currentName]) {
-        joinedRoomsByUser[currentName] = joinedRoomsByUser[
-          currentName
-        ].filter((r) => r !== currentRoom);
-        localStorage.setItem(
-          "joinedRoomsByUser",
-          JSON.stringify(joinedRoomsByUser)
-        );
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== currentRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
       }
       renderJoinedRooms();
       currentRoom = "";
-      Storage.remove("chat_name");
-      Storage.remove("chat_room");
+      Storage.remove("chat_name"); Storage.remove("chat_room");
       document.getElementById("user-list").innerHTML = "";
       document.getElementById("chat-container").style.display = "block";
       document.getElementById("input-area").style.display = "none";
@@ -2585,20 +1992,15 @@
     // ======================================================
     // =============== Event Listeners ======================
     // ======================================================
-    document.addEventListener("visibilitychange", () =>
-      sendActive(!document.hidden)
-    );
+    document.addEventListener("visibilitychange", () => sendActive(!document.hidden));
     window.addEventListener("focus", () => sendActive(true));
     window.addEventListener("blur", () => sendActive(false));
-    window.addEventListener("offline", () => {
-      if (socket && socket.connected) socket.disconnect();
-    });
+    window.addEventListener("offline", () => { if (socket && socket.connected) socket.disconnect(); });
     let reconnectTimer;
     window.addEventListener("online", () => {
       clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => {
-        if (socket && !socket.connected && currentRoom && currentName)
-          socket.connect();
+        if (socket && !socket.connected && currentRoom && currentName) socket.connect();
         else if (socket && socket.connected) fetchUnreadCounts();
       }, 300);
     });
@@ -2606,228 +2008,74 @@
     // ======================================================
     // =============== Initialization =======================
     // ======================================================
-    window.addEventListener("load", async () => {
-      await requestNotificationPermission();
-      const savedName = Storage.get("chat_name");
-      const savedRoom = Storage.get("chat_room");
+window.addEventListener("load", async () => {
+  await requestNotificationPermission();
+  const savedName = Storage.get("chat_name");
+  const savedRoom = Storage.get("chat_room");
 
-      if (savedName && savedRoom) {
-        try {
-          // ✅ STRICT CHECK: Block auto-join if room was EVER destroyed
-          const roomStatus = await checkRoomStatus(savedRoom);
+  if (savedName && savedRoom) {
+    try {
+      // ✅ IMPROVED CHECK: Only block auto-join if room is CURRENTLY destroyed
+      const roomStatus = await checkRoomStatus(savedRoom);
 
-          // ✅ Check both flags from the original server response
-          if (roomStatus.destroyed || roomStatus.was_destroyed) {
-            showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
-
-            // ✅ CLEAR STORAGE: If room was ever destroyed, clear it from storage
-            Storage.remove("chat_name");
-            Storage.remove("chat_room");
-
-            // ✅ CLEAR from joinedRoomsByUser
-            if (joinedRoomsByUser[savedName]) {
-              joinedRoomsByUser[savedName] = joinedRoomsByUser[
-                savedName
-              ].filter((r) => r !== savedRoom);
-              localStorage.setItem(
-                "joinedRoomsByUser",
-                JSON.stringify(joinedRoomsByUser)
-              );
-            }
-
-            document.getElementById("intro").style.display = "block";
-            return;
-          }
-
-          // If room is not destroyed and was never destroyed, proceed with auto-join
-          document.getElementById("name").value = savedName;
-          document.getElementById("room").value = savedRoom;
-          joinRoom({ preserveMessages: true });
-        } catch (err) {
-          // ✅ If status check fails, DON'T auto-join (be safe)
-          console.error(
-            "Auto-join blocked due to status check failure:",
-            err
-          );
-          Storage.remove("chat_name");
-          Storage.remove("chat_room");
-          document.getElementById("intro").style.display = "block";
-        }
-      } else {
+      // ✅ ONLY block if room is currently destroyed (not just "was destroyed")
+      if (roomStatus.destroyed) {
+        showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
+        
+        // ✅ DON'T clear storage here - let user manually clear or wait for timer
+        // Storage.remove("chat_name");
+        // Storage.remove("chat_room");
+        
         document.getElementById("intro").style.display = "block";
+        return;
       }
-    });
+
+      // ✅ Allow auto-join in these cases:
+      // 1. Room was destroyed but timer expired (roomStatus.destroyed = false)
+      // 2. Room was previously destroyed but recreation period passed  
+      // 3. Room was never destroyed
+      document.getElementById("name").value = savedName;
+      document.getElementById("room").value = savedRoom;
+      joinRoom({ preserveMessages: true });
+
+    } catch (err) {
+      // ✅ If status check fails, allow auto-join (be permissive)
+      console.error("Auto-join allowed despite status check failure:", err);
+      document.getElementById("name").value = savedName;
+      document.getElementById("room").value = savedRoom;
+      joinRoom({ preserveMessages: true });
+    }
+  } else {
+    document.getElementById("intro").style.display = "block";
+  }
+});
 
     // ======================================================
     // =============== Capacitor Push Notifications =========
     // ======================================================
     document.addEventListener("DOMContentLoaded", async () => {
       const { PushNotifications } = Capacitor.Plugins;
-      if (!PushNotifications) {
-        console.error("❌ PushNotifications plugin not available");
-        return;
-      }
+      if (!PushNotifications) { console.error("❌ PushNotifications plugin not available"); return; }
       let permStatus = await PushNotifications.requestPermissions();
-      if (permStatus.receive === "granted")
-        await PushNotifications.register();
+      if (permStatus.receive === "granted") await PushNotifications.register();
       PushNotifications.addListener("registration", async (token) => {
         try {
           const user = localStorage.getItem("chat_name") || "guest";
           const room = localStorage.getItem("chat_room") || null;
-          await fetch(
-            "https://realtime-chat-1mv3.onrender.com/api/register-fcm",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ token: token.value, user, room }),
-            }
-          );
-          localStorage.setItem("fcm_token", token.value);
-        } catch (err) {
-          console.error("❌ Failed to send token:", err);
-        }
-      });
-      PushNotifications.addListener("registrationError", (err) => {
-        console.error("❌ Registration error:", err.error);
-      });
-      PushNotifications.addListener(
-        "pushNotificationReceived",
-        (notification) => { }
-      );
-      PushNotifications.addListener(
-        "pushNotificationActionPerformed",
-        (action) => { }
-      );
-      window.clearNotifications = async () => {
-        try {
-          await PushNotifications.removeAllDeliveredNotifications();
-        } catch (err) {
-          console.error("❌ Failed to clear notifications:", err);
-        }
-      };
-    });
-
-    // ======================================================
-    // =============== Room Lock Functions ==================
-    // ======================================================
-
-    let currentRoomLocked = false;
-
-    // Check room lock status
-    async function checkRoomLockStatus(room) {
-      try {
-        const response = await fetch(
-          `${API_BASE}/room-lock-status/${encodeURIComponent(room)}`
-        );
-        if (response.ok) {
-          const status = await response.json();
-          return status.locked || false;
-        }
-      } catch (err) {
-        console.warn("Failed to check room lock status:", err);
-      }
-      return false;
-    }
-
-    // Update lock UI
-    function updateLockUI(locked) {
-      const toggle = document.getElementById("roomLockToggle");
-      const status = document.getElementById("lockStatus");
-
-      if (toggle && status) {
-        toggle.checked = locked;
-        if (locked) {
-          status.classList.add("locked");
-        } else {
-          status.classList.remove("locked");
-        }
-      }
-      currentRoomLocked = locked;
-    }
-
-    // Toggle room lock
-    async function toggleRoomLock() {
-      if (!currentRoom || !currentName) {
-        alert("Join a room first!");
-        document.getElementById("roomLockToggle").checked = false;
-        return;
-      }
-
-      const toggle = document.getElementById("roomLockToggle");
-      const shouldLock = toggle.checked;
-
-      try {
-        const response = await fetch(
-          `${API_BASE}/toggle-room-lock/${encodeURIComponent(currentRoom)}`,
-          {
+          await fetch("https://realtime-chat-1mv3.onrender.com/api/register-fcm", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              username: currentName,
-              lock: shouldLock,
-            }),
-          }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          updateLockUI(result.locked);
-
-          // Show system message
-          addMessage({
-            sender: "System",
-            text: `Room ${result.locked ? "locked" : "unlocked"
-              } by ${currentName}. ${result.locked
-                ? "No new users can join."
-                : "New users can now join."
-              }`,
-            ts: new Date().toISOString(),
+            body: JSON.stringify({ token: token.value, user, room }),
           });
-        } else {
-          throw new Error("Failed to toggle room lock");
-        }
-      } catch (err) {
-        console.error("❌ Room lock toggle failed:", err);
-        alert("Failed to toggle room lock");
-        toggle.checked = !shouldLock; // Revert toggle
-      }
-    }
-
-    // Listen for room lock updates
-    socket.on("room_lock_updated", (data) => {
-      if (data.room === currentRoom) {
-        updateLockUI(data.locked);
-
-        // Show system message for lock status change
-        addMessage({
-          sender: "System",
-          text: `Room ${data.locked ? "locked" : "unlocked"} by ${data.locked_by
-            }. ${data.locked ? "No new users can join." : "New users can now join."
-            }`,
-          ts: new Date().toISOString(),
-        });
-      }
-    });
-
-    // Listen for room locked error
-    socket.on("room_locked", (data) => {
-      if (data.room === currentRoom) {
-        alert(`🚫 ${data.message}`);
-
-        // Reset UI since join failed
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-        document.getElementById("messages").innerHTML = "";
-        document.getElementById("user-list").innerHTML = "";
-
-        // Clear storage for this room
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
-
-        currentRoom = "";
-        currentName = "";
-      }
+          localStorage.setItem("fcm_token", token.value);
+        } catch (err) { console.error("❌ Failed to send token:", err); }
+      });
+      PushNotifications.addListener("registrationError", (err) => { console.error("❌ Registration error:", err.error); });
+      PushNotifications.addListener("pushNotificationReceived", (notification) => { });
+      PushNotifications.addListener("pushNotificationActionPerformed", (action) => { });
+      window.clearNotifications = async () => {
+        try { await PushNotifications.removeAllDeliveredNotifications(); } catch (err) { console.error("❌ Failed to clear notifications:", err); }
+      };
     });
   </script>
 
@@ -2838,22 +2086,19 @@
     (async function () {
       const requiredVersionCode = 12;
       const requiredVersionName = 7.0;
-      const manifestURL = "/manifest.json";
-      let overlay = null,
-        fadeOutTimer = null;
+      const manifestURL = '/manifest.json';
+      let overlay = null, fadeOutTimer = null;
 
       async function getManifest() {
         try {
-          const res = await fetch(manifestURL + "?_=" + Date.now(), {
-            cache: "no-store",
-          });
+          const res = await fetch(manifestURL + '?_=' + Date.now(), { cache: 'no-store' });
           return await res.json();
         } catch {
           return null;
         }
       }
 
-      function showUpdateBox(versionName, versionCode, latestVersionName) {
+      function showUpdateBox(versionName, versionCode,latestVersionName) {
         if (overlay) return;
         overlay = document.createElement("div");
         overlay.style = `
@@ -2943,16 +2188,12 @@
 
         const currentCode = parseInt(manifest.versionCode || 0);
         const currentName = parseFloat(manifest.versionName || 0);
-        const latestVersionName = parseFloat(
-          manifest.latestVersionName || currentName
-        ).toFixed(1);
+        const latestVersionName = parseFloat(manifest.latestVersionName || currentName).toFixed(1);
 
-        const outdated =
-          currentCode < requiredVersionCode ||
-          currentName < requiredVersionName;
+        const outdated = currentCode < requiredVersionCode || currentName < requiredVersionName;
 
         if (outdated && !overlay) {
-          showUpdateBox(currentName, currentCode, latestVersionName);
+          showUpdateBox(currentName, currentCode,latestVersionName);
         } else if (!outdated && overlay) {
           fadeOutOverlay();
         }
@@ -2967,16 +2208,10 @@
   <!-- Capacitor Storage Module -->
   <script type="module">
     import { Storage } from "@capacitor/storage";
-    import {
-      PushNotifications,
-      LocalNotifications,
-    } from "@capacitor/push-notifications";
+    import { PushNotifications, LocalNotifications } from "@capacitor/push-notifications";
 
     async function saveChatState(username, room, lastTs) {
-      await Storage.set({
-        key: "chatState",
-        value: JSON.stringify({ username, room, lastTs }),
-      });
+      await Storage.set({ key: "chatState", value: JSON.stringify({ username, room, lastTs }) });
     }
 
     async function loadChatState() {
@@ -2988,25 +2223,16 @@
     const state = await loadChatState();
     if (state) {
       try {
-        const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-          cache: "no-store",
-        });
+        const res = await fetch(`${API_BASE}/destroyed_rooms`, { cache: "no-store" });
         const json = await res.json();
         const destroyed = json.destroyed || [];
         if (!destroyed.includes(state.room)) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit("join", {
-            room: state.room,
-            sender: state.username,
-            lastTs: state.lastTs,
-            fcmToken,
-          });
+          socket.emit("join", { room: state.room, sender: state.username, lastTs: state.lastTs, fcmToken });
         } else {
           await Storage.remove({ key: "chatState" });
         }
-      } catch (err) {
-        console.warn("Failed to check destroyed rooms on startup:", err);
-      }
+      } catch (err) { console.warn("Failed to check destroyed rooms on startup:", err); }
     }
   </script>
 </body>
