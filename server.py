@@ -202,6 +202,13 @@ def cleanup_old_was_destroyed_rooms():
     return removed_count
 
 
+def mark_user_revived(room, username):
+    revived = REVIVED_USERS.setdefault(room, set())
+    if username not in revived:
+        revived.add(username)
+        print(f"🔁 User {username} marked as revived for room {room}")
+
+
 def load_fcm_tokens():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -607,9 +614,7 @@ async def join(sid, data):
         ROOM_USERS[room] = {}
 
     if room in WAS_DESTROYED_ROOMS:
-        REVIVED_USERS.setdefault(room, set()).add(username)
-        # optional: log
-        print(f"🔁 User {username} marked as revived for room {room}")
+        mark_user_revived(room, username)
 
     # handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
