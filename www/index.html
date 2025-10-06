@@ -2792,8 +2792,8 @@
             const info = await window.Capacitor.Plugins.App.getInfo();
             console.log("📱 DEBUG - Capacitor App Info:", info);
             return {
-              code: parseInt(info.build || "12"), // CHANGED: 13 → 12 for testing
-              name: parseFloat(info.version || "7.0"), // CHANGED: 7.2 → 7.0 for testing
+              code: parseInt(info.build || "13"), // CHANGED: 13 → 12 for testing
+              name: parseFloat(info.version || "7.5"), // CHANGED: 7.2 → 7.0 for testing
             };
           } catch (error) {
             console.warn("Could not get app info:", error);
@@ -2810,8 +2810,8 @@
               cordova.getAppVersion.getVersionCode(resolve, reject);
             });
             return {
-              code: parseInt(versionCode || "12"), // CHANGED: 13 → 12 for testing
-              name: parseFloat(appVersion || "7.0"), // CHANGED: 7.2 → 7.0 for testing
+              code: parseInt(versionCode || "13"), // CHANGED: 13 → 12 for testing
+              name: parseFloat(appVersion || "7.5"), // CHANGED: 7.2 → 7.0 for testing
             };
           } catch (error) {
             console.warn("Could not get Cordova app info:", error);
@@ -2821,8 +2821,8 @@
         // Method 3: Fallback for web version or if plugins fail
         console.log("🌐 Using fallback version (web or plugin unavailable)");
         return {
-          code: 12, // CHANGED: 13 → 12 for testing
-          name: 7.0, // CHANGED: 7.2 → 7.0 for testing
+          code: 13, // CHANGED: 13 → 12 for testing
+          name: 7.5, // CHANGED: 7.2 → 7.0 for testing
         };
       }
 

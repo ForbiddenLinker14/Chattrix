@@ -1529,7 +1529,7 @@ async def get_app_version():
         },
         "min_required_version": {
             "code": 13,  # Minimum allowed version code - CHANGE THIS TO CONTROL UPDATES
-            "name": "7.2",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
+            "name": "7.5",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
         },
     }
 
