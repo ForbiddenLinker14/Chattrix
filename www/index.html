@@ -2281,22 +2281,96 @@
     // =============================
     // 🔔 Auto Update Alert (Manifest-based with Auto Fade-Out)
     // =============================
+    // At the top of your checkVersion function, add:
+    async function getAppVersion() {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+        try {
+          const info = await window.Capacitor.Plugins.App.getInfo();
+          return {
+            code: parseInt(info.build || "12"),  // versionCode
+            name: parseFloat(info.version || "7.0")  // versionName
+          };
+        } catch (error) {
+          console.warn("Could not get app info:", error);
+        }
+      }
+      // Fallback for web version
+      return {
+        code: 12,
+        name: 7.0
+      };
+    }
+
+    // Then in checkVersion function:
+    const appVersion = await getAppVersion();
+    const appVersionCode = appVersion.code;
+    const appVersionName = appVersion.name;
+
     (async function () {
-      const requiredVersionCode = 13;
-      const requiredVersionName = 7.2;
-      const manifestURL = '/manifest.json';
+      const API_BASE = "https://realtime-chat-1mv3.onrender.com";
       let overlay = null, fadeOutTimer = null;
 
-      async function getManifest() {
+      // Get actual app version from Capacitor with fallbacks
+      async function getAppVersion() {
+        // Method 1: Try Capacitor App plugin
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+          try {
+            const info = await window.Capacitor.Plugins.App.getInfo();
+            console.log("📱 Capacitor App Info:", info);
+            return {
+              code: parseInt(info.build || "12"),
+              name: parseFloat(info.version || "7.0")
+            };
+          } catch (error) {
+            console.warn("Could not get Capacitor app info:", error);
+          }
+        }
+
+        // Method 2: Try Cordova plugin (if using Cordova)
+        if (window.cordova && window.cordova.getAppVersion) {
+          try {
+            const appVersion = await new Promise((resolve, reject) => {
+              cordova.getAppVersion.getVersionNumber(resolve, reject);
+            });
+            const versionCode = await new Promise((resolve, reject) => {
+              cordova.getAppVersion.getVersionCode(resolve, reject);
+            });
+            return {
+              code: parseInt(versionCode || "12"),
+              name: parseFloat(appVersion || "7.0")
+            };
+          } catch (error) {
+            console.warn("Could not get Cordova app info:", error);
+          }
+        }
+
+        // Method 3: Fallback for web version or if plugins fail
+        console.log("🌐 Using fallback version (web or plugin unavailable)");
+        return {
+          code: 12,   // Your current app version code
+          name: 7.0   // Your current app version name
+        };
+      }
+
+      async function getVersionInfo() {
         try {
-          const res = await fetch(manifestURL + '?_=' + Date.now(), { cache: 'no-store' });
-          return await res.json();
-        } catch {
+          const response = await fetch(API_BASE + '/api/app-version?_=' + Date.now(), {
+            cache: 'no-store'
+          });
+
+          if (!response.ok) {
+            console.warn('Failed to fetch version info');
+            return null;
+          }
+
+          return await response.json();
+        } catch (error) {
+          console.warn('Version check failed:', error);
           return null;
         }
       }
 
-      function showUpdateBox(versionName, versionCode, latestVersionName) {
+      function showUpdateBox(currentVersion, currentCode, latestVersion) {
         if (overlay) return;
         overlay = document.createElement("div");
         overlay.style = `
@@ -2333,8 +2407,8 @@
       </div>
       <h2 style="font-size:1.5em; color:#25d366; margin:0;">Update Available</h2>
       <p style="font-size:1em; line-height:1.6; color:#ccc; margin:0 0 12px;">
-        You’re using version <b>v${versionName}</b>⚠️<br>
-        A newer version <b>v${latestVersionName}</b> available update now to enjoy the latest features and improvements!
+        You're using version <b>v${currentVersion}</b>⚠️<br>
+        A newer version <b>v${latestVersion}</b> available. Update now to enjoy the latest features and improvements!
       </p>
       <a href="https://indusapp.store/3ylw7f8l" target="_blank"
         style="
@@ -2357,14 +2431,17 @@
   `;
 
         // Modern animation keyframes
-        const style = document.createElement("style");
-        style.textContent = `
+        if (!document.querySelector('#popin-animation')) {
+          const style = document.createElement("style");
+          style.id = 'popin-animation';
+          style.textContent = `
     @keyframes popIn {
       0% {opacity:0; transform:scale(0.9);}
       100% {opacity:1; transform:scale(1);}
     }
   `;
-        document.head.appendChild(style);
+          document.head.appendChild(style);
+        }
 
         overlay.appendChild(box);
         document.body.appendChild(overlay);
@@ -2381,25 +2458,54 @@
       }
 
       async function checkVersion() {
-        const manifest = await getManifest();
-        if (!manifest) return;
+        try {
+          // Get the app's actual version
+          const appVersion = await getAppVersion();
+          const appVersionCode = appVersion.code;
+          const appVersionName = appVersion.name;
 
-        const currentCode = parseInt(manifest.versionCode || 0);
-        const currentName = parseFloat(manifest.versionName || 0);
-        const latestVersionName = parseFloat(manifest.latestVersionName || currentName).toFixed(1);
+          // Get server version requirements
+          const versionInfo = await getVersionInfo();
+          if (!versionInfo) return;
 
-        const outdated = currentCode < requiredVersionCode || currentName < requiredVersionName;
+          const minRequiredCode = versionInfo.min_required_version.code;
+          const minRequiredName = parseFloat(versionInfo.min_required_version.name);
+          const latestVersionName = versionInfo.current_version.name;
 
-        if (outdated && !overlay) {
-          showUpdateBox(currentName, currentCode, latestVersionName);
-        } else if (!outdated && overlay) {
-          fadeOutOverlay();
+          console.log("🔍 Version Check:");
+          console.log(" - App Version:", appVersionCode, appVersionName);
+          console.log(" - Min Required:", minRequiredCode, minRequiredName);
+          console.log(" - Latest Available:", latestVersionName);
+
+          // Show update if app version is BELOW minimum required
+          const outdated = appVersionCode < minRequiredCode || appVersionName < minRequiredName;
+
+          if (outdated && !overlay) {
+            console.log("🚨 Showing update alert - app is outdated");
+            showUpdateBox(appVersionName, appVersionCode, latestVersionName);
+          } else if (!outdated && overlay) {
+            console.log("✅ App is up to date - hiding alert");
+            fadeOutOverlay();
+          } else {
+            console.log("✅ App is up to date");
+          }
+
+        } catch (err) {
+          console.warn("Version check failed:", err);
         }
       }
 
-      // initial check + repeat every 10 s
-      await checkVersion();
-      setInterval(checkVersion, 10000);
+      // Wait for Capacitor to be ready
+      document.addEventListener('DOMContentLoaded', async function () {
+        // Initial check after a short delay to ensure Capacitor is ready
+        setTimeout(async () => {
+          await checkVersion();
+        }, 1000);
+
+        // Repeat every 10 minutes
+        setInterval(checkVersion, 600000);
+      });
+
     })();
 
 

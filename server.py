@@ -1519,6 +1519,21 @@ async def get_destroyed_rooms():
     return JSONResponse({"destroyed": list(DESTROYED_ROOMS)})
 
 
+@app.get("/api/app-version")
+async def get_app_version():
+    """Return current and minimum required versions"""
+    return {
+        "current_version": {
+            "code": 13,  # Latest available version code
+            "name": "7.5",  # Latest available version name
+        },
+        "min_required_version": {
+            "code": 13,  # Minimum allowed version code - CHANGE THIS TO CONTROL UPDATES
+            "name": "7.2",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
+        },
+    }
+
+
 # @app.post("/revive-room/{room}")
 # async def revive_room(room: str):
 #     """Manually revive a destroyed room (for testing)"""
