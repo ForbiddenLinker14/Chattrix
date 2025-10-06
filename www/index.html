@@ -617,71 +617,71 @@
     }
 
     /* Add this to the existing CSS in index.html */
-.lock-toggle-container {
-  margin: 15px 0;
-  padding: 10px;
-  background: #1a1812;
-  border-radius: 8px;
-  border: 1px solid #333;
-}
+    .lock-toggle-container {
+      margin: 15px 0;
+      padding: 10px;
+      background: #1a1812;
+      border-radius: 8px;
+      border: 1px solid #333;
+    }
 
-.lock-label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: #eaeaea;
-}
+    .lock-label {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 14px;
+      color: #eaeaea;
+    }
 
-.lock-toggle {
-  position: relative;
-  display: inline-block;
-  width: 50px;
-  height: 24px;
-}
+    .lock-toggle {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
 
-.lock-toggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
+    .lock-toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
 
-.lock-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #e74c3c;
-  transition: .4s;
-  border-radius: 24px;
-}
+    .lock-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e74c3c;
+      transition: .4s;
+      border-radius: 24px;
+    }
 
-.lock-slider:before {
-  position: absolute;
-  content: "";
-  height: 16px;
-  width: 16px;
-  left: 4px;
-  bottom: 4px;
-  background-color: white;
-  transition: .4s;
-  border-radius: 50%;
-}
+    .lock-slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
 
-input:checked + .lock-slider {
-  background-color: #27ae60;
-}
+    input:checked+.lock-slider {
+      background-color: #27ae60;
+    }
 
-input:checked + .lock-slider:before {
-  transform: translateX(26px);
-}
+    input:checked+.lock-slider:before {
+      transform: translateX(26px);
+    }
 
-.lock-status {
-  margin-left: 10px;
-  font-size: 14px;
-  color: #eaeaea;
-}
+    .lock-status {
+      margin-left: 10px;
+      font-size: 14px;
+      color: #eaeaea;
+    }
   </style>
 </head>
 
@@ -708,14 +708,14 @@ input:checked + .lock-slider:before {
     <input id="room" type="text" placeholder="Unique Personal Id" />
 
     <!-- Add this after the destroy room button in index.html -->
-<div class="lock-toggle-container">
-  <label class="lock-label">🔒 Lock Room:</label>
-  <label class="lock-toggle">
-    <input type="checkbox" id="roomLockToggle" onchange="toggleRoomLock()" />
-    <span class="lock-slider"></span>
-  </label>
-  <span id="lockStatus" class="lock-status">Locked</span>
-</div>
+    <div class="lock-toggle-container">
+      <label class="lock-label">🔒 Lock Room:</label>
+      <label class="lock-toggle">
+        <input type="checkbox" id="roomLockToggle" onchange="toggleRoomLock()" />
+        <span class="lock-slider"></span>
+      </label>
+      <span id="lockStatus" class="lock-status">Locked</span>
+    </div>
 
     <button onclick="joinRoom()" style="width: 100%">Enter</button>
     <button onclick="leaveRoom()" style="width: 100%; background: #ff9800; color: white">
@@ -1016,20 +1016,19 @@ input:checked + .lock-slider:before {
       if (joinedRooms.has(currentRoom)) { alert(`You are already in room "${currentRoom}"!`); return; }
 
       // Check room lock status
-  const isLocked = await checkRoomLockStatus(currentRoom);
-  
-  // If room is locked and user is not already in the room, prevent joining
-  if (isLocked && !joinedRooms.has(currentRoom)) {
-    const roomUsers = await getRoomUsers(currentRoom);
-    const isExistingUser = roomUsers.includes(currentName);
-    
-    if (!isExistingUser) {
-      alert(`Room "${currentRoom}" is locked. You cannot join at this time.`);
-      document.getElementById("roomLockToggle").checked = true;
-      updateLockUI(true);
-      return;
-    }
-  }
+      const isLocked = await checkRoomLockStatus(currentRoom);
+
+      // If room is locked and user is not already in the room, prevent joining
+      if (isLocked && !joinedRooms.has(currentRoom)) {
+        const roomUsers = await getRoomUsers(currentRoom);
+        const isExistingUser = roomUsers.includes(currentName);
+
+        if (!isExistingUser) {
+          alert(`Room "${currentRoom}" is locked. You cannot join at this time.`);
+          document.getElementById("roomLockToggle").checked = true;
+          return;
+        }
+      }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
       if (roomStatus.destroyed) {
@@ -1126,10 +1125,10 @@ input:checked + .lock-slider:before {
       });
 
       // Update lock UI after joining
-  if (isLocked !== undefined) {
-    document.getElementById("roomLockToggle").checked = isLocked;
-    updateLockUI(isLocked);
-  }
+      if (isLocked !== undefined) {
+        document.getElementById("roomLockToggle").checked = isLocked;
+        updateLockUI(isLocked);
+      }
 
       socket.on("connect", () => {
         if (currentRoom && currentName) {
@@ -1142,20 +1141,20 @@ input:checked + .lock-slider:before {
       });
 
       // Add this in the joinRoom function where other socket events are handled
-socket.on("room_lock_changed", (data) => {
-  if (data.room === currentRoom) {
-    roomLockStates[data.room] = data.locked;
-    document.getElementById("roomLockToggle").checked = data.locked;
-    updateLockUI(data.locked);
-    
-    // Show system message
-    addMessage({
-      sender: "System",
-      text: `Room has been ${data.locked ? 'locked' : 'unlocked'} by ${data.lockedBy}`,
-      ts: new Date().toISOString()
-    });
-  }
-});
+      socket.on("room_lock_changed", (data) => {
+        if (data.room === currentRoom) {
+          roomLockStates[data.room] = data.locked;
+          document.getElementById("roomLockToggle").checked = data.locked;
+          updateLockUI(data.locked);
+
+          // Show system message
+          addMessage({
+            sender: "System",
+            text: `Room has been ${data.locked ? 'locked' : 'unlocked'} by ${data.lockedBy}`,
+            ts: new Date().toISOString()
+          });
+        }
+      });
 
       socket.on("room_message_meta", (data) => {
         try {
@@ -2076,74 +2075,74 @@ socket.on("room_lock_changed", (data) => {
       } catch (err) { console.error("❌ destroyRoom error:", err); alert(err.message); }
     };
 
-async function leaveRoom() {
-  if (!currentRoom) { alert("You are not in a room!"); return; }
-  const leftRoom = currentRoom;
-  const savedToken = localStorage.getItem("fcm_token");
-  
-  if (savedToken) {
-    try {
-      await fetch("/api/unregister-fcm", { 
-        method: "POST", 
-        headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify({ token: savedToken, user: currentName, room: currentRoom }) 
-      });
-    } catch (err) { 
-      console.error("❌ Failed to unregister FCM token:", err); 
-    }
-  }
-  
-  try { 
-    await unsubscribeUser(currentName, currentRoom); 
-  } catch (err) { 
-    console.error("❌ Failed to unsubscribe WebPush:", err); 
-  }
-  
-  socket.emit("leave", { room: currentRoom, sender: currentName, reason: "leave" });
-  
-  document.getElementById("input").disabled = true;
-  document.getElementById("send").disabled = true;
-  document.getElementById("attach").disabled = true;
-  
-  addMessage({ 
-    sender: "System", 
-    text: `YOU LEFT FROM ROOM ${leftRoom}`, 
-    ts: new Date().toISOString() 
-  });
-  
-  lastPersistedTs = null;
-  joinedRooms.delete(currentRoom);
-  
-  if (joinedRoomsByUser[currentName]) {
-    joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== currentRoom);
-    localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-  }
-  
-  // ✅ CORRECTED: Only remove lock state if this user was the last one in ALL their rooms
-  // This is a simplified approach - for a more accurate approach, we'd need to check server-side
-  const userRooms = joinedRoomsByUser[currentName] || [];
-  if (userRooms.length === 0) {
-    // User has no rooms left, clean up their lock states
-    Object.keys(roomLockStates).forEach(room => {
-      if (roomLockStates[room]) {
-        Storage.remove(`room_lock_${room}`);
+    async function leaveRoom() {
+      if (!currentRoom) { alert("You are not in a room!"); return; }
+      const leftRoom = currentRoom;
+      const savedToken = localStorage.getItem("fcm_token");
+
+      if (savedToken) {
+        try {
+          await fetch("/api/unregister-fcm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: savedToken, user: currentName, room: currentRoom })
+          });
+        } catch (err) {
+          console.error("❌ Failed to unregister FCM token:", err);
+        }
       }
-    });
-  }
-  
-  renderJoinedRooms();
-  currentRoom = "";
-  Storage.remove("chat_name"); 
-  Storage.remove("chat_room");
-  document.getElementById("user-list").innerHTML = "";
-  document.getElementById("chat-container").style.display = "block";
-  document.getElementById("input-area").style.display = "none";
-  document.getElementById("messages").style.display = "block";
-  
-  // Reset lock UI
-  document.getElementById("roomLockToggle").checked = false;
-  updateLockUI(false);
-}
+
+      try {
+        await unsubscribeUser(currentName, currentRoom);
+      } catch (err) {
+        console.error("❌ Failed to unsubscribe WebPush:", err);
+      }
+
+      socket.emit("leave", { room: currentRoom, sender: currentName, reason: "leave" });
+
+      document.getElementById("input").disabled = true;
+      document.getElementById("send").disabled = true;
+      document.getElementById("attach").disabled = true;
+
+      addMessage({
+        sender: "System",
+        text: `YOU LEFT FROM ROOM ${leftRoom}`,
+        ts: new Date().toISOString()
+      });
+
+      lastPersistedTs = null;
+      joinedRooms.delete(currentRoom);
+
+      if (joinedRoomsByUser[currentName]) {
+        joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter((r) => r !== currentRoom);
+        localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+      }
+
+      // ✅ CORRECTED: Only remove lock state if this user was the last one in ALL their rooms
+      // This is a simplified approach - for a more accurate approach, we'd need to check server-side
+      const userRooms = joinedRoomsByUser[currentName] || [];
+      if (userRooms.length === 0) {
+        // User has no rooms left, clean up their lock states
+        Object.keys(roomLockStates).forEach(room => {
+          if (roomLockStates[room]) {
+            Storage.remove(`room_lock_${room}`);
+          }
+        });
+      }
+
+      renderJoinedRooms();
+      currentRoom = "";
+      Storage.remove("chat_name");
+      Storage.remove("chat_room");
+      document.getElementById("user-list").innerHTML = "";
+      document.getElementById("chat-container").style.display = "block";
+      document.getElementById("input-area").style.display = "none";
+      document.getElementById("messages").style.display = "block";
+
+      // Reset lock UI
+      document.getElementById("roomLockToggle").checked = false;
+      updateLockUI(false);
+    }
 
     // ======================================================
     // =============== Event Listeners ======================
@@ -2165,65 +2164,65 @@ async function leaveRoom() {
     // =============== Initialization =======================
     // ======================================================
     window.addEventListener("load", async () => {
-  await requestNotificationPermission();
-  const savedName = Storage.get("chat_name");
-  const savedRoom = Storage.get("chat_room");
+      await requestNotificationPermission();
+      const savedName = Storage.get("chat_name");
+      const savedRoom = Storage.get("chat_room");
 
-  if (savedName && savedRoom) {
-    try {
-      // ✅ STRICT CHECK: Block auto-join if room was EVER destroyed
-      const roomStatus = await checkRoomStatus(savedRoom, savedName);
+      if (savedName && savedRoom) {
+        try {
+          // ✅ STRICT CHECK: Block auto-join if room was EVER destroyed
+          const roomStatus = await checkRoomStatus(savedRoom, savedName);
 
-      // ✅ Check both flags from the original server response
-      if (roomStatus.destroyed || roomStatus.was_destroyed) {
-        showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
+          // ✅ Check both flags from the original server response
+          if (roomStatus.destroyed || roomStatus.was_destroyed) {
+            showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
 
-        // ✅ CLEAR STORAGE: If room was ever destroyed, clear it from storage
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
+            // ✅ CLEAR STORAGE: If room was ever destroyed, clear it from storage
+            Storage.remove("chat_name");
+            Storage.remove("chat_room");
 
-        // ✅ CLEAR from joinedRoomsByUser
-        if (joinedRoomsByUser[savedName]) {
-          joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
-          localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
-        }
+            // ✅ CLEAR from joinedRoomsByUser
+            if (joinedRoomsByUser[savedName]) {
+              joinedRoomsByUser[savedName] = joinedRoomsByUser[savedName].filter(r => r !== savedRoom);
+              localStorage.setItem("joinedRoomsByUser", JSON.stringify(joinedRoomsByUser));
+            }
 
-        document.getElementById("intro").style.display = "block";
-        return;
-      }
+            document.getElementById("intro").style.display = "block";
+            return;
+          }
 
-      // ✅ Check if room is locked (server-side check)
-      const isLocked = await checkRoomLockStatus(savedRoom);
-      roomLockStates[savedRoom] = isLocked;
-      
-      // If room is locked and user is not already in it, prevent auto-join
-      if (isLocked) {
-        const roomUsers = await getRoomUsers(savedRoom);
-        const isExistingUser = roomUsers.includes(savedName);
-        
-        if (!isExistingUser) {
-          alert(`Room "${savedRoom}" is locked. You cannot join at this time.`);
+          // ✅ Check if room is locked (server-side check)
+          const isLocked = await checkRoomLockStatus(savedRoom);
+          roomLockStates[savedRoom] = isLocked;
+
+          // If room is locked and user is not already in it, prevent auto-join
+          if (isLocked) {
+            const roomUsers = await getRoomUsers(savedRoom);
+            const isExistingUser = roomUsers.includes(savedName);
+
+            if (!isExistingUser) {
+              alert(`Room "${savedRoom}" is locked. You cannot join at this time.`);
+              document.getElementById("intro").style.display = "block";
+              return;
+            }
+          }
+
+          // If room is not destroyed and not locked (or user is existing), proceed with auto-join
+          document.getElementById("name").value = savedName;
+          document.getElementById("room").value = savedRoom;
+          joinRoom({ preserveMessages: true });
+
+        } catch (err) {
+          // ✅ If status check fails, DON'T auto-join (be safe)
+          console.error("Auto-join blocked due to status check failure:", err);
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
           document.getElementById("intro").style.display = "block";
-          return;
         }
+      } else {
+        document.getElementById("intro").style.display = "block";
       }
-
-      // If room is not destroyed and not locked (or user is existing), proceed with auto-join
-      document.getElementById("name").value = savedName;
-      document.getElementById("room").value = savedRoom;
-      joinRoom({ preserveMessages: true });
-
-    } catch (err) {
-      // ✅ If status check fails, DON'T auto-join (be safe)
-      console.error("Auto-join blocked due to status check failure:", err);
-      Storage.remove("chat_name");
-      Storage.remove("chat_room");
-      document.getElementById("intro").style.display = "block";
-    }
-  } else {
-    document.getElementById("intro").style.display = "block";
-  }
-});
+    });
 
     // ======================================================
     // =============== Capacitor Push Notifications =========
@@ -2383,104 +2382,104 @@ async function leaveRoom() {
 
     // Add these functions to the JavaScript in index.html
 
-// Room lock state
-let roomLockStates = {};
+    // Room lock state
+    let roomLockStates = {};
 
-// Toggle room lock
-window.toggleRoomLock = async function() {
-  if (!currentRoom) {
-    alert("Join a room first!");
-    document.getElementById("roomLockToggle").checked = false;
-    return;
-  }
+    // Toggle room lock
+    window.toggleRoomLock = async function () {
+      if (!currentRoom) {
+        alert("Join a room first!");
+        document.getElementById("roomLockToggle").checked = false;
+        return;
+      }
 
-  const isLocked = document.getElementById("roomLockToggle").checked;
-  
-  try {
-    const response = await fetch(`${API_BASE}/room-lock/${encodeURIComponent(currentRoom)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ locked: isLocked, user: currentName })
-    });
+      const isLocked = document.getElementById("roomLockToggle").checked;
 
-    if (!response.ok) throw new Error("Failed to update room lock");
-    
-    const data = await response.json();
-    roomLockStates[currentRoom] = isLocked;
-    updateLockUI(isLocked);
-    
-    // Broadcast to all clients in the room
-    if (socket) {
-      socket.emit("room_lock_changed", { 
-        room: currentRoom, 
-        locked: isLocked,
-        lockedBy: currentName 
-      });
+      try {
+        const response = await fetch(`${API_BASE}/room-lock/${encodeURIComponent(currentRoom)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locked: isLocked, user: currentName })
+        });
+
+        if (!response.ok) throw new Error("Failed to update room lock");
+
+        const data = await response.json();
+        roomLockStates[currentRoom] = isLocked;
+        updateLockUI(isLocked);
+
+        // Broadcast to all clients in the room
+        if (socket) {
+          socket.emit("room_lock_changed", {
+            room: currentRoom,
+            locked: isLocked,
+            lockedBy: currentName
+          });
+        }
+
+      } catch (err) {
+        console.error("❌ toggleRoomLock error:", err);
+        document.getElementById("roomLockToggle").checked = !isLocked;
+        alert("Failed to update room lock");
+      }
+    };
+
+    // Update lock UI
+    function updateLockUI(isLocked) {
+      const lockStatus = document.getElementById("lockStatus");
+      const toggle = document.getElementById("roomLockToggle");
+
+      if (isLocked) {
+        lockStatus.textContent = "Locked";
+        lockStatus.style.color = "#e74c3c";
+      } else {
+        lockStatus.textContent = "Unlocked";
+        lockStatus.style.color = "#27ae60";
+      }
+
+      // Ensure toggle matches the state
+      toggle.checked = isLocked;
     }
-    
-  } catch (err) {
-    console.error("❌ toggleRoomLock error:", err);
-    document.getElementById("roomLockToggle").checked = !isLocked;
-    alert("Failed to update room lock");
-  }
-};
 
-// Update lock UI
-function updateLockUI(isLocked) {
-  const lockStatus = document.getElementById("lockStatus");
-  const toggle = document.getElementById("roomLockToggle");
-  
-  if (isLocked) {
-    lockStatus.textContent = "Locked";
-    lockStatus.style.color = "#e74c3c";
-  } else {
-    lockStatus.textContent = "Unlocked";
-    lockStatus.style.color = "#27ae60";
-  }
-  
-  // Ensure toggle matches the state
-  toggle.checked = isLocked;
-}
-
-// Check room lock status
-async function checkRoomLockStatus(room) {
-  try {
-    const response = await fetch(`${API_BASE}/room-lock/${encodeURIComponent(room)}`);
-    if (response.ok) {
-      const data = await response.json();
-      roomLockStates[room] = data.locked;
-      return data.locked;
+    // Check room lock status
+    async function checkRoomLockStatus(room) {
+      try {
+        const response = await fetch(`${API_BASE}/room-lock/${encodeURIComponent(room)}`);
+        if (response.ok) {
+          const data = await response.json();
+          roomLockStates[room] = data.locked;
+          return data.locked;
+        }
+      } catch (err) {
+        console.warn("Failed to check room lock status:", err);
+      }
+      return false;
     }
-  } catch (err) {
-    console.warn("Failed to check room lock status:", err);
-  }
-  return false;
-}
 
-// Load room lock state from storage
-function loadRoomLockState(room) {
-  const saved = Storage.get(`room_lock_${room}`);
-  return saved === "true";
-}
-
-// Save room lock state to storage
-function saveRoomLockState(room, isLocked) {
-  Storage.set(`room_lock_${room}`, isLocked.toString());
-}
-
-// Add this helper function to get room users from server
-async function getRoomUsers(room) {
-  try {
-    const response = await fetch(`${API_BASE}/room-users/${encodeURIComponent(room)}`);
-    if (response.ok) {
-      const data = await response.json();
-      return data.users || [];
+    // Load room lock state from storage
+    function loadRoomLockState(room) {
+      const saved = Storage.get(`room_lock_${room}`);
+      return saved === "true";
     }
-  } catch (err) {
-    console.warn("Failed to get room users:", err);
-  }
-  return [];
-}
+
+    // Save room lock state to storage
+    function saveRoomLockState(room, isLocked) {
+      Storage.set(`room_lock_${room}`, isLocked.toString());
+    }
+
+    // Add this helper function to get room users from server
+    async function getRoomUsers(room) {
+      try {
+        const response = await fetch(`${API_BASE}/room-users/${encodeURIComponent(room)}`);
+        if (response.ok) {
+          const data = await response.json();
+          return data.users || [];
+        }
+      } catch (err) {
+        console.warn("Failed to get room users:", err);
+      }
+      return [];
+    }
   </script>
 
   <!-- Capacitor Storage Module -->

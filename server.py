@@ -1362,7 +1362,7 @@ async def set_room_lock(room: str, request: Request):
     body = await request.json()
     locked = body.get("locked", False)
     user = body.get("user", "unknown")
-    
+
     # Store lock state in database
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -1378,20 +1378,21 @@ async def set_room_lock(room: str, request: Request):
     )
     c.execute(
         "INSERT OR REPLACE INTO room_locks (room, locked, locked_by, locked_at) VALUES (?, ?, ?, ?)",
-        (room, 1 if locked else 0, user, datetime.now(timezone.utc).isoformat())
+        (room, 1 if locked else 0, user, datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()
-    
+
     # Broadcast to all clients in the room
-    await sio.emit("room_lock_changed", {
-        "room": room,
-        "locked": locked,
-        "lockedBy": user
-    }, room=room)
-    
+    await sio.emit(
+        "room_lock_changed",
+        {"room": room, "locked": locked, "lockedBy": user},
+        room=room,
+    )
+
     print(f"🔒 Room {room} {'locked' if locked else 'unlocked'} by {user}")
     return {"status": "ok", "locked": locked}
+
 
 @app.get("/room-lock/{room}")
 async def get_room_lock(room: str):
@@ -1403,9 +1404,10 @@ async def get_room_lock(room: str):
     c.execute("SELECT locked FROM room_locks WHERE room = ?", (room,))
     row = c.fetchone()
     conn.close()
-    
+
     locked = bool(row[0]) if row else False
     return {"locked": locked}
+
 
 # Helper function to get room users
 @app.get("/room-users/{room}")
