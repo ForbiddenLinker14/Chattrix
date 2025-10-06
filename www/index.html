@@ -1114,29 +1114,34 @@
       overlay.id = "destroyed-room-alert";
       overlay.style = `position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000;`;
 
-      // ✅ DYNAMIC CONTENT based on whether there's a timer
+      // ✅ DIFFERENT MESSAGES based on current vs previous destruction
       let messageHtml;
       if (timeRemaining > 0) {
+        // Currently destroyed - show timer
         messageHtml = `
-            <p>Room <strong>"${room}"</strong> is currently destroyed.</p>
-            <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
-            <p style="font-size: 12px; color: #888;">Auto-join will be available when timer reaches 0.</p>
-        `;
+        <p>Room <strong>"${room}"</strong> is currently destroyed.</p>
+        <p>Please wait <span id="countdown-timer" style="font-weight: bold; color: #25d366;">${timeRemaining}</span> seconds before trying again.</p>
+        <p style="font-size: 12px; color: #888;">Auto-join will be available when timer reaches 0.</p>
+    `;
       } else {
+        // Previously destroyed - permanent block for offline users
         messageHtml = `
-            <p>Room <strong>"${room}"</strong> was previously destroyed.</p>
-            <p>Auto-join is blocked. You can manually join the room.</p>
-            <p style="font-size: 12px; color: #888;">Checking server status every 10 seconds...</p>
-        `;
+        <p>Room <strong>"${room}"</strong> was destroyed while you were offline.</p>
+        <p>Auto-join is blocked for security reasons.</p>
+        <p style="font-size: 12px; color: #888;">You can manually join the room if it has been recreated.</p>
+    `;
       }
 
       const alertBox = document.createElement("div");
       alertBox.style = `background: #1a1812; padding: 20px; border-radius: 12px; border: 2px solid #e74c3c; max-width: 400px; text-align: center; color: #eaeaea;`;
       alertBox.innerHTML = `
-        <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
-        ${messageHtml}
-        <button onclick="closeDestroyedRoomAlert()" style="background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 10px;">Close</button>
-    `;
+    <h3 style="color: #e74c3c; margin-top: 0;">🚫 Room Destroyed</h3>
+    ${messageHtml}
+    <div style="margin-top: 15px;">
+      <button onclick="closeDestroyedRoomAlert()" style="background: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 5px;">Close</button>
+      ${timeRemaining <= 0 ? `<button onclick="manualJoinRoom('${room}')" style="background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 5px;">Join Manually</button>` : ''}
+    </div>
+  `;
 
       overlay.appendChild(alertBox);
       document.body.appendChild(overlay);
@@ -1188,6 +1193,14 @@
       }, 10000);
 
       overlay._intervals = [countdownInterval, statusCheckInterval].filter(Boolean);
+    }
+
+    // ✅ Add this function for manual joining
+    function manualJoinRoom(room) {
+      closeDestroyedRoomAlert();
+      document.getElementById("room").value = room;
+      document.getElementById("intro").style.display = "none";
+      // User can now manually click "Enter" to join
     }
 
     function closeDestroyedRoomAlert() {
@@ -2008,47 +2021,44 @@
     // ======================================================
     // =============== Initialization =======================
     // ======================================================
-window.addEventListener("load", async () => {
-  await requestNotificationPermission();
-  const savedName = Storage.get("chat_name");
-  const savedRoom = Storage.get("chat_room");
+    window.addEventListener("load", async () => {
+      await requestNotificationPermission();
+      const savedName = Storage.get("chat_name");
+      const savedRoom = Storage.get("chat_room");
 
-  if (savedName && savedRoom) {
-    try {
-      // ✅ IMPROVED CHECK: Only block auto-join if room is CURRENTLY destroyed
-      const roomStatus = await checkRoomStatus(savedRoom);
+      if (savedName && savedRoom) {
+        try {
+          // ✅ IMPROVED CHECK: Block auto-join if room is currently OR previously destroyed
+          const roomStatus = await checkRoomStatus(savedRoom);
 
-      // ✅ ONLY block if room is currently destroyed (not just "was destroyed")
-      if (roomStatus.destroyed) {
-        showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
-        
-        // ✅ DON'T clear storage here - let user manually clear or wait for timer
-        // Storage.remove("chat_name");
-        // Storage.remove("chat_room");
-        
+          // ✅ Block if room is currently destroyed OR was previously destroyed
+          if (roomStatus.destroyed || roomStatus.was_destroyed) {
+            showDestroyedRoomAlert(savedRoom, roomStatus.time_remaining);
+
+            // For previously destroyed rooms (not currently destroyed), show different message
+            if (roomStatus.was_destroyed && !roomStatus.destroyed) {
+              // This user was offline during destruction - block auto-join permanently
+              console.log("User was offline during room destruction - blocking auto-join");
+            }
+
+            document.getElementById("intro").style.display = "block";
+            return;
+          }
+
+          // ✅ Allow auto-join ONLY if room was never destroyed
+          document.getElementById("name").value = savedName;
+          document.getElementById("room").value = savedRoom;
+          joinRoom({ preserveMessages: true });
+
+        } catch (err) {
+          // ✅ If status check fails, be safe and block auto-join
+          console.error("Auto-join blocked due to status check failure:", err);
+          document.getElementById("intro").style.display = "block";
+        }
+      } else {
         document.getElementById("intro").style.display = "block";
-        return;
       }
-
-      // ✅ Allow auto-join in these cases:
-      // 1. Room was destroyed but timer expired (roomStatus.destroyed = false)
-      // 2. Room was previously destroyed but recreation period passed  
-      // 3. Room was never destroyed
-      document.getElementById("name").value = savedName;
-      document.getElementById("room").value = savedRoom;
-      joinRoom({ preserveMessages: true });
-
-    } catch (err) {
-      // ✅ If status check fails, allow auto-join (be permissive)
-      console.error("Auto-join allowed despite status check failure:", err);
-      document.getElementById("name").value = savedName;
-      document.getElementById("room").value = savedRoom;
-      joinRoom({ preserveMessages: true });
-    }
-  } else {
-    document.getElementById("intro").style.display = "block";
-  }
-});
+    });
 
     // ======================================================
     // =============== Capacitor Push Notifications =========
@@ -2098,7 +2108,7 @@ window.addEventListener("load", async () => {
         }
       }
 
-      function showUpdateBox(versionName, versionCode,latestVersionName) {
+      function showUpdateBox(versionName, versionCode, latestVersionName) {
         if (overlay) return;
         overlay = document.createElement("div");
         overlay.style = `
@@ -2193,7 +2203,7 @@ window.addEventListener("load", async () => {
         const outdated = currentCode < requiredVersionCode || currentName < requiredVersionName;
 
         if (outdated && !overlay) {
-          showUpdateBox(currentName, currentCode,latestVersionName);
+          showUpdateBox(currentName, currentCode, latestVersionName);
         } else if (!outdated && overlay) {
           fadeOutOverlay();
         }
