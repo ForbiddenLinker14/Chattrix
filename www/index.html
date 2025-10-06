@@ -639,6 +639,16 @@
     </script>
 
     <input id="room" type="text" placeholder="Unique Personal Id" />
+
+    <div class="lock-toggle-container">
+  <label class="lock-label">🔒 Lock Room:</label>
+  <label class="lock-toggle">
+    <input type="checkbox" id="roomLockToggle" />
+    <span class="lock-slider"></span>
+  </label>
+  <span id="lockStatus" class="lock-status">Unlocked</span>
+</div>
+
     <button onclick="joinRoom()" style="width: 100%">Enter</button>
     <button onclick="leaveRoom()" style="width: 100%; background: #ff9800; color: white">
       Leave Room
@@ -2206,6 +2216,37 @@
       await checkVersion();
       setInterval(checkVersion, 10000);
     })();
+
+
+    function toggleRoomLock() {
+  if (!socket || !currentRoom) return;
+  const locked = document.getElementById("roomLockToggle").checked;
+  socket.emit("toggle_lock", { room: currentRoom, locked });
+}
+
+// Listen to server broadcast
+socket.on("lock_status", (data) => {
+  if (data.room !== currentRoom) return;
+  const checkbox = document.getElementById("roomLockToggle");
+  checkbox.checked = data.locked;
+  document.getElementById("lockStatus").textContent = data.locked ? "Locked" : "Unlocked";
+});
+
+// When server rejects join because locked
+socket.on("room_locked", () => {
+  alert("Room is locked. You cannot join now.");
+});
+
+// When reloading, request status
+async function fetchLockStatus(room) {
+  const res = await fetch(`/room-status/${room}`);
+  if (res.ok) {
+    const data = await res.json();
+    document.getElementById("roomLockToggle").checked = data.locked;
+    document.getElementById("lockStatus").textContent = data.locked ? "Locked" : "Unlocked";
+  }
+}
+
   </script>
 
   <!-- Capacitor Storage Module -->

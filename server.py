@@ -37,6 +37,7 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
+ROOM_LOCKS = {}  # { room: bool }  # True = locked
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -72,6 +73,27 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
+def load_room_locks():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("CREATE TABLE IF NOT EXISTS room_locks (room TEXT PRIMARY KEY, locked INTEGER NOT NULL)")
+        rows = c.fetchall()
+        conn.close()
+        return {row[0]: bool(row[1]) for row in rows}
+    except Exception:
+        return {}
+
+def save_room_lock(room: str, locked: bool):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO room_locks (room, locked) VALUES (?, ?)", (room, 1 if locked else 0))
+    conn.commit()
+    conn.close()
+
+ROOM_LOCKS = load_room_locks()
+
+
 def load_destroyed_rooms():
     """Load all permanently destroyed rooms from DB"""
     try:
@@ -601,6 +623,12 @@ async def join(sid, data):
     username = data["sender"]
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
+
+    # 🚫 Block new joins if locked (but allow if user was in before)
+    if ROOM_LOCKS.get(room, False):
+        if username not in ROOM_HISTORY.get(room, set()):
+            await sio.emit("room_locked", {"room": room}, to=sid)
+            return {"success": False, "error": "Room is locked"}
 
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
