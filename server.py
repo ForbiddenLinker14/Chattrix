@@ -24,6 +24,7 @@ from firebase_admin import credentials, messaging
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
 WAS_DESTROYED_ROOMS = {}  # { room: destroyed_timestamp }
+REVIVED_USERS = {}  # { room: set([usernames...]) }
 ROOM_USERS = {}  # { room: { username: sid } }
 LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
@@ -131,6 +132,8 @@ def cleanup_old_destroyed_rooms():
                 # Clear from all in-memory data structures
                 ROOM_HISTORY.pop(room, None)
                 ROOM_USERS.pop(room, None)
+                # inside the loop for room in rooms_to_delete:
+                REVIVED_USERS.pop(room, None)
 
                 # Clear FCM tokens from memory
                 for user in list(FCM_TOKENS.keys()):
@@ -574,6 +577,9 @@ async def destroy_room(room: str):
     # ✅ TRACK WITH TIMESTAMP:
     WAS_DESTROYED_ROOMS[room] = datetime.now(timezone.utc)
 
+    # clear prior revived users (room destroyed again)
+    REVIVED_USERS.pop(room, None)
+
     # ✅ NEW: Broadcast to ALL connected clients to clear this room from storage
     await sio.emit("clear_room_from_storage", {"room": room})
 
@@ -599,6 +605,11 @@ async def join(sid, data):
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
+
+    if room in WAS_DESTROYED_ROOMS:
+        REVIVED_USERS.setdefault(room, set()).add(username)
+        # optional: log
+        print(f"🔁 User {username} marked as revived for room {room}")
 
     # handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
@@ -1379,8 +1390,12 @@ async def get_unread_counts(request: Request):
 
 
 @app.get("/room-status/{room}")
-async def get_room_status(room: str):
+async def get_room_status(room: str, request: Request):
     """Check if room is destroyed and get destruction time"""
+    user = request.query_params.get("user")
+    # If room was previously destroyed but this user already re-joined -> allow
+    if user and room in REVIVED_USERS and user in REVIVED_USERS[room]:
+        return JSONResponse({"destroyed": False, "was_destroyed": False})
 
     # ✅ Check if room is currently destroyed (DESTROYED_ROOMS) - THIS SHOULD COME FIRST
     if room in DESTROYED_ROOMS:
@@ -1405,20 +1420,8 @@ async def get_room_status(room: str):
                         "time_remaining": time_remaining,  # ✅ This has the actual timer value
                     }
                 )
-            else:
-                # If room is in DESTROYED_ROOMS but not in DB, remove it
-                DESTROYED_ROOMS.discard(room)
-                
         except Exception as e:
             print(f"Error getting room status: {e}")
-            # If DB error, still return destroyed status from memory
-            return JSONResponse(
-                {
-                    "destroyed": True,
-                    "was_destroyed": True,
-                    "time_remaining": 0,
-                }
-            )
 
     # ✅ Check if room was destroyed within last 1 year (WAS_DESTROYED_ROOMS)
     if room in WAS_DESTROYED_ROOMS:
