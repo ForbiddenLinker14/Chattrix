@@ -761,13 +761,14 @@ async def join(sid, data):
         print(f"Error checking room lock: {e}")
 
     # ✅ FIXED: Better logic for checking if user should send join request
-    user_in_history = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
-    print(f"🔍 User {username} in room history: {user_in_history}")
+    # Check if user is in THIS room's history
+    user_in_this_room_history = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+    print(f"🔍 User {username} in room {room} history: {user_in_this_room_history}")
 
-    # If room is locked and user is not in room history, require admin approval
-    if is_locked and not user_in_history:
+    # If room is locked and user is not in THIS room's history, require admin approval
+    if is_locked and not user_in_this_room_history:
         print(
-            f"🚫 Room {room} is locked and user {username} not in history - requiring approval"
+            f"🚫 Room {room} is locked and user {username} not in this room's history - requiring approval"
         )
 
         # Store pending request
@@ -821,8 +822,9 @@ async def join(sid, data):
         # Broadcast admin change to the room
         await sio.emit("admin_changed", {"room": room, "admin": username}, room=room)
 
-    # ✅ Ensure history exists and add user
+    # ✅ Ensure history exists and add user to THIS room's history
     ROOM_HISTORY.setdefault(room, set()).add(username)
+    print(f"✅ Added {username} to room {room} history")
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
@@ -1930,8 +1932,15 @@ async def get_room_lock(room: str):
 # Helper function to get room users
 @app.get("/room-users/{room}")
 async def get_room_users(room: str):
-    users = list(ROOM_HISTORY.get(room, set()))
-    return {"users": users}
+    """Get all users who have ever joined this room"""
+    try:
+        # Return users from ROOM_HISTORY for this specific room
+        users = list(ROOM_HISTORY.get(room, set()))
+        print(f"🔍 /room-users/{room} returning: {users}")
+        return {"users": users}
+    except Exception as e:
+        print(f"❌ Error in /room-users/{room}: {e}")
+        return {"users": []}
 
 
 # ---------------- Static / PWA assets ----------------

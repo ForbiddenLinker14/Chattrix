@@ -1186,12 +1186,12 @@
         // Continue with join attempt even if lock check fails
       }
 
-      // ✅ FIXED: Check if user is in room history PROPERLY
+      // In the joinRoom function, update this section:
       let isExistingUser = false;
       try {
         const roomUsers = await getRoomUsers(currentRoom);
         isExistingUser = roomUsers.includes(currentName);
-        console.log(`👥 User ${currentName} in room history: ${isExistingUser}, Room users:`, roomUsers);
+        console.log(`👥 User ${currentName} in room ${currentRoom} history: ${isExistingUser}, Room users:`, roomUsers);
       } catch (err) {
         console.warn("Failed to get room users:", err);
         // If we can't get room users, assume user is not existing to be safe
@@ -1212,9 +1212,11 @@
             username: currentName
           });
 
+          console.log(`📤 Join request emitted for ${currentName} to room ${currentRoom}`);
           showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
           return;
         } else {
+          console.log(`❌ Socket not connected, cannot send join request`);
           showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
           pendingJoinRequests.delete(requestKey); // Remove if failed
           return;
@@ -3321,18 +3323,20 @@
     // Check room lock status
     async function checkRoomLockStatus(room) {
       try {
-        const response = await fetch(
-          `${API_BASE}/room-lock/${encodeURIComponent(room)}`
-        );
+        console.log(`🔒 Checking lock status for room: ${room}`);
+        const response = await fetch(`${API_BASE}/room-lock/${encodeURIComponent(room)}`);
         if (response.ok) {
           const data = await response.json();
-          roomLockStates[room] = data.locked;
+          console.log(`🔒 Room ${room} lock status:`, data.locked);
           return data.locked;
+        } else {
+          console.warn(`❌ Failed to check room lock: ${response.status}`);
+          return false;
         }
       } catch (err) {
-        console.warn("Failed to check room lock status:", err);
+        console.warn("❌ Failed to check room lock status:", err);
+        return false;
       }
-      return false;
     }
 
 
@@ -3350,18 +3354,20 @@
     // Add this helper function to get room users from server
     async function getRoomUsers(room) {
       try {
+        console.log(`🔍 Fetching users for room: ${room}`);
         const response = await fetch(
           `${API_BASE}/room-users/${encodeURIComponent(room)}`
         );
         if (response.ok) {
           const data = await response.json();
+          console.log(`🔍 Room ${room} users:`, data.users);
           return data.users || [];
         } else {
-          console.warn(`Failed to get room users: ${response.status}`);
+          console.warn(`❌ Failed to get room users: ${response.status}`);
           return [];
         }
       } catch (err) {
-        console.warn("Failed to get room users:", err);
+        console.warn("❌ Failed to get room users:", err);
         return [];
       }
     }
