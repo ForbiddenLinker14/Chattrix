@@ -1416,6 +1416,23 @@
         }
       });
 
+      socket.on('join_request_cancelled', (data) => {
+        if (data.room === currentRoom && currentName === currentAdmin) {
+          // Remove the join request notification from admin view
+          const notification = document.querySelector(`.join-request[data-user="${data.username}"]`);
+          if (notification) {
+            notification.remove();
+
+            // Optional: Show a system message that request was cancelled
+            addMessage({
+              sender: 'System',
+              text: `Join request from ${data.username} was cancelled`,
+              ts: new Date().toISOString()
+            });
+          }
+        }
+      });
+
       socket.on('kicked', (data) => {
         if (data.room === currentRoom) {
           alert(`You were kicked from the room: ${data.reason}`);
@@ -3515,20 +3532,28 @@
     }
 
     // Add this function
+    // Update the cancelJoinRequest function
     function cancelJoinRequest(room, username) {
       const requestKey = `${room}_${username}`;
       if (pendingJoinRequests.has(requestKey)) {
         pendingJoinRequests.delete(requestKey);
-        showAutoCloseAlert('Join request cancelled.');
 
-        // Optional: Notify server to remove the pending request
+        // Remove the alert window immediately
+        const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
+        if (alertDiv) {
+          alertDiv.remove();
+        }
+
+        showAutoCloseAlert('Join request cancelled.', 2000, false);
+
+        // Notify server to remove the pending request from admin view
         if (socket && socket.connected) {
           socket.emit('cancel_join_request', { room, username });
         }
       }
     }
 
-    // Update the auto-close alert to include cancel option for pending requests
+    // Update the showAutoCloseAlert function to return the alert element
     function showAutoCloseAlert(message, duration = 2000, showCancelButton = false) {
       const alertDiv = document.createElement('div');
       alertDiv.style.cssText = `
@@ -3549,18 +3574,25 @@
 
       alertDiv.innerHTML = `
         <div>${message}</div>
-        ${showCancelButton ? `<button onclick="cancelJoinRequest('${currentRoom}', '${currentName}')" style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel Request</button>` : ''}
+        ${showCancelButton ?
+          `<button onclick="cancelJoinRequest('${currentRoom}', '${currentName}')" 
+                    style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Cancel Request
+            </button>`
+          : ''}
     `;
 
       document.body.appendChild(alertDiv);
 
-      if (!showCancelButton) {
+      if (!showCancelButton && duration > 0) {
         setTimeout(() => {
           if (alertDiv.parentNode) {
             alertDiv.remove();
           }
         }, duration);
       }
+
+      return alertDiv; // Return the alert element for reference
     }
   </script>
 

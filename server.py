@@ -639,6 +639,15 @@ async def join_request(sid, data):
     if not room or not username:
         return
 
+    # Check if request was already cancelled or exists
+    if room in PENDING_JOIN_REQUESTS and username in PENDING_JOIN_REQUESTS[room]:
+        # If the same user sends another request, ignore it
+        if PENDING_JOIN_REQUESTS[room][username] == sid:
+            return
+        # If different sid, update it (user reconnected)
+        else:
+            PENDING_JOIN_REQUESTS[room][username] = sid
+
     # Check if room is locked
     is_locked = False
     try:
@@ -656,10 +665,12 @@ async def join_request(sid, data):
         await sio.emit("join_approved", {"room": room}, to=sid)
         return
 
-    # Store pending request
+    # Store pending request if not already stored
     if room not in PENDING_JOIN_REQUESTS:
         PENDING_JOIN_REQUESTS[room] = {}
-    PENDING_JOIN_REQUESTS[room][username] = sid
+
+    if username not in PENDING_JOIN_REQUESTS[room]:
+        PENDING_JOIN_REQUESTS[room][username] = sid
 
     # Notify admin
     admin = ROOM_ADMINS.get(room)
@@ -691,6 +702,39 @@ async def join_request(sid, data):
         },
         to=sid,
     )
+
+
+@sio.event
+async def cancel_join_request(sid, data):
+    """Handle cancellation of join requests"""
+    room = data.get("room")
+    username = data.get("username")
+
+    if not room or not username:
+        return
+
+    # Remove from pending requests
+    if room in PENDING_JOIN_REQUESTS and username in PENDING_JOIN_REQUESTS[room]:
+        del PENDING_JOIN_REQUESTS[room][username]
+        if not PENDING_JOIN_REQUESTS[room]:
+            del PENDING_JOIN_REQUESTS[room]
+
+        print(f"🛑 Join request cancelled by {username} for room {room}")
+
+        # Notify admin that the request was cancelled
+        admin = ROOM_ADMINS.get(room)
+        if admin:
+            admin_sid = ROOM_USERS.get(room, {}).get(admin)
+            if admin_sid:
+                await sio.emit(
+                    "join_request_cancelled",
+                    {
+                        "room": room,
+                        "username": username,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    to=admin_sid,
+                )
 
 
 @sio.event
