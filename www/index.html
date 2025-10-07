@@ -1108,6 +1108,7 @@
     let roomTimestamps = {};
     let joinedRoomsByUser = {};
     let unreadCounts = {};
+    let pendingJoinRequests = new Set();
     const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
     // ======================================================
@@ -1162,6 +1163,14 @@
         alert("Enter name and room first!");
         return;
       }
+
+      // Check if there's already a pending request for this room
+      const requestKey = `${currentRoom}_${currentName}`;
+      if (pendingJoinRequests.has(requestKey)) {
+        showAutoCloseAlert("You already have a pending join request for this room.");
+        return;
+      }
+
       if (joinedRooms.has(currentRoom)) {
         alert(`You are already in room "${currentRoom}"!`);
         return;
@@ -1176,6 +1185,9 @@
         const isExistingUser = roomUsers.includes(currentName);
 
         if (!isExistingUser) {
+          // Mark this request as pending
+          pendingJoinRequests.add(requestKey);
+
           // Send join request to admin via socket
           if (socket && socket.connected) {
             socket.emit('join_request', {
@@ -1183,10 +1195,11 @@
               username: currentName
             });
 
-            alert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
             return;
           } else {
-            alert(`Room "${currentRoom}" is locked. Please try again.`);
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
+            pendingJoinRequests.delete(requestKey); // Remove if failed
             return;
           }
         }
@@ -1410,26 +1423,57 @@
         }
       });
 
+      // Update the pending request alert to show cancel button
       socket.on('join_pending', (data) => {
         if (data.room === currentRoom) {
-          alert('Join request sent to room admin. Waiting for approval...');
+          showAutoCloseAlert('Join request sent to room admin. Waiting for approval...', 0, true);
         }
       });
 
       socket.on('join_approved', (data) => {
         if (data.room === currentRoom) {
-          alert('Your join request was approved!');
-          // Retry joining
-          joinRoom();
+          const requestKey = `${data.room}_${currentName}`;
+          pendingJoinRequests.delete(requestKey); // Clean up approved request
+
+          showAutoCloseAlert('Your join request was approved!');
+          // Retry joining after a short delay
+          setTimeout(() => {
+            joinRoom();
+          }, 500);
         }
       });
 
       socket.on('join_rejected', (data) => {
         if (data.room === currentRoom) {
-          alert('Your join request was rejected.');
+          const requestKey = `${data.room}_${currentName}`;
+          pendingJoinRequests.delete(requestKey); // Clean up rejected request
+
+          showAutoCloseAlert('Your join request was rejected.', 3000);
+
+          // Reset UI to intro state
+          document.getElementById('room').value = '';
           document.getElementById('intro').style.display = 'block';
           document.getElementById('chat-container').style.display = 'none';
+          document.getElementById('input-area').style.display = 'none';
+          document.getElementById('messages').innerHTML = '';
+          document.getElementById('user-list').innerHTML = '';
+
+          // Remove from joined rooms
+          if (joinedRoomsByUser[currentName]) {
+            joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== currentRoom);
+            localStorage.setItem('joinedRoomsByUser', JSON.stringify(joinedRoomsByUser));
+            renderJoinedRooms();
+          }
+
+          // Reset current room
+          currentRoom = '';
+          Storage.remove("chat_room");
         }
+      });
+
+      // Also clean up pending requests when leaving the page
+      window.addEventListener('beforeunload', () => {
+        pendingJoinRequests.clear();
       });
 
       // Add this in the joinRoom function where other socket events are handled
@@ -3470,7 +3514,54 @@
       }
     }
 
+    // Add this function
+    function cancelJoinRequest(room, username) {
+      const requestKey = `${room}_${username}`;
+      if (pendingJoinRequests.has(requestKey)) {
+        pendingJoinRequests.delete(requestKey);
+        showAutoCloseAlert('Join request cancelled.');
 
+        // Optional: Notify server to remove the pending request
+        if (socket && socket.connected) {
+          socket.emit('cancel_join_request', { room, username });
+        }
+      }
+    }
+
+    // Update the auto-close alert to include cancel option for pending requests
+    function showAutoCloseAlert(message, duration = 2000, showCancelButton = false) {
+      const alertDiv = document.createElement('div');
+      alertDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        border: 2px solid #25d366;
+        z-index: 10000;
+        text-align: center;
+        max-width: 300px;
+        font-size: 14px;
+    `;
+
+      alertDiv.innerHTML = `
+        <div>${message}</div>
+        ${showCancelButton ? `<button onclick="cancelJoinRequest('${currentRoom}', '${currentName}')" style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel Request</button>` : ''}
+    `;
+
+      document.body.appendChild(alertDiv);
+
+      if (!showCancelButton) {
+        setTimeout(() => {
+          if (alertDiv.parentNode) {
+            alertDiv.remove();
+          }
+        }, duration);
+      }
+    }
   </script>
 
   <!-- Capacitor Storage Module -->
