@@ -1185,33 +1185,47 @@
         const isExistingUser = roomUsers.includes(currentName);
 
         if (!isExistingUser) {
-          pendingJoinRequests.add(requestKey);
-
           async function trySendJoinRequest(attempt = 1) {
             if (socket && socket.connected) {
               socket.emit("join_request", {
                 room: currentRoom,
                 username: currentName
               });
-              showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
+
+              // ✅ Mark as pending only after successful emit
+              pendingJoinRequests.add(requestKey);
+
+              showAutoCloseAlert(
+                `Room "${currentRoom}" is locked. Your join request has been sent to the admin.`
+              );
               return true;
             }
+
             if (attempt < 5) {
-              console.warn(`⚠️ Socket not ready, retrying join request (attempt ${attempt})...`);
-              await new Promise(res => setTimeout(res, 500 * attempt));
+              console.warn(
+                `⚠️ Socket not ready, retrying join request (attempt ${attempt})...`
+              );
+              await new Promise((res) => setTimeout(res, 500 * attempt));
               return trySendJoinRequest(attempt + 1);
             }
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Could not reach server, please retry.`);
+
+            // ❌ Could not send even after retries
+            showAutoCloseAlert(
+              `Room "${currentRoom}" is locked. Could not reach server, please retry.`
+            );
             pendingJoinRequests.delete(requestKey);
             return false;
           }
 
+          // 🔁 Try sending join request with retry logic
           await trySendJoinRequest();
           return;
         }
       } else {
-        // If room is unlocked, ensure no stale join requests remain
-        pendingJoinRequests.delete(requestKey);
+        // ✅ Room is unlocked — clear any stale pending join requests
+        if (pendingJoinRequests.has(requestKey)) {
+          pendingJoinRequests.delete(requestKey);
+        }
       }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
