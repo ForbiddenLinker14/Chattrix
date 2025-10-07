@@ -757,7 +757,7 @@ async def join(sid, data):
         print(f"Error checking room lock: {e}")
 
     # If room is locked and user is not in room history, require admin approval
-    if is_locked and room in ROOM_HISTORY and username not in ROOM_HISTORY[room]:
+    if is_locked and (room not in ROOM_HISTORY or username not in ROOM_HISTORY[room]):
         # Store pending request
         if room not in PENDING_JOIN_REQUESTS:
             PENDING_JOIN_REQUESTS[room] = {}
