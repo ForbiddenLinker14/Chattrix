@@ -961,6 +961,44 @@
 
   <script>
     // ======================================================
+    // =============== Fresh Install / Version Reset =========
+    // ======================================================
+    const APP_VERSION = "7.5"; // current app version
+
+    const lastVersion = localStorage.getItem("app_version");
+    if (lastVersion !== APP_VERSION) {
+      console.log("🧹 Clearing old storage for version", APP_VERSION);
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (e) {
+        console.warn("Storage clear failed:", e);
+      }
+
+      // 🧩 Clear IndexedDB and Cache Storage
+      if (indexedDB?.databases) {
+        indexedDB.databases().then(dbs => dbs.forEach(db => indexedDB.deleteDatabase(db.name)));
+      }
+      if (caches?.keys) {
+        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      }
+
+      // 🧩 Clear Capacitor Preferences safely
+      (async () => {
+        try {
+          const { Preferences } = await import('@capacitor/preferences');
+          await Preferences.clear();
+          console.log("✅ Capacitor Preferences cleared");
+        } catch (err) {
+          console.warn("⚠️ Preferences plugin not available or failed:", err);
+        }
+      })();
+
+      // Save current version
+      localStorage.setItem("app_version", APP_VERSION);
+    }
+
+    // ======================================================
     // =============== Storage Utility ======================
     // ======================================================
     const Storage = {
