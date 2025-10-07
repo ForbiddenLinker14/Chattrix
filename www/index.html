@@ -1447,10 +1447,18 @@
         }
       });
 
+      // Replace the existing join_approved and join_rejected event handlers with these:
+
       socket.on('join_approved', (data) => {
         if (data.room === currentRoom) {
           const requestKey = `${data.room}_${currentName}`;
           pendingJoinRequests.delete(requestKey); // Clean up approved request
+
+          // ✅ Remove the pending request alert
+          const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
+          if (alertDiv) {
+            alertDiv.remove();
+          }
 
           showAutoCloseAlert('Your join request was approved!');
           // Retry joining after a short delay
@@ -1464,6 +1472,12 @@
         if (data.room === currentRoom) {
           const requestKey = `${data.room}_${currentName}`;
           pendingJoinRequests.delete(requestKey); // Clean up rejected request
+
+          // ✅ Remove the pending request alert
+          const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
+          if (alertDiv) {
+            alertDiv.remove();
+          }
 
           showAutoCloseAlert('Your join request was rejected.', 3000);
 
@@ -3533,16 +3547,19 @@
 
     // Add this function
     // Update the cancelJoinRequest function
+    // Update the cancelJoinRequest function
     function cancelJoinRequest(room, username) {
       const requestKey = `${room}_${username}`;
       if (pendingJoinRequests.has(requestKey)) {
         pendingJoinRequests.delete(requestKey);
 
-        // Remove the alert window immediately
-        const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
-        if (alertDiv) {
-          alertDiv.remove();
-        }
+        // Remove ALL join request alerts
+        const alerts = document.querySelectorAll('.join-request-alert');
+        alerts.forEach(alert => alert.remove());
+
+        // Also remove any alerts by style as fallback
+        const fallbackAlerts = document.querySelectorAll('div[style*="position: fixed"][style*="top: 50%"]');
+        fallbackAlerts.forEach(alert => alert.remove());
 
         showAutoCloseAlert('Join request cancelled.', 2000, false);
 
@@ -3554,33 +3571,41 @@
     }
 
     // Update the showAutoCloseAlert function to return the alert element
+    // Update the showAutoCloseAlert function
     function showAutoCloseAlert(message, duration = 2000, showCancelButton = false) {
+      // First, remove any existing alerts to prevent duplicates
+      const existingAlerts = document.querySelectorAll('div[style*="position: fixed"][style*="top: 50%"]');
+      existingAlerts.forEach(alert => alert.remove());
+
       const alertDiv = document.createElement('div');
       alertDiv.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.9);
-        color: white;
-        padding: 20px;
-        border-radius: 10px;
-        border: 2px solid #25d366;
-        z-index: 10000;
-        text-align: center;
-        max-width: 300px;
-        font-size: 14px;
-    `;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 20px;
+    border-radius: 10px;
+    border: 2px solid #25d366;
+    z-index: 10000;
+    text-align: center;
+    max-width: 300px;
+    font-size: 14px;
+  `;
+
+      // Add a specific class for easier identification
+      alertDiv.className = 'join-request-alert';
 
       alertDiv.innerHTML = `
-        <div>${message}</div>
-        ${showCancelButton ?
+    <div>${message}</div>
+    ${showCancelButton ?
           `<button onclick="cancelJoinRequest('${currentRoom}', '${currentName}')" 
-                    style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                Cancel Request
-            </button>`
+              style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
+        Cancel Request
+      </button>`
           : ''}
-    `;
+  `;
 
       document.body.appendChild(alertDiv);
 
@@ -3592,7 +3617,7 @@
         }, duration);
       }
 
-      return alertDiv; // Return the alert element for reference
+      return alertDiv;
     }
   </script>
 
