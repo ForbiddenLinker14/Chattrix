@@ -1179,9 +1179,8 @@
       // ✅ Check room lock status FIRST
       const isLocked = await checkRoomLockStatus(currentRoom);
 
-      // If room is locked, ALWAYS require admin approval for new users
+      // If room is locked and user is not in room history, require admin approval
       if (isLocked) {
-        // Get current room users from server to check if user is already in room
         const roomUsers = await getRoomUsers(currentRoom);
         const isExistingUser = roomUsers.includes(currentName);
 
@@ -1196,26 +1195,14 @@
               username: currentName
             });
 
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
             return;
           } else {
-            // If socket is not connected, set up connection first
-            await setupSocketConnection();
-
-            if (socket && socket.connected) {
-              socket.emit('join_request', {
-                room: currentRoom,
-                username: currentName
-              });
-              showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
-            } else {
-              showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
-              pendingJoinRequests.delete(requestKey);
-            }
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
+            pendingJoinRequests.delete(requestKey); // Remove if failed
             return;
           }
         }
-        // If user is existing user in locked room, allow them to join directly
       }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
