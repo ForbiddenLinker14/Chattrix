@@ -3354,36 +3354,13 @@
           const data = await response.json();
           return data.users || [];
         }
-        return [];
       } catch (err) {
         console.warn("Failed to get room users:", err);
-        return [];
       }
+      return [];
     }
 
-    async function setupSocketConnection() {
-      if (socket && socket.connected) return socket;
 
-      if (socket) {
-        socket.off();
-        socket.disconnect();
-      }
-
-      socket = io("https://realtime-chat-1mv3.onrender.com", {
-        path: "/socket.io",
-        transports: ["websocket"],
-      });
-
-      return new Promise((resolve) => {
-        socket.on("connect", () => {
-          resolve(socket);
-        });
-
-        socket.on("connect_error", () => {
-          resolve(null);
-        });
-      });
-    }
     // =============================
     // Admin Features 
     // =============================
