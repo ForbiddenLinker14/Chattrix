@@ -1159,6 +1159,7 @@
     async function joinRoom() {
       currentName = document.getElementById("name").value.trim();
       currentRoom = document.getElementById("room").value.trim();
+
       if (!currentName || !currentRoom) {
         alert("Enter name and room first!");
         return;
@@ -1191,7 +1192,6 @@
         return;
       }
 
-
       // Check if there's already a pending request for this room
       const requestKey = `${currentRoom}_${currentName}`;
       if (pendingJoinRequests.has(requestKey)) {
@@ -1214,12 +1214,13 @@
         if (!isExistingUser) {
           async function trySendJoinRequest(attempt = 1) {
             if (socket && socket.connected) {
+              console.log(`🔒 Room is locked. Sending join request for ${currentName} in ${currentRoom}`);
               socket.emit("join_request", {
                 room: currentRoom,
                 username: currentName
               });
 
-              pendingJoinRequests.add(`${currentRoom}_${currentName}`);
+              pendingJoinRequests.add(requestKey);
               showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
               return true;
             }
@@ -1231,7 +1232,7 @@
             }
 
             showAutoCloseAlert(`Room "${currentRoom}" is locked. Could not reach server, please retry.`);
-            pendingJoinRequests.delete(`${currentRoom}_${currentName}`);
+            pendingJoinRequests.delete(requestKey);
             return false;
           }
 
@@ -1239,7 +1240,10 @@
           return;
         }
       } else {
-        pendingJoinRequests.delete(`${currentRoom}_${currentName}`);
+        // ✅ Room is unlocked — clear any stale pending join requests
+        if (pendingJoinRequests.has(requestKey)) {
+          pendingJoinRequests.delete(requestKey);
+        }
       }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
@@ -1267,15 +1271,6 @@
       document.getElementById("send").disabled = false;
       document.getElementById("attach").disabled = false;
       document.getElementById("user-list").innerHTML = "";
-
-      if (socket) {
-        socket.off();
-        socket.disconnect();
-      }
-      socket = io("https://realtime-chat-1mv3.onrender.com", {
-        path: "/socket.io",
-        transports: ["websocket"],
-      });
 
       subscribeUser(currentName, currentRoom).catch((err) =>
         console.warn("⚠️ Subscription failed in joinRoom:", err)
@@ -1486,23 +1481,59 @@
 
       // Replace the existing join_approved and join_rejected event handlers with these:
 
+      // Replace existing join_approved handler with this:
       socket.on('join_approved', (data) => {
-        if (data.room === currentRoom) {
-          const requestKey = `${data.room}_${currentName}`;
-          pendingJoinRequests.delete(requestKey); // Clean up approved request
+        if (data.room !== currentRoom) return;
 
-          // ✅ Remove the pending request alert
-          const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
-          if (alertDiv) {
-            alertDiv.remove();
+        const requestKey = `${data.room}_${currentName}`;
+        pendingJoinRequests.delete(requestKey);
+
+        // Remove any pending alert UI
+        const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
+        if (alertDiv) alertDiv.remove();
+
+        showAutoCloseAlert('Your join request was approved!');
+
+        // Perform actual join on the SAME socket (do not recreate socket)
+        const fcmToken = localStorage.getItem('fcm_token') || null;
+        socket.emit('join', {
+          room: currentRoom,
+          sender: currentName,
+          lastTs: lastPersistedTs || null,
+          fcmToken: fcmToken
+        }, (ack) => {
+          if (ack && ack.success) {
+            // joined successfully — update UI/state like your safeJoinWithRetry does
+            joinedRooms.add(currentRoom);
+            sendActive(!document.hidden);
+            fetchAdminInfo().catch(() => { });
+            fetchUnreadCounts().catch(() => { });
+            renderJoinedRooms();
+            console.log('✅ Joined after approval');
+          } else {
+            console.warn('Failed to join after approval, will retry');
+            // optionally call a retry helper here
+            setTimeout(() => {
+              // small retry: re-emit join once more
+              socket.emit('join', {
+                room: currentRoom,
+                sender: currentName,
+                lastTs: lastPersistedTs || null,
+                fcmToken: fcmToken
+              }, (ack2) => {
+                if (ack2 && ack2.success) {
+                  joinedRooms.add(currentRoom);
+                  sendActive(!document.hidden);
+                  fetchAdminInfo().catch(() => { });
+                  fetchUnreadCounts().catch(() => { });
+                  renderJoinedRooms();
+                } else {
+                  showAutoCloseAlert('Could not join after approval. Please try again.');
+                }
+              });
+            }, 700);
           }
-
-          showAutoCloseAlert('Your join request was approved!');
-          // Retry joining after a short delay
-          setTimeout(() => {
-            joinRoom();
-          }, 500);
-        }
+        });
       });
 
       socket.on('join_rejected', (data) => {
