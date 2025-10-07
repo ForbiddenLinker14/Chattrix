@@ -1176,53 +1176,47 @@
         return;
       }
 
-      // ✅ Check room lock status FIRST
-      const isLocked = await checkRoomLockStatus(currentRoom);
+  // ✅ Check room lock status FIRST
+  const isLocked = await checkRoomLockStatus(currentRoom);
 
-      // If room is locked, check if user needs approval
-      if (isLocked) {
-        // Get current room users from server
-        const roomUsers = await getRoomUsers(currentRoom);
-        const isExistingUser = roomUsers.includes(currentName);
+  // If room is locked, ALWAYS require admin approval for new users
+  if (isLocked) {
+    // Get current room users from server to check if user is already in room
+    const roomUsers = await getRoomUsers(currentRoom);
+    const isExistingUser = roomUsers.includes(currentName);
 
-        console.log(`Room ${currentRoom} is locked. User ${currentName} is existing: ${isExistingUser}`);
+    if (!isExistingUser) {
+      // Mark this request as pending
+      pendingJoinRequests.add(requestKey);
 
-        // If user is NOT in room history (new user), require admin approval
-        if (!isExistingUser) {
-          // Mark this request as pending
-          pendingJoinRequests.add(requestKey);
+      // Send join request to admin via socket
+      if (socket && socket.connected) {
+        socket.emit('join_request', {
+          room: currentRoom,
+          username: currentName
+        });
 
-          // Ensure socket is connected before sending request
-          if (!socket || !socket.connected) {
-            console.log("Socket not connected, waiting for connection...");
-            // Set up a one-time connection listener to send the request
-            const connectHandler = () => {
-              console.log("Socket connected, sending join request...");
-              socket.emit('join_request', {
-                room: currentRoom,
-                username: currentName
-              });
-              socket.off('connect', connectHandler);
-            };
-
-            socket.once('connect', connectHandler);
-
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
-            return;
-          } else {
-            // Socket is already connected, send request immediately
-            socket.emit('join_request', {
-              room: currentRoom,
-              username: currentName
-            });
-
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
-            return;
-          }
+        showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
+        return;
+      } else {
+        // If socket is not connected, set up connection first
+        await setupSocketConnection();
+        
+        if (socket && socket.connected) {
+          socket.emit('join_request', {
+            room: currentRoom,
+            username: currentName
+          });
+          showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
+        } else {
+          showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
+          pendingJoinRequests.delete(requestKey);
         }
-        // If user IS in room history, allow them to join without approval
-        console.log(`User ${currentName} is existing user, allowing join to locked room`);
+        return;
       }
+    }
+    // If user is existing user in locked room, allow them to join directly
+  }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
       if (roomStatus.destroyed) {
@@ -1257,17 +1251,6 @@
       socket = io("https://realtime-chat-1mv3.onrender.com", {
         path: "/socket.io",
         transports: ["websocket"],
-        autoConnect: true,
-        forceNew: true
-      });
-      // Wait for socket to be connected before proceeding with room operations
-      socket.on('connect', () => {
-        console.log('✅ Socket connected successfully');
-      });
-
-      socket.on('connect_error', (error) => {
-        console.error('❌ Socket connection failed:', error);
-        showAutoCloseAlert('Connection failed. Please try again.', 3000);
       });
 
       subscribeUser(currentName, currentRoom).catch((err) =>
@@ -3370,14 +3353,11 @@
         if (response.ok) {
           const data = await response.json();
           return data.users || [];
-        } else {
-          console.warn('Failed to fetch room users:', response.status);
-          return [];
         }
       } catch (err) {
         console.warn("Failed to get room users:", err);
-        return [];
       }
+      return [];
     }
 
 
