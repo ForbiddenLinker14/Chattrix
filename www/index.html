@@ -1179,11 +1179,15 @@
       // ✅ Check room lock status FIRST
       const isLocked = await checkRoomLockStatus(currentRoom);
 
-      // If room is locked and user is not in room history, require admin approval
+      // If room is locked, check if user is in room history
       if (isLocked) {
-        // const roomUsers = await getRoomUsers(currentRoom);
+        // Get room users from server to check history
+        const roomUsers = await getRoomUsers(currentRoom);
         const isExistingUser = roomUsers.includes(currentName);
 
+        console.log(`🔒 Room locked. Users in history:`, roomUsers, `Is existing user:`, isExistingUser);
+
+        // Only require approval if user is NOT in room history
         if (!isExistingUser) {
           // Mark this request as pending
           pendingJoinRequests.add(requestKey);
@@ -1195,14 +1199,30 @@
               username: currentName
             });
 
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
             return;
           } else {
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
-            pendingJoinRequests.delete(requestKey); // Remove if failed
+            // If socket not connected, try to establish connection first
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Connecting...`);
+
+            // Small delay to allow socket connection
+            setTimeout(() => {
+              if (socket && socket.connected) {
+                socket.emit('join_request', {
+                  room: currentRoom,
+                  username: currentName
+                });
+                showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
+              } else {
+                showAutoCloseAlert(`Room "${currentRoom}" is locked. Please check connection and try again.`);
+                pendingJoinRequests.delete(requestKey);
+              }
+            }, 1000);
             return;
           }
         }
+        // If user IS in room history, allow them to join directly (no approval needed)
+        console.log(`✅ User ${currentName} is in room history, allowing direct join to locked room`);
       }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
@@ -3332,6 +3352,7 @@
     }
 
     // Add this helper function to get room users from server
+    // Add this helper function to get room users from server
     async function getRoomUsers(room) {
       try {
         const response = await fetch(
@@ -3341,10 +3362,11 @@
           const data = await response.json();
           return data.users || [];
         }
+        return [];
       } catch (err) {
         console.warn("Failed to get room users:", err);
+        return [];
       }
-      return [];
     }
 
 

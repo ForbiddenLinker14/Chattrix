@@ -744,6 +744,11 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")
 
+    # ✅ DEBUG: Log room history and lock status
+    print(f"🔍 JOIN DEBUG - Room: {room}, User: {username}")
+    print(f"🔍 ROOM_HISTORY for {room}: {ROOM_HISTORY.get(room, set())}")
+    print(f"🔍 User in history: {username in ROOM_HISTORY.get(room, set())}")
+
     # ✅ Check if room is locked
     is_locked = False
     try:
