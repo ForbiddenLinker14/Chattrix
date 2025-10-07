@@ -456,6 +456,36 @@ BASE_DIR = os.path.join(os.path.dirname(__file__), "www")
 #     await sio.emit("users_update", {"room": room, "users": users}, room=room)
 
 
+# Add this helper function to notify admin about join requests
+async def notify_admin_about_join_request(room, username):
+    """Notify admin about a join request with retry logic"""
+    admin = ROOM_ADMINS.get(room)
+    if not admin:
+        print(f"❌ No admin found for room {room}")
+        return False
+
+    admin_sid = ROOM_USERS.get(room, {}).get(admin)
+    if not admin_sid:
+        print(f"❌ Admin {admin} not currently in room {room}")
+        return False
+
+    try:
+        await sio.emit(
+            "join_request",
+            {
+                "room": room,
+                "username": username,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            to=admin_sid,
+        )
+        print(f"✅ Join request sent to admin {admin} for user {username}")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to send join request to admin: {e}")
+        return False
+
+
 async def broadcast_users(room):
     users = []
     all_users = ROOM_HISTORY.get(room, set())
@@ -605,7 +635,7 @@ async def join(sid, data):
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")  # 🔑 client should send token when joining
+    token = data.get("fcmToken")
 
     # ✅ Check if room is locked
     is_locked = False
@@ -626,24 +656,31 @@ async def join(sid, data):
             PENDING_JOIN_REQUESTS[room] = {}
         PENDING_JOIN_REQUESTS[room][username] = sid
 
-        # Notify admin
-        admin = ROOM_ADMINS.get(room)
-        if admin:
-            admin_sid = ROOM_USERS.get(room, {}).get(admin)
-            if admin_sid:
-                await sio.emit(
-                    "join_request",
-                    {
-                        "room": room,
-                        "username": username,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                    to=admin_sid,
-                )
+        # ✅ Use the new notification function
+        notified = await notify_admin_about_join_request(room, username)
+
+        if not notified:
+            # If admin notification failed, try alternative notification
+            print(
+                f"⚠️ Primary admin notification failed, trying broadcast to room admins"
+            )
+            # Broadcast to all users in room who might be admins
+            await sio.emit(
+                "admin_join_request_fallback",
+                {
+                    "room": room,
+                    "username": username,
+                    "message": f"User {username} wants to join locked room",
+                },
+                room=room,
+            )
 
         await sio.emit(
             "join_pending",
-            {"room": room, "message": "Join request sent to admin"},
+            {
+                "room": room,
+                "message": "Join request sent to admin. Waiting for approval...",
+            },
             to=sid,
         )
         return {"success": False, "pending": True}
@@ -652,13 +689,13 @@ async def join(sid, data):
     if room in DESTROYED_ROOMS:
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
-    
+
     # ✅ Set first user as admin if room has no admin
     if room not in ROOM_ADMINS:
         ROOM_ADMINS[room] = username
         print(f"👑 First user {username} set as admin for room {room}")
         # Broadcast admin change to the room
-        await sio.emit('admin_changed', {'room': room, 'admin': username}, room=room)
+        await sio.emit("admin_changed", {"room": room, "admin": username}, room=room)
 
     # ✅ Simply ensure history exists and add user (no aggressive cleanup)
     ROOM_HISTORY.setdefault(room, set()).add(username)
@@ -672,7 +709,18 @@ async def join(sid, data):
     # handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
+        # ✅ Send current lock state to user when they rejoin
+        await sio.emit(
+            "room_lock_changed",
+            {
+                "room": room,
+                "locked": is_locked,
+                "lockedBy": ROOM_ADMINS.get(room, "unknown"),
+            },
+            to=sid,
+        )
         return {"success": True, "message": "Already in room"}
+
     if old_sid and old_sid != sid:
         try:
             await sio.leave_room(old_sid, room)
@@ -690,6 +738,17 @@ async def join(sid, data):
     if token:
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
+
+    # ✅ Send current lock state to the joining user
+    await sio.emit(
+        "room_lock_changed",
+        {
+            "room": room,
+            "locked": is_locked,
+            "lockedBy": ROOM_ADMINS.get(room, "unknown"),
+        },
+        to=sid,
+    )
 
     # send missed messages
     for sender_, text, filename, mimetype, filedata, ts in load_messages(room):

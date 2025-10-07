@@ -1128,19 +1128,32 @@
         return;
       }
 
-      // Check room lock status
+      // ✅ Check room lock status FIRST
       const isLocked = await checkRoomLockStatus(currentRoom);
 
-      // If room is locked and user is not already in the room, prevent joining
-      if (isLocked && !joinedRooms.has(currentRoom)) {
+      // If room is locked and user is not in room history, require admin approval
+      if (isLocked) {
         const roomUsers = await getRoomUsers(currentRoom);
         const isExistingUser = roomUsers.includes(currentName);
 
         if (!isExistingUser) {
-          alert(
-            `Room "${currentRoom}" is locked. You cannot join at this time.`
-          );
-          document.getElementById("roomLockToggle").checked = true;
+          // Send join request to admin
+          try {
+            const response = await fetch(`${API_BASE}/join-request/${encodeURIComponent(currentRoom)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username: currentName })
+            });
+
+            if (response.ok) {
+              alert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
+              return;
+            }
+          } catch (err) {
+            console.error('Failed to send join request:', err);
+          }
+
+          alert(`Room "${currentRoom}" is locked. You cannot join at this time.`);
           return;
         }
       }
@@ -1396,8 +1409,7 @@
           // Show system message
           addMessage({
             sender: "System",
-            text: `Room has been ${data.locked ? "locked" : "unlocked"} by ${data.lockedBy
-              }`,
+            text: `Room has been ${data.locked ? "locked" : "unlocked"} by ${data.lockedBy}`,
             ts: new Date().toISOString(),
           });
         }
@@ -3100,7 +3112,7 @@
     })();
 
     // =============================
-    // Room lock state
+    // Room lock state management
     // =============================
     let roomLockStates = {};
 
@@ -3109,6 +3121,13 @@
       if (!currentRoom) {
         alert("Join a room first!");
         document.getElementById("roomLockToggle").checked = false;
+        return;
+      }
+
+      // ✅ Check if user is admin before allowing lock toggle
+      if (currentName !== currentAdmin) {
+        alert("Only room admin can lock/unlock the room!");
+        document.getElementById("roomLockToggle").checked = !document.getElementById("roomLockToggle").checked;
         return;
       }
 
@@ -3160,6 +3179,21 @@
 
       // Ensure toggle matches the state
       toggle.checked = isLocked;
+
+      // ✅ Only enable toggle for admin users who are in the room
+      const isAdmin = currentName === currentAdmin;
+      const inRoom = !!currentRoom;
+
+      if (toggle) {
+        toggle.disabled = !(isAdmin && inRoom);
+        if (toggle.disabled) {
+          toggle.parentElement.style.opacity = "0.5";
+          toggle.style.cursor = "not-allowed";
+        } else {
+          toggle.parentElement.style.opacity = "1";
+          toggle.style.cursor = "pointer";
+        }
+      }
     }
 
     // Check room lock status
@@ -3178,6 +3212,7 @@
       }
       return false;
     }
+
 
     // Load room lock state from storage
     function loadRoomLockState(room) {
@@ -3217,28 +3252,12 @@
     // Update UI based on admin status
     function updateAdminUI() {
       const isAdmin = currentName === currentAdmin;
-      const lockToggle = document.getElementById('roomLockToggle');
-      const lockLabel = document.querySelector('.lock-label');
-      const lockStatus = document.getElementById('lockStatus');
+      const inRoom = !!currentRoom;
 
-      console.log(`🛠️ updateAdminUI: currentName=${currentName}, currentAdmin=${currentAdmin}, isAdmin=${isAdmin}`);
+      console.log(`🛠️ updateAdminUI: currentName=${currentName}, currentAdmin=${currentAdmin}, isAdmin=${isAdmin}, inRoom=${inRoom}`);
 
-      // Only admin can see and use lock controls
-      if (lockToggle && lockLabel && lockStatus) {
-        if (isAdmin) {
-          lockToggle.disabled = false;
-          lockLabel.style.opacity = '1';
-          lockToggle.parentElement.style.opacity = '1';
-          lockToggle.style.cursor = 'pointer';
-          console.log('🔓 Lock controls ENABLED for admin');
-        } else {
-          lockToggle.disabled = true;
-          lockLabel.style.opacity = '0.5';
-          lockToggle.parentElement.style.opacity = '0.5';
-          lockToggle.style.cursor = 'not-allowed';
-          console.log('🔒 Lock controls DISABLED for non-admin');
-        }
-      }
+      // Update lock controls based on admin status and room presence
+      updateLockUI(roomLockStates[currentRoom] || false);
 
       // Update user list with kick buttons
       updateUserListUI();
@@ -3312,6 +3331,7 @@
     // Handle join requests (admin only)
     async function handleJoinRequest(username, approve) {
       if (!currentAdmin || currentName !== currentAdmin) {
+        alert('Only admin can process join requests!');
         return;
       }
 
@@ -3358,17 +3378,40 @@
     // Show join request notification
     function showJoinRequest(username) {
       const messages = document.getElementById('messages');
+
+      // Check if notification already exists
+      const existingNotification = document.querySelector(`.join-request[data-user="${username}"]`);
+      if (existingNotification) {
+        return; // Don't show duplicate
+      }
+
       const notification = document.createElement('div');
       notification.className = 'msg system join-request';
       notification.setAttribute('data-user', username);
       notification.innerHTML = `
-        <strong>Join Request</strong><br>
-        <span style="color: #25d366;">${username}</span> wants to join the locked room<br>
-        <button onclick="handleJoinRequest('${username}', true)" style="background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer;">Accept</button>
-        <button onclick="handleJoinRequest('${username}', false)" style="background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer;">Reject</button>
+        <strong>🔒 Join Request</strong><br>
+        <span style="color: #25d366; font-weight: bold;">${username}</span> wants to join the locked room<br>
+        <small>Click below to approve or reject</small><br>
+        <button onclick="handleJoinRequest('${username}', true)" style="background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer; font-size: 14px;">✅ Accept</button>
+        <button onclick="handleJoinRequest('${username}', false)" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer; font-size: 14px;">❌ Reject</button>
     `;
       messages.appendChild(notification);
       messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+
+      // ✅ Show browser notification if available
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("Join Request", {
+          body: `${username} wants to join room ${currentRoom}`,
+          icon: "/icons/favicon.ico"
+        });
+      }
+
+      // ✅ Flash tab title for attention
+      const originalTitle = document.title;
+      document.title = `🔔 Join Request - ${currentRoom}`;
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 3000);
     }
 
     // ✅ Add this helper function to fetch admin info
