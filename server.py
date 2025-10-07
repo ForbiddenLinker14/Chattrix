@@ -1918,8 +1918,14 @@ async def get_room_lock(room: str):
 # Helper function to get room users
 @app.get("/room-users/{room}")
 async def get_room_users(room: str):
-    users = list(ROOM_HISTORY.get(room, set()))
-    return {"users": users}
+    """Get all users who have ever been in the room (from history)"""
+    try:
+        users = list(ROOM_HISTORY.get(room, set()))
+        print(f"📋 Room {room} users from history: {users}")
+        return {"users": users}
+    except Exception as e:
+        print(f"❌ Error getting room users for {room}: {e}")
+        return {"users": []}
 
 
 # ---------------- Static / PWA assets ----------------
