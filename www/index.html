@@ -1201,24 +1201,8 @@
               joinedRooms.add(currentRoom);
               sendActive(!document.hidden);
 
-              // ✅ ADD ADMIN INFO FETCH HERE - Right after successful join
-              try {
-                fetch(`${API_BASE}/room-admin/${encodeURIComponent(currentRoom)}`)
-                  .then(response => {
-                    if (response.ok) return response.json();
-                    throw new Error('Failed to fetch admin info');
-                  })
-                  .then(data => {
-                    currentAdmin = data.admin;
-                    updateAdminUI();
-                    console.log(`👑 Current admin: ${currentAdmin}`);
-                  })
-                  .catch(err => {
-                    console.warn('Failed to get admin info:', err);
-                  });
-              } catch (err) {
-                console.warn('Failed to get admin info:', err);
-              }
+              // ✅ Fetch admin info immediately after successful join
+              fetchAdminInfo();
             } else {
               setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
             }
@@ -1349,16 +1333,20 @@
 
       // ✅ ADD ADMIN-RELATED SOCKET LISTENERS HERE
       // Add these socket listeners in your joinRoom function
+      // Add this with other socket listeners in joinRoom function
       socket.on('admin_changed', (data) => {
         if (data.room === currentRoom) {
           currentAdmin = data.admin;
           updateAdminUI();
 
-          addMessage({
-            sender: 'System',
-            text: `👑 ${data.admin} is now the room admin`,
-            ts: new Date().toISOString()
-          });
+          // Show system message when admin changes
+          if (data.admin !== currentName) {
+            addMessage({
+              sender: 'System',
+              text: `👑 ${data.admin} is now the room admin`,
+              ts: new Date().toISOString()
+            });
+          }
         }
       });
 
@@ -3231,21 +3219,28 @@
       const isAdmin = currentName === currentAdmin;
       const lockToggle = document.getElementById('roomLockToggle');
       const lockLabel = document.querySelector('.lock-label');
+      const lockStatus = document.getElementById('lockStatus');
+
+      console.log(`🛠️ updateAdminUI: currentName=${currentName}, currentAdmin=${currentAdmin}, isAdmin=${isAdmin}`);
 
       // Only admin can see and use lock controls
-      if (lockToggle && lockLabel) {
+      if (lockToggle && lockLabel && lockStatus) {
         if (isAdmin) {
           lockToggle.disabled = false;
           lockLabel.style.opacity = '1';
           lockToggle.parentElement.style.opacity = '1';
+          lockToggle.style.cursor = 'pointer';
+          console.log('🔓 Lock controls ENABLED for admin');
         } else {
           lockToggle.disabled = true;
           lockLabel.style.opacity = '0.5';
           lockToggle.parentElement.style.opacity = '0.5';
+          lockToggle.style.cursor = 'not-allowed';
+          console.log('🔒 Lock controls DISABLED for non-admin');
         }
       }
 
-      // Show/hide kick buttons in user list
+      // Update user list with kick buttons
       updateUserListUI();
     }
 
@@ -3376,6 +3371,30 @@
       messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
     }
 
+    // ✅ Add this helper function to fetch admin info
+    async function fetchAdminInfo() {
+      if (!currentRoom) return;
+
+      try {
+        const response = await fetch(`${API_BASE}/room-admin/${encodeURIComponent(currentRoom)}`);
+        if (response.ok) {
+          const data = await response.json();
+          currentAdmin = data.admin;
+          updateAdminUI();
+          console.log(`👑 Current admin: ${currentAdmin}`);
+        } else {
+          // If no admin exists yet, the first user becomes admin
+          currentAdmin = currentName;
+          updateAdminUI();
+          console.log(`👑 First user, setting as admin: ${currentAdmin}`);
+        }
+      } catch (err) {
+        console.warn('Failed to get admin info:', err);
+        // On error, assume current user is admin if no admin exists
+        currentAdmin = currentName;
+        updateAdminUI();
+      }
+    }
 
 
   </script>

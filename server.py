@@ -563,7 +563,10 @@ async def destroy_room(room: str):
     # 3. Remove user mapping
     ROOM_USERS.pop(room, None)
 
-    # 4. Notify clients + force disconnect
+    # 4. ✅ Clean up admin when room is destroyed
+    ROOM_ADMINS.pop(room, None)
+
+    # 5. Notify clients + force disconnect
     await sio.emit(
         "clear",
         {"room": room, "message": "Room destroyed. All messages cleared."},
@@ -649,6 +652,13 @@ async def join(sid, data):
     if room in DESTROYED_ROOMS:
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
+    
+    # ✅ Set first user as admin if room has no admin
+    if room not in ROOM_ADMINS:
+        ROOM_ADMINS[room] = username
+        print(f"👑 First user {username} set as admin for room {room}")
+        # Broadcast admin change to the room
+        await sio.emit('admin_changed', {'room': room, 'admin': username}, room=room)
 
     # ✅ Simply ensure history exists and add user (no aggressive cleanup)
     ROOM_HISTORY.setdefault(room, set()).add(username)
