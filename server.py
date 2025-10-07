@@ -744,10 +744,8 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")
 
-    # ✅ DEBUG: Log room history and lock status
     print(f"🔍 JOIN DEBUG - Room: {room}, User: {username}")
     print(f"🔍 ROOM_HISTORY for {room}: {ROOM_HISTORY.get(room, set())}")
-    print(f"🔍 User in history: {username in ROOM_HISTORY.get(room, set())}")
 
     # ✅ Check if room is locked
     is_locked = False
@@ -758,11 +756,20 @@ async def join(sid, data):
         row = c.fetchone()
         conn.close()
         is_locked = bool(row[0]) if row else False
+        print(f"🔍 Room {room} lock status: {is_locked}")
     except Exception as e:
         print(f"Error checking room lock: {e}")
 
+    # ✅ FIXED: Better logic for checking if user should send join request
+    user_in_history = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
+    print(f"🔍 User {username} in room history: {user_in_history}")
+
     # If room is locked and user is not in room history, require admin approval
-    if is_locked and room in ROOM_HISTORY and username not in ROOM_HISTORY[room]:
+    if is_locked and not user_in_history:
+        print(
+            f"🚫 Room {room} is locked and user {username} not in history - requiring approval"
+        )
+
         # Store pending request
         if room not in PENDING_JOIN_REQUESTS:
             PENDING_JOIN_REQUESTS[room] = {}
@@ -814,7 +821,7 @@ async def join(sid, data):
         # Broadcast admin change to the room
         await sio.emit("admin_changed", {"room": room, "admin": username}, room=room)
 
-    # ✅ Simply ensure history exists and add user (no aggressive cleanup)
+    # ✅ Ensure history exists and add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
 
     if room not in ROOM_USERS:

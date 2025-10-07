@@ -1176,53 +1176,49 @@
         return;
       }
 
-      // ✅ Check room lock status FIRST
-      const isLocked = await checkRoomLockStatus(currentRoom);
+      // ✅ Check room lock status FIRST - with better error handling
+      let isLocked = false;
+      try {
+        isLocked = await checkRoomLockStatus(currentRoom);
+        console.log(`🔒 Room ${currentRoom} lock status: ${isLocked}`);
+      } catch (err) {
+        console.warn("Failed to check room lock status:", err);
+        // Continue with join attempt even if lock check fails
+      }
 
-      // If room is locked, check if user is in room history
-      if (isLocked) {
-        // Get room users from server to check history
+      // ✅ FIXED: Check if user is in room history PROPERLY
+      let isExistingUser = false;
+      try {
         const roomUsers = await getRoomUsers(currentRoom);
-        const isExistingUser = roomUsers.includes(currentName);
+        isExistingUser = roomUsers.includes(currentName);
+        console.log(`👥 User ${currentName} in room history: ${isExistingUser}, Room users:`, roomUsers);
+      } catch (err) {
+        console.warn("Failed to get room users:", err);
+        // If we can't get room users, assume user is not existing to be safe
+        isExistingUser = false;
+      }
 
-        console.log(`🔒 Room locked. Users in history:`, roomUsers, `Is existing user:`, isExistingUser);
+      // If room is locked and user is not in room history, require admin approval
+      if (isLocked && !isExistingUser) {
+        console.log(`🚫 Room is locked and user not in history, sending join request`);
 
-        // Only require approval if user is NOT in room history
-        if (!isExistingUser) {
-          // Mark this request as pending
-          pendingJoinRequests.add(requestKey);
+        // Mark this request as pending
+        pendingJoinRequests.add(requestKey);
 
-          // Send join request to admin via socket
-          if (socket && socket.connected) {
-            socket.emit('join_request', {
-              room: currentRoom,
-              username: currentName
-            });
+        // Send join request to admin via socket
+        if (socket && socket.connected) {
+          socket.emit('join_request', {
+            room: currentRoom,
+            username: currentName
+          });
 
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
-            return;
-          } else {
-            // If socket not connected, try to establish connection first
-            showAutoCloseAlert(`Room "${currentRoom}" is locked. Connecting...`);
-
-            // Small delay to allow socket connection
-            setTimeout(() => {
-              if (socket && socket.connected) {
-                socket.emit('join_request', {
-                  room: currentRoom,
-                  username: currentName
-                });
-                showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
-              } else {
-                showAutoCloseAlert(`Room "${currentRoom}" is locked. Please check connection and try again.`);
-                pendingJoinRequests.delete(requestKey);
-              }
-            }, 1000);
-            return;
-          }
+          showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
+          return;
+        } else {
+          showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
+          pendingJoinRequests.delete(requestKey); // Remove if failed
+          return;
         }
-        // If user IS in room history, allow them to join directly (no approval needed)
-        console.log(`✅ User ${currentName} is in room history, allowing direct join to locked room`);
       }
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
@@ -3352,7 +3348,6 @@
     }
 
     // Add this helper function to get room users from server
-    // Add this helper function to get room users from server
     async function getRoomUsers(room) {
       try {
         const response = await fetch(
@@ -3361,8 +3356,10 @@
         if (response.ok) {
           const data = await response.json();
           return data.users || [];
+        } else {
+          console.warn(`Failed to get room users: ${response.status}`);
+          return [];
         }
-        return [];
       } catch (err) {
         console.warn("Failed to get room users:", err);
         return [];
