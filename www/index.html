@@ -1070,6 +1070,7 @@
     let roomTimestamps = {};
     let joinedRoomsByUser = {};
     let unreadCounts = {};
+    const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
     // ======================================================
     // =============== Utility Functions ====================
@@ -1137,24 +1138,19 @@
         const isExistingUser = roomUsers.includes(currentName);
 
         if (!isExistingUser) {
-          // Send join request to admin
-          try {
-            const response = await fetch(`${API_BASE}/join-request/${encodeURIComponent(currentRoom)}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ username: currentName })
+          // Send join request to admin via socket
+          if (socket && socket.connected) {
+            socket.emit('join_request', {
+              room: currentRoom,
+              username: currentName
             });
 
-            if (response.ok) {
-              alert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
-              return;
-            }
-          } catch (err) {
-            console.error('Failed to send join request:', err);
+            alert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`);
+            return;
+          } else {
+            alert(`Room "${currentRoom}" is locked. Please try again.`);
+            return;
           }
-
-          alert(`Room "${currentRoom}" is locked. You cannot join at this time.`);
-          return;
         }
       }
 
@@ -1365,7 +1361,7 @@
 
       socket.on('join_request', (data) => {
         if (data.room === currentRoom && currentName === currentAdmin) {
-          showJoinRequest(data.username);
+          showJoinRequest(data.username, data.room);
         }
       });
 
@@ -1379,7 +1375,6 @@
       socket.on('join_pending', (data) => {
         if (data.room === currentRoom) {
           alert('Join request sent to room admin. Waiting for approval...');
-          // You might want to show a waiting state here
         }
       });
 
@@ -2591,7 +2586,6 @@
     // ======================================================
     // =============== Room Actions =========================
     // ======================================================
-    const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
     window.clearRoom = async function clearRoom() {
       if (!currentRoom) {
@@ -2900,7 +2894,6 @@
     // 🔔 Auto Update Alert (Manifest-based with Auto Fade-Out)
     // =============================
     (async function () {
-      const API_BASE = "https://realtime-chat-1mv3.onrender.com";
       let overlay = null,
         fadeOutTimer = null;
 
@@ -3462,7 +3455,6 @@
       return value ? JSON.parse(value) : null;
     }
 
-    const API_BASE_CAP = "https://realtime-chat-1mv3.onrender.com";
     const state = await loadChatState();
     if (state) {
       try {

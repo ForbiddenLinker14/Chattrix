@@ -631,6 +631,69 @@ async def destroy_room(room: str):
 
 # ---------------- Socket.IO Events ----------------
 @sio.event
+async def join_request(sid, data):
+    """Handle join requests from clients"""
+    room = data.get("room")
+    username = data.get("username")
+
+    if not room or not username:
+        return
+
+    # Check if room is locked
+    is_locked = False
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT locked FROM room_locks WHERE room = ?", (room,))
+        row = c.fetchone()
+        conn.close()
+        is_locked = bool(row[0]) if row else False
+    except Exception as e:
+        print(f"Error checking room lock: {e}")
+
+    if not is_locked:
+        # Room is not locked anymore, allow join
+        await sio.emit("join_approved", {"room": room}, to=sid)
+        return
+
+    # Store pending request
+    if room not in PENDING_JOIN_REQUESTS:
+        PENDING_JOIN_REQUESTS[room] = {}
+    PENDING_JOIN_REQUESTS[room][username] = sid
+
+    # Notify admin
+    admin = ROOM_ADMINS.get(room)
+    if admin:
+        admin_sid = None
+        # Find admin's current socket ID
+        if room in ROOM_USERS and admin in ROOM_USERS[room]:
+            admin_sid = ROOM_USERS[room][admin]
+
+        if admin_sid:
+            await sio.emit(
+                "join_request",
+                {
+                    "room": room,
+                    "username": username,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                to=admin_sid,
+            )
+            print(f"✅ Join request sent to admin {admin} for user {username}")
+        else:
+            print(f"❌ Admin {admin} not found in room {room}")
+
+    await sio.emit(
+        "join_pending",
+        {
+            "room": room,
+            "message": "Join request sent to admin. Waiting for approval...",
+        },
+        to=sid,
+    )
+
+
+@sio.event
 async def join(sid, data):
     room = data["room"]
     username = data["sender"]
@@ -646,8 +709,8 @@ async def join(sid, data):
         row = c.fetchone()
         conn.close()
         is_locked = bool(row[0]) if row else False
-    except:
-        pass
+    except Exception as e:
+        print(f"Error checking room lock: {e}")
 
     # If room is locked and user is not in room history, require admin approval
     if is_locked and room in ROOM_HISTORY and username not in ROOM_HISTORY[room]:
@@ -656,24 +719,29 @@ async def join(sid, data):
             PENDING_JOIN_REQUESTS[room] = {}
         PENDING_JOIN_REQUESTS[room][username] = sid
 
-        # ✅ Use the new notification function
-        notified = await notify_admin_about_join_request(room, username)
+        # Notify admin
+        admin = ROOM_ADMINS.get(room)
+        if admin:
+            admin_sid = None
+            # Find admin's current socket ID
+            for room_name, users in ROOM_USERS.items():
+                if room_name == room and admin in users:
+                    admin_sid = users[admin]
+                    break
 
-        if not notified:
-            # If admin notification failed, try alternative notification
-            print(
-                f"⚠️ Primary admin notification failed, trying broadcast to room admins"
-            )
-            # Broadcast to all users in room who might be admins
-            await sio.emit(
-                "admin_join_request_fallback",
-                {
-                    "room": room,
-                    "username": username,
-                    "message": f"User {username} wants to join locked room",
-                },
-                room=room,
-            )
+            if admin_sid:
+                await sio.emit(
+                    "join_request",
+                    {
+                        "room": room,
+                        "username": username,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    to=admin_sid,
+                )
+                print(f"✅ Join request sent to admin {admin} for user {username}")
+            else:
+                print(f"❌ Admin {admin} not found in room {room}")
 
         await sio.emit(
             "join_pending",
