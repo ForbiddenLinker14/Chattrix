@@ -702,6 +702,41 @@
       color: #eaeaea;
       margin-left: 4px;
     }
+
+    /* Admin badge */
+    .admin-badge {
+      background: #f39c12;
+      color: white;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      margin-left: 5px;
+    }
+
+    /* Kick button */
+    .kick-btn {
+      transition: all 0.2s;
+    }
+
+    .kick-btn:hover {
+      transform: scale(1.2);
+    }
+
+    /* Join request notification */
+    .join-request {
+      background: #2c3e50 !important;
+      border-left: 4px solid #f39c12;
+    }
+
+    /* Disabled lock controls for non-admin */
+    .lock-toggle input:disabled+.lock-slider {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .lock-toggle input:disabled+.lock-slider:before {
+      opacity: 0.5;
+    }
   </style>
 </head>
 
@@ -1165,6 +1200,25 @@
             if (ack && ack.success) {
               joinedRooms.add(currentRoom);
               sendActive(!document.hidden);
+
+              // ✅ ADD ADMIN INFO FETCH HERE - Right after successful join
+              try {
+                fetch(`${API_BASE}/room-admin/${encodeURIComponent(currentRoom)}`)
+                  .then(response => {
+                    if (response.ok) return response.json();
+                    throw new Error('Failed to fetch admin info');
+                  })
+                  .then(data => {
+                    currentAdmin = data.admin;
+                    updateAdminUI();
+                    console.log(`👑 Current admin: ${currentAdmin}`);
+                  })
+                  .catch(err => {
+                    console.warn('Failed to get admin info:', err);
+                  });
+              } catch (err) {
+                console.warn('Failed to get admin info:', err);
+              }
             } else {
               setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
             }
@@ -1261,6 +1315,25 @@
                 joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
                 fetchUnreadCounts();
+
+                // ✅ ADD ADMIN INFO FETCH HERE TOO - For reconnection scenarios
+                try {
+                  fetch(`${API_BASE}/room-admin/${encodeURIComponent(currentRoom)}`)
+                    .then(response => {
+                      if (response.ok) return response.json();
+                      throw new Error('Failed to fetch admin info');
+                    })
+                    .then(data => {
+                      currentAdmin = data.admin;
+                      updateAdminUI();
+                      console.log(`👑 Current admin (reconnect): ${currentAdmin}`);
+                    })
+                    .catch(err => {
+                      console.warn('Failed to get admin info on reconnect:', err);
+                    });
+                } catch (err) {
+                  console.warn('Failed to get admin info on reconnect:', err);
+                }
               } else {
                 setTimeout(() => {
                   socket.disconnect();
@@ -1271,6 +1344,57 @@
           );
         } else {
           restoreChatState(socket);
+        }
+      });
+
+      // ✅ ADD ADMIN-RELATED SOCKET LISTENERS HERE
+      // Add these socket listeners in your joinRoom function
+      socket.on('admin_changed', (data) => {
+        if (data.room === currentRoom) {
+          currentAdmin = data.admin;
+          updateAdminUI();
+
+          addMessage({
+            sender: 'System',
+            text: `👑 ${data.admin} is now the room admin`,
+            ts: new Date().toISOString()
+          });
+        }
+      });
+
+      socket.on('join_request', (data) => {
+        if (data.room === currentRoom && currentName === currentAdmin) {
+          showJoinRequest(data.username);
+        }
+      });
+
+      socket.on('kicked', (data) => {
+        if (data.room === currentRoom) {
+          alert(`You were kicked from the room: ${data.reason}`);
+          leaveRoom();
+        }
+      });
+
+      socket.on('join_pending', (data) => {
+        if (data.room === currentRoom) {
+          alert('Join request sent to room admin. Waiting for approval...');
+          // You might want to show a waiting state here
+        }
+      });
+
+      socket.on('join_approved', (data) => {
+        if (data.room === currentRoom) {
+          alert('Your join request was approved!');
+          // Retry joining
+          joinRoom();
+        }
+      });
+
+      socket.on('join_rejected', (data) => {
+        if (data.room === currentRoom) {
+          alert('Your join request was rejected.');
+          document.getElementById('intro').style.display = 'block';
+          document.getElementById('chat-container').style.display = 'none';
         }
       });
 
@@ -2987,9 +3111,9 @@
       });
     })();
 
-    // Add these functions to the JavaScript in index.html
-
+    // =============================
     // Room lock state
+    // =============================
     let roomLockStates = {};
 
     // Toggle room lock
@@ -3093,6 +3217,167 @@
       }
       return [];
     }
+
+
+    // =============================
+    // Admin Features 
+    // =============================
+
+    // Track current admin
+    let currentAdmin = null;
+
+    // Update UI based on admin status
+    function updateAdminUI() {
+      const isAdmin = currentName === currentAdmin;
+      const lockToggle = document.getElementById('roomLockToggle');
+      const lockLabel = document.querySelector('.lock-label');
+
+      // Only admin can see and use lock controls
+      if (lockToggle && lockLabel) {
+        if (isAdmin) {
+          lockToggle.disabled = false;
+          lockLabel.style.opacity = '1';
+          lockToggle.parentElement.style.opacity = '1';
+        } else {
+          lockToggle.disabled = true;
+          lockLabel.style.opacity = '0.5';
+          lockToggle.parentElement.style.opacity = '0.5';
+        }
+      }
+
+      // Show/hide kick buttons in user list
+      updateUserListUI();
+    }
+
+    // Update user list with kick buttons for admin
+    function updateUserListUI() {
+      const userList = document.getElementById('user-list');
+      const users = userList.querySelectorAll('li');
+      const isAdmin = currentName === currentAdmin;
+
+      users.forEach(userItem => {
+        const username = userItem.getAttribute('data-name');
+        const isMe = username === currentName || username.includes('(Me)');
+
+        // Remove existing kick button
+        const existingKickBtn = userItem.querySelector('.kick-btn');
+        if (existingKickBtn) {
+          existingKickBtn.remove();
+        }
+
+        // Add kick button for admin (except for self)
+        if (isAdmin && !isMe) {
+          const kickBtn = document.createElement('span');
+          kickBtn.className = 'kick-btn';
+          kickBtn.innerHTML = '👢';
+          kickBtn.title = 'Kick user';
+          kickBtn.style.cssText = 'margin-left: 8px; cursor: pointer; color: #e74c3c; font-size: 12px;';
+          kickBtn.onclick = (e) => {
+            e.stopPropagation();
+            kickUser(username);
+          };
+          userItem.appendChild(kickBtn);
+        }
+      });
+    }
+
+    // Kick a user
+    async function kickUser(username) {
+      if (!currentAdmin || currentName !== currentAdmin) {
+        alert('Only admin can kick users!');
+        return;
+      }
+
+      if (!confirm(`Kick ${username} from the room?`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/kick-user`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room: currentRoom,
+            target_user: username.replace(' (Me)', ''),
+            admin_user: currentName
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to kick user');
+        }
+
+        console.log(`👢 Kicked user: ${username}`);
+      } catch (err) {
+        console.error('❌ Kick failed:', err);
+        alert('Failed to kick user');
+      }
+    }
+
+    // Handle join requests (admin only)
+    async function handleJoinRequest(username, approve) {
+      if (!currentAdmin || currentName !== currentAdmin) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE}/join-response/${encodeURIComponent(currentRoom)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: username,
+            approved: approve,
+            admin_user: currentName
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to process join request');
+        }
+
+        // Remove the notification
+        const notification = document.querySelector(`.join-request[data-user="${username}"]`);
+        if (notification) {
+          notification.remove();
+        }
+
+        if (approve) {
+          addMessage({
+            sender: 'System',
+            text: `✅ Join request from ${username} was approved`,
+            ts: new Date().toISOString()
+          });
+        } else {
+          addMessage({
+            sender: 'System',
+            text: `❌ Join request from ${username} was rejected`,
+            ts: new Date().toISOString()
+          });
+        }
+      } catch (err) {
+        console.error('❌ Join response failed:', err);
+        alert('Failed to process join request');
+      }
+    }
+
+    // Show join request notification
+    function showJoinRequest(username) {
+      const messages = document.getElementById('messages');
+      const notification = document.createElement('div');
+      notification.className = 'msg system join-request';
+      notification.setAttribute('data-user', username);
+      notification.innerHTML = `
+        <strong>Join Request</strong><br>
+        <span style="color: #25d366;">${username}</span> wants to join the locked room<br>
+        <button onclick="handleJoinRequest('${username}', true)" style="background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer;">Accept</button>
+        <button onclick="handleJoinRequest('${username}', false)" style="background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer;">Reject</button>
+    `;
+      messages.appendChild(notification);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+    }
+
+
+
   </script>
 
   <!-- Capacitor Storage Module -->

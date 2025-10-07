@@ -30,6 +30,8 @@ LAST_MESSAGE = {}  # {(room, username): (text, ts)}
 # subscriptions = {}  # username -> [subscription objects]
 USER_STATUS = {}  # sid -> {"user": username, "active": bool}
 FCM_TOKENS = {"<username>": {"<room_id>": ["<token1>", "<token2>", ...]}}
+ROOM_ADMINS = {}  # { room: admin_username }
+PENDING_JOIN_REQUESTS = {}  # { room: { username: sid } }
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -602,6 +604,47 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")  # 🔑 client should send token when joining
 
+    # ✅ Check if room is locked
+    is_locked = False
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT locked FROM room_locks WHERE room = ?", (room,))
+        row = c.fetchone()
+        conn.close()
+        is_locked = bool(row[0]) if row else False
+    except:
+        pass
+
+    # If room is locked and user is not in room history, require admin approval
+    if is_locked and room in ROOM_HISTORY and username not in ROOM_HISTORY[room]:
+        # Store pending request
+        if room not in PENDING_JOIN_REQUESTS:
+            PENDING_JOIN_REQUESTS[room] = {}
+        PENDING_JOIN_REQUESTS[room][username] = sid
+
+        # Notify admin
+        admin = ROOM_ADMINS.get(room)
+        if admin:
+            admin_sid = ROOM_USERS.get(room, {}).get(admin)
+            if admin_sid:
+                await sio.emit(
+                    "join_request",
+                    {
+                        "room": room,
+                        "username": username,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    to=admin_sid,
+                )
+
+        await sio.emit(
+            "join_pending",
+            {"room": room, "message": "Join request sent to admin"},
+            to=sid,
+        )
+        return {"success": False, "pending": True}
+
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
@@ -884,6 +927,35 @@ async def leave(sid, data):
     await broadcast_users(room)  # This will now properly update without the left user
     await sio.emit("left_room", {"room": room}, to=sid)
 
+    # 🔥 ADMIN TRANSFER: If leaving user was admin, transfer to next user
+    if reason == "leave" and ROOM_ADMINS.get(room) == username:
+        # Find next user in room history (oldest remaining user)
+        remaining_users = list(ROOM_HISTORY.get(room, set()))
+        if remaining_users:
+            new_admin = remaining_users[0]  # First user in history becomes admin
+            ROOM_ADMINS[room] = new_admin
+
+            # Broadcast admin change
+            await sio.emit(
+                "admin_changed", {"room": room, "admin": new_admin}, room=room
+            )
+
+            # System message
+            await sio.emit(
+                "message",
+                {
+                    "sender": "System",
+                    "text": f"👑 {new_admin} is now the room admin",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+                room=room,
+            )
+            print(f"👑 Admin transferred to {new_admin} in {room}")
+        else:
+            # No users left, remove admin
+            del ROOM_ADMINS[room]
+            print(f"👑 Room {room} has no admin (all users left)")
+
     # 🛑 Only cleanup tokens/subscriptions on a *real leave*
     if reason == "leave":
         # cleanup FCM tokens
@@ -957,6 +1029,87 @@ async def disconnect(sid):
         )
 
 
+@sio.event
+async def transfer_admin(sid, data):
+    """Transfer admin to another user"""
+    room = data.get("room")
+    new_admin = data.get("new_admin")
+    current_admin = data.get("current_admin")
+
+    if not room or not new_admin or not current_admin:
+        return
+
+    # Verify current admin
+    if ROOM_ADMINS.get(room) != current_admin:
+        return
+
+    # Transfer admin
+    ROOM_ADMINS[room] = new_admin
+
+    # Broadcast admin change
+    await sio.emit("admin_changed", {"room": room, "admin": new_admin}, room=room)
+
+    # System message
+    await sio.emit(
+        "message",
+        {
+            "sender": "System",
+            "text": f"👑 Admin transferred to {new_admin}",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        },
+        room=room,
+    )
+
+    print(f"👑 Admin transferred in {room} from {current_admin} to {new_admin}")
+
+
+@sio.event
+async def admin_kick(sid, data):
+    """Admin kicks a user"""
+    room = data.get("room")
+    target_user = data.get("target_user")
+    admin_user = data.get("admin_user")
+
+    if not room or not target_user or not admin_user:
+        return
+
+    # Verify admin
+    if ROOM_ADMINS.get(room) != admin_user:
+        return
+
+    # Find target user's sid
+    target_sid = ROOM_USERS.get(room, {}).get(target_user)
+    if not target_sid:
+        return
+
+    # Kick the user
+    await sio.emit("kicked", {"room": room, "reason": "Kicked by admin"}, to=target_sid)
+
+    # Remove from room
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        del ROOM_USERS[room][target_user]
+
+    # Remove from ROOM_HISTORY
+    if room in ROOM_HISTORY and target_user in ROOM_HISTORY[room]:
+        ROOM_HISTORY[room].remove(target_user)
+
+    await sio.leave_room(target_sid, room)
+    await broadcast_users(room)
+
+    # System message
+    await sio.emit(
+        "message",
+        {
+            "sender": "System",
+            "text": f"👢 {target_user} was kicked by admin",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        },
+        room=room,
+    )
+
+    print(f"👢 User {target_user} kicked from {room} by admin {admin_user}")
+
+
 # ---------------- Startup ----------------
 @app.on_event("startup")
 async def startup_tasks():
@@ -1011,6 +1164,178 @@ async def startup_tasks():
 
     asyncio.create_task(loop_cleanup())
     asyncio.create_task(ping_self())
+
+
+# Add these new routes after existing routes
+@app.post("/room-admin/{room}")
+async def set_room_admin(room: str, request: Request):
+    """Set or transfer room admin"""
+    body = await request.json()
+    username = body.get("username")
+
+    if not username:
+        return JSONResponse({"error": "username required"}, status_code=400)
+
+    ROOM_ADMINS[room] = username
+    print(f"👑 Admin for room {room} set to {username}")
+
+    # Broadcast admin change to all room members
+    await sio.emit("admin_changed", {"room": room, "admin": username}, room=room)
+
+    return {"status": "ok", "admin": username}
+
+
+@app.get("/room-admin/{room}")
+async def get_room_admin(room: str):
+    """Get current room admin"""
+    admin = ROOM_ADMINS.get(room)
+    return {"admin": admin}
+
+
+@app.post("/kick-user")
+async def kick_user(request: Request):
+    """Kick a user from room (admin only)"""
+    body = await request.json()
+    room = body.get("room")
+    target_user = body.get("target_user")
+    admin_user = body.get("admin_user")
+
+    if not room or not target_user or not admin_user:
+        return JSONResponse(
+            {"error": "room, target_user and admin_user required"}, status_code=400
+        )
+
+    # Verify admin
+    if ROOM_ADMINS.get(room) != admin_user:
+        return JSONResponse({"error": "Only admin can kick users"}, status_code=403)
+
+    # Find target user's sid
+    target_sid = None
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+
+    if target_sid:
+        # Force the user to leave
+        await sio.emit(
+            "kicked",
+            {"room": room, "reason": "You were kicked by admin"},
+            to=target_sid,
+        )
+
+        # Remove from room
+        if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+            del ROOM_USERS[room][target_user]
+
+        # Remove from ROOM_HISTORY
+        if room in ROOM_HISTORY and target_user in ROOM_HISTORY[room]:
+            ROOM_HISTORY[room].remove(target_user)
+
+        await sio.leave_room(target_sid, room)
+        await broadcast_users(room)
+
+        print(f"👢 User {target_user} kicked from {room} by admin {admin_user}")
+        return {"status": "ok", "message": f"User {target_user} kicked"}
+
+    return JSONResponse({"error": "User not found in room"}, status_code=404)
+
+
+@app.post("/join-request/{room}")
+async def handle_join_request(room: str, request: Request):
+    """Handle join requests for locked rooms"""
+    body = await request.json()
+    username = body.get("username")
+
+    if not username:
+        return JSONResponse({"error": "username required"}, status_code=400)
+
+    admin = ROOM_ADMINS.get(room)
+    if not admin:
+        return JSONResponse({"error": "No admin found for room"}, status_code=404)
+
+    # Store pending request
+    if room not in PENDING_JOIN_REQUESTS:
+        PENDING_JOIN_REQUESTS[room] = {}
+
+    # Find user's sid (they should be connected but not in room yet)
+    user_sid = None
+    for sid, status in USER_STATUS.items():
+        if status.get("user") == username:
+            user_sid = sid
+            break
+
+    if user_sid:
+        PENDING_JOIN_REQUESTS[room][username] = user_sid
+
+        # Notify admin
+        admin_sid = ROOM_USERS.get(room, {}).get(admin)
+        if admin_sid:
+            await sio.emit(
+                "join_request",
+                {
+                    "room": room,
+                    "username": username,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                to=admin_sid,
+            )
+
+        return {"status": "pending", "message": "Join request sent to admin"}
+
+    return JSONResponse({"error": "User not connected"}, status_code=404)
+
+
+@app.post("/join-response/{room}")
+async def handle_join_response(room: str, request: Request):
+    """Admin response to join request"""
+    body = await request.json()
+    username = body.get("username")
+    approved = body.get("approved")
+    admin_user = body.get("admin_user")
+
+    if not username or approved is None or not admin_user:
+        return JSONResponse(
+            {"error": "username, approved and admin_user required"}, status_code=400
+        )
+
+    # Verify admin
+    if ROOM_ADMINS.get(room) != admin_user:
+        return JSONResponse(
+            {"error": "Only admin can approve join requests"}, status_code=403
+        )
+
+    if room not in PENDING_JOIN_REQUESTS or username not in PENDING_JOIN_REQUESTS[room]:
+        return JSONResponse({"error": "No pending request found"}, status_code=404)
+
+    user_sid = PENDING_JOIN_REQUESTS[room][username]
+
+    if approved:
+        # Allow join - add user to room history
+        ROOM_HISTORY.setdefault(room, set()).add(username)
+
+        # Notify user they can join
+        await sio.emit(
+            "join_approved",
+            {"room": room, "message": "Your join request was approved"},
+            to=user_sid,
+        )
+
+        print(f"✅ Join request approved for {username} in {room}")
+    else:
+        # Reject join
+        await sio.emit(
+            "join_rejected",
+            {"room": room, "message": "Your join request was rejected"},
+            to=user_sid,
+        )
+
+        print(f"❌ Join request rejected for {username} in {room}")
+
+    # Clean up
+    del PENDING_JOIN_REQUESTS[room][username]
+    if not PENDING_JOIN_REQUESTS[room]:
+        del PENDING_JOIN_REQUESTS[room]
+
+    return {"status": "ok", "approved": approved}
 
 
 # ---------------- Subscribe / Push test ----------------
