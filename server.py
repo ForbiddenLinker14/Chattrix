@@ -895,8 +895,8 @@ async def reject_join_request(sid, data):
         if not PENDING_JOIN_REQUESTS[room]:
             del PENDING_JOIN_REQUESTS[room]
 
-    # Set cooldown for the rejected user (5 minutes)
-    set_cooldown(room, username, 5)
+    # 🛑 FIXED: Set cooldown and get remaining time
+    set_cooldown(room, username, 5)  # 5 minutes cooldown
     remaining_seconds = get_remaining_cooldown(room, username)
 
     # Notify the user they've been rejected
@@ -907,7 +907,7 @@ async def reject_join_request(sid, data):
             {
                 "room": room,
                 "message": f"Your join request for room '{room}' was rejected. Please wait {remaining_seconds} seconds before requesting again.",
-                "remaining_seconds": remaining_seconds,
+                "remaining_seconds": remaining_seconds,  # 🆕 IMPORTANT: Send remaining seconds
             },
             room=user_socket,
         )
@@ -974,7 +974,7 @@ async def join(sid, data):
     )
 
     if is_locked and not is_existing_user:
-        # Check if user is in cooldown period
+        # 🛑 FIXED: Check cooldown FIRST before processing join request
         if is_in_cooldown(room, username):
             remaining_seconds = get_remaining_cooldown(room, username)
             await sio.emit(
@@ -991,6 +991,9 @@ async def join(sid, data):
                 "error": "in_cooldown",
                 "remaining_seconds": remaining_seconds,
             }
+
+        # 🛑 FIXED: Set cooldown IMMEDIATELY when sending join request
+        set_cooldown(room, username, 5)  # 5 minutes cooldown
 
         # New user trying to join locked room - send join request
         await notify_admin_about_join_request(room, username, sid)

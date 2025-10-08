@@ -1258,6 +1258,7 @@
 
       // Handle join rejection  
       socket.on("join_rejected", (data) => {
+        // Show the rejection message
         addMessage({
           sender: "System",
           text: data.message,
@@ -1268,6 +1269,14 @@
         document.getElementById("chat-container").style.display = "none";
         document.getElementById("input-area").style.display = "none";
         document.getElementById("intro").style.display = "block";
+
+        // 🆕 ADD THIS: Also start the cooldown timer
+        if (data.remaining_seconds) {
+          handleJoinRequestCooldown(data.remaining_seconds);
+        } else {
+          // If no remaining_seconds in rejection, use default 5 minutes (300 seconds)
+          handleJoinRequestCooldown(300);
+        }
       });
     }
 
@@ -1527,6 +1536,19 @@
       });
 
       socket.on("join_request_cooldown", (data) => {
+        // Show cooldown message
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+
+        // Show intro page during cooldown
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+
+        // Start the cooldown timer
         handleJoinRequestCooldown(data.remaining_seconds);
       });
 
@@ -3538,37 +3560,53 @@
     };
 
     function handleJoinRequestCooldown(remainingSeconds) {
+      // Store the remaining seconds globally so we can access it
+      window.joinCooldownRemaining = remainingSeconds;
+
       const minutes = Math.floor(remainingSeconds / 60);
       const seconds = remainingSeconds % 60;
       const cooldownMessage = `Please wait ${minutes}:${seconds.toString().padStart(2, '0')} before sending another join request.`;
-
-      addMessage({
-        sender: "System",
-        text: cooldownMessage,
-        ts: new Date().toISOString(),
-      });
 
       // Disable the join button and show countdown
       const joinButton = document.querySelector('button[onclick="joinRoom()"]');
       const originalText = joinButton.textContent;
       joinButton.disabled = true;
 
-      // Update button text with countdown
+      // Update button text with real-time countdown
       const updateCountdown = () => {
-        if (remainingSeconds > 0) {
-          const mins = Math.floor(remainingSeconds / 60);
-          const secs = remainingSeconds % 60;
+        if (window.joinCooldownRemaining > 0) {
+          const mins = Math.floor(window.joinCooldownRemaining / 60);
+          const secs = window.joinCooldownRemaining % 60;
           joinButton.textContent = `Wait ${mins}:${secs.toString().padStart(2, '0')}`;
-          remainingSeconds--;
+          window.joinCooldownRemaining--;
+
+          // Update every second
           setTimeout(updateCountdown, 1000);
         } else {
+          // Cooldown finished
           joinButton.disabled = false;
           joinButton.textContent = originalText;
-          addMessage({
-            sender: "System",
-            text: "You can now send another join request.",
-            ts: new Date().toISOString(),
-          });
+
+          // Show completion message on intro page
+          if (document.getElementById("intro").style.display === "block") {
+            const introWrapper = document.getElementById("intro-wrapper");
+            if (introWrapper) {
+              const completionMsg = document.createElement("div");
+              completionMsg.style.background = "#256e4c";
+              completionMsg.style.color = "white";
+              completionMsg.style.padding = "10px";
+              completionMsg.style.borderRadius = "8px";
+              completionMsg.style.margin = "10px 0";
+              completionMsg.style.textAlign = "center";
+              completionMsg.textContent = "✅ You can now send another join request.";
+              introWrapper.insertBefore(completionMsg, introWrapper.firstChild);
+
+              // Remove the message after 5 seconds
+              setTimeout(() => {
+                completionMsg.remove();
+              }, 5000);
+            }
+          }
         }
       };
 
