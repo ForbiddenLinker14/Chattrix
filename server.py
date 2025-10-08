@@ -32,6 +32,8 @@ USER_STATUS = {}  # sid -> {"user": username, "active": bool}
 FCM_TOKENS = {"<username>": {"<room_id>": ["<token1>", "<token2>", ...]}}
 ROOM_ADMINS = {}  # { room: admin_username }
 ROOM_LOCK_STATES = {}  # { room: boolean }
+PENDING_JOIN_REQUESTS = {}  # { room: [ {user, timestamp, sid} ] }
+USER_SOCKET_MAPPING = {}  # { username: sid } for quick lookup
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -74,6 +76,104 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
+async def notify_admin_about_join_request(room: str, username: str, user_sid: str):
+    """Notify admin about a join request, even if admin is offline"""
+    if room not in ROOM_ADMINS:
+        return
+
+    admin_username = ROOM_ADMINS[room]
+
+    # Store the pending request
+    request = {
+        "user": username,
+        "room": room,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "sid": user_sid,
+    }
+
+    if room not in PENDING_JOIN_REQUESTS:
+        PENDING_JOIN_REQUESTS[room] = []
+    PENDING_JOIN_REQUESTS[room].append(request)
+
+    # Check if admin is online
+    admin_sid = None
+    if room in ROOM_USERS and admin_username in ROOM_USERS[room]:
+        admin_sid = ROOM_USERS[room][admin_username]
+
+    if admin_sid and admin_sid in USER_STATUS and USER_STATUS[admin_sid].get("active"):
+        # Admin is online and active - send immediate notification
+        await sio.emit("join_request", request, room=admin_sid)
+        print(
+            f"📨 Join request sent to online admin {admin_username} for user {username}"
+        )
+    else:
+        # Admin is offline - send push notification
+        await send_join_request_push(room, admin_username, username)
+        print(
+            f"📨 Join request queued for offline admin {admin_username} for user {username}"
+        )
+
+
+# Add this function for push notifications for join requests
+async def send_join_request_push(room: str, admin_username: str, requesting_user: str):
+    """Send push notification to admin about join request"""
+    now = datetime.now(timezone.utc)
+
+    # WebPush for browsers
+    if room in subscriptions and admin_username in subscriptions[room]:
+        payload = {
+            "title": "Join Request - Chattrix",
+            "body": f"{requesting_user} wants to join room '{room}'",
+            "room": room,
+            "type": "join_request",
+            "requesting_user": requesting_user,
+            "timestamp": now.isoformat(),
+        }
+
+        for sub in subscriptions[room][admin_username]:
+            try:
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps(payload),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": "mailto:anitsaha976@gmail.com"},
+                )
+                print(f"📲 WebPush join request sent to {admin_username}")
+            except WebPushException as e:
+                print(f"❌ WebPush failed for join request: {e}")
+
+    # FCM for Android
+    if admin_username in FCM_TOKENS:
+        for room_tokens in FCM_TOKENS[admin_username].values():
+            for token in room_tokens:
+                try:
+                    msg = messaging.Message(
+                        notification=messaging.Notification(
+                            title="Join Request - Chattrix",
+                            body=f"{requesting_user} wants to join room '{room}'",
+                        ),
+                        token=token,
+                        data={
+                            "type": "join_request",
+                            "room": room,
+                            "requesting_user": requesting_user,
+                            "timestamp": now.isoformat(),
+                        },
+                        android=messaging.AndroidConfig(
+                            priority="high",
+                            notification=messaging.AndroidNotification(
+                                channel_id="chat_messages",
+                                sound="default",
+                                priority="high",
+                            ),
+                        ),
+                    )
+                    response = messaging.send(msg)
+                    print(f"📱 FCM join request sent to {admin_username}: {response}")
+                except Exception as e:
+                    print(f"❌ FCM push failed for join request: {e}")
+
+
 # Add this function to handle admin transfer
 async def transfer_admin(room: str):
     """Transfer admin to the next available user in the room"""
@@ -637,6 +737,152 @@ async def destroy_room(room: str):
 
 
 # ---------------- Socket.IO Events ----------------
+# Add these new socket events to server.py
+
+
+@sio.event
+async def approve_join_request(sid, data):
+    """Admin approves a join request"""
+    room = data.get("room")
+    username = data.get("user")
+    admin_username = data.get("admin")
+
+    if not room or not username or not admin_username:
+        return {"success": False, "error": "Missing data"}
+
+    # Verify the approver is actually the admin
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != admin_username:
+        return {"success": False, "error": "Only room admin can approve requests"}
+
+    # Find the pending request
+    if room not in PENDING_JOIN_REQUESTS:
+        return {"success": False, "error": "No pending requests for this room"}
+
+    request = next(
+        (r for r in PENDING_JOIN_REQUESTS[room] if r["user"] == username), None
+    )
+    if not request:
+        return {"success": False, "error": "Join request not found"}
+
+    # Remove from pending requests
+    PENDING_JOIN_REQUESTS[room] = [
+        r for r in PENDING_JOIN_REQUESTS[room] if r["user"] != username
+    ]
+    if not PENDING_JOIN_REQUESTS[room]:
+        del PENDING_JOIN_REQUESTS[room]
+
+    # Add user to room history to allow joining
+    ROOM_HISTORY.setdefault(room, set()).add(username)
+
+    # Notify the user they've been approved
+    user_sid = request.get("sid")
+    if user_sid:
+        await sio.emit(
+            "join_approved",
+            {
+                "room": room,
+                "message": f"Your join request for room '{room}' has been approved!",
+            },
+            room=user_sid,
+        )
+
+    # Notify admin
+    await sio.emit(
+        "join_request_approved",
+        {
+            "room": room,
+            "user": username,
+            "message": f"Approved {username}'s join request",
+        },
+        room=sid,
+    )
+
+    # Broadcast system message
+    await sio.emit(
+        "message",
+        {
+            "sender": "System",
+            "text": f"Admin approved {username}'s join request",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        },
+        room=room,
+    )
+
+    print(f"✅ Join request approved for {username} in room {room}")
+    return {"success": True, "message": f"Approved {username}'s join request"}
+
+
+@sio.event
+async def reject_join_request(sid, data):
+    """Admin rejects a join request"""
+    room = data.get("room")
+    username = data.get("user")
+    admin_username = data.get("admin")
+
+    if not room or not username or not admin_username:
+        return {"success": False, "error": "Missing data"}
+
+    # Verify the rejecter is actually the admin
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != admin_username:
+        return {"success": False, "error": "Only room admin can reject requests"}
+
+    # Find and remove the pending request
+    if room in PENDING_JOIN_REQUESTS:
+        PENDING_JOIN_REQUESTS[room] = [
+            r for r in PENDING_JOIN_REQUESTS[room] if r["user"] != username
+        ]
+        if not PENDING_JOIN_REQUESTS[room]:
+            del PENDING_JOIN_REQUESTS[room]
+
+    # Notify the user they've been rejected
+    user_socket = USER_SOCKET_MAPPING.get(username)
+    if user_socket:
+        await sio.emit(
+            "join_rejected",
+            {
+                "room": room,
+                "message": f"Your join request for room '{room}' was rejected.",
+            },
+            room=user_socket,
+        )
+
+    # Notify admin
+    await sio.emit(
+        "join_request_rejected",
+        {
+            "room": room,
+            "user": username,
+            "message": f"Rejected {username}'s join request",
+        },
+        room=sid,
+    )
+
+    print(f"❌ Join request rejected for {username} in room {room}")
+    return {"success": True, "message": f"Rejected {username}'s join request"}
+
+
+@sio.event
+async def get_pending_requests(sid, data):
+    """Get all pending join requests for a room (admin only)"""
+    room = data.get("room")
+    username = data.get("user")
+
+    if not room or not username:
+        return {"success": False, "error": "Missing data"}
+
+    # Verify user is admin of the room
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != username:
+        return {"success": False, "error": "Only room admin can view pending requests"}
+
+    pending_requests = PENDING_JOIN_REQUESTS.get(room, [])
+
+    await sio.emit(
+        "pending_requests", {"room": room, "requests": pending_requests}, room=sid
+    )
+
+    return {"success": True, "requests": pending_requests}
+
+
 @sio.event
 async def join(sid, data):
     room = data["room"]
@@ -649,9 +895,53 @@ async def join(sid, data):
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
-    # ✅ Check if room is locked and user is not already in it
+    # ✅ Update socket mapping for quick user lookup
+    USER_SOCKET_MAPPING[username] = sid
+
+    # ✅ Check if room is locked
     is_locked = ROOM_LOCK_STATES.get(room, False)
     room_users = ROOM_USERS.get(room, {})
+
+    # ✅ FIX: Allow existing users to reconnect even if room is locked
+    is_existing_user = (
+        username in ROOM_HISTORY.get(room, set()) or username in room_users
+    )
+
+    if is_locked and not is_existing_user:
+        # New user trying to join locked room - send join request
+        await notify_admin_about_join_request(room, username, sid)
+
+        # Store user's socket ID for later approval
+        if room not in PENDING_JOIN_REQUESTS:
+            PENDING_JOIN_REQUESTS[room] = []
+
+        # Check if request already exists
+        existing_request = next(
+            (r for r in PENDING_JOIN_REQUESTS[room] if r["user"] == username), None
+        )
+        if not existing_request:
+            PENDING_JOIN_REQUESTS[room].append(
+                {
+                    "user": username,
+                    "sid": sid,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+        await sio.emit(
+            "join_request_sent",
+            {
+                "room": room,
+                "message": f"Join request sent to admin. Waiting for approval...",
+            },
+            to=sid,
+        )
+
+        return {
+            "success": False,
+            "error": "room_locked",
+            "message": "Join request sent to admin",
+        }
 
     if is_locked and username not in room_users:
         await sio.emit(

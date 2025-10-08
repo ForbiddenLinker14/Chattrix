@@ -728,6 +728,36 @@
       transform: translateY(-2px);
       box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
     }
+
+    /* Join request notification styles */
+    .msg.system.join-request {
+      animation: pulse 2s infinite;
+      max-width: 85% !important;
+      margin: 15px auto !important;
+    }
+
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(230, 126, 34, 0.7);
+      }
+
+      70% {
+        box-shadow: 0 0 0 10px rgba(230, 126, 34, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(230, 126, 34, 0);
+      }
+    }
+
+    .join-request button {
+      transition: all 0.3s ease;
+    }
+
+    .join-request button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
   </style>
 </head>
 
@@ -1122,12 +1152,15 @@
 
       // Check room lock status first
       const isLocked = await checkRoomLockStatus(currentRoom);
+
       if (isLocked) {
         const roomUsers = await getRoomUsers(currentRoom);
         const isExistingUser = roomUsers.includes(currentName);
 
         if (!isExistingUser) {
-          showLockedRoomAlert(currentRoom, `Room "${currentRoom}" is locked. You cannot join at this time.`);
+          // This will trigger the join request flow
+          // The socket event handlers above will handle the response
+          await attemptJoinWithRequest();
           return;
         }
       }
@@ -1233,6 +1266,48 @@
       // Handle room locked alerts
       socket.on("room_locked_alert", (data) => {
         showLockedRoomAlert(data.room, data.message);
+      });
+
+      // Handle join request sent response
+      socket.on("join_request_sent", (data) => {
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+      });
+
+      // Handle join approval
+      socket.on("join_approved", (data) => {
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+
+        // Auto-retry joining the room after approval
+        setTimeout(() => {
+          joinRoom();
+        }, 1000);
+      });
+
+      // Handle join rejection  
+      socket.on("join_rejected", (data) => {
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+
+        // Show intro page if rejected
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+      });
+
+      // Admin: Show join request notification in message container
+      socket.on("join_request", (data) => {
+        showJoinRequestNotification(data);
       });
 
       socket.on("users_update", updateUserList);
@@ -3268,6 +3343,106 @@
       }
       return [];
     }
+
+
+
+    async function attemptJoinWithRequest() {
+      if (!socket || !currentRoom || !currentName) return;
+
+      // Store room info for retry after approval
+      Storage.set("pending_room", currentRoom);
+      Storage.set("pending_name", currentName);
+
+      // The socket connection and join event will handle the rest
+      // The server will detect this is a locked room + new user and send join request
+    }
+    // Function to display join request in message area
+    function showJoinRequestNotification(request) {
+      const messages = document.getElementById("messages");
+      const notificationId = `join-request-${request.user}-${Date.now()}`;
+
+      const notificationDiv = document.createElement("div");
+      notificationDiv.id = notificationId;
+      notificationDiv.className = "msg system join-request";
+      notificationDiv.style.background = "#2c3e50";
+      notificationDiv.style.border = "2px solid #e67e22";
+      notificationDiv.style.padding = "15px";
+      notificationDiv.style.textAlign = "center";
+
+      notificationDiv.innerHTML = `
+        <div style="margin-bottom: 10px;">
+            <strong>🔔 Join Request</strong>
+        </div>
+        <div style="margin-bottom: 15px;">
+            <strong>${request.user}</strong> wants to join room <strong>"${request.room}"</strong>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+            <button onclick="approveJoinRequest('${request.room}', '${request.user}')" 
+                    style="background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
+                ✅ Approve
+            </button>
+            <button onclick="rejectJoinRequest('${request.room}', '${request.user}')" 
+                    style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
+                ❌ Reject
+            </button>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px; color: #ccc;">
+            ${new Date(request.timestamp).toLocaleString()}
+        </div>
+    `;
+
+      messages.appendChild(notificationDiv);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }
+
+    // Admin functions to handle join requests
+    window.approveJoinRequest = function (room, user) {
+      if (!socket) return;
+
+      socket.emit("approve_join_request", {
+        room: room,
+        user: user,
+        admin: currentName
+      }, (response) => {
+        if (response && response.success) {
+          // Remove the notification
+          const notifications = document.querySelectorAll(`[id^="join-request-${user}"]`);
+          notifications.forEach(notification => notification.remove());
+
+          addMessage({
+            sender: "System",
+            text: response.message,
+            ts: new Date().toISOString(),
+          });
+        } else {
+          alert(response?.error || "Failed to approve request");
+        }
+      });
+    };
+
+    window.rejectJoinRequest = function (room, user) {
+      if (!socket) return;
+
+      socket.emit("reject_join_request", {
+        room: room,
+        user: user,
+        admin: currentName
+      }, (response) => {
+        if (response && response.success) {
+          // Remove the notification
+          const notifications = document.querySelectorAll(`[id^="join-request-${user}"]`);
+          notifications.forEach(notification => notification.remove());
+
+          addMessage({
+            sender: "System",
+            text: response.message,
+            ts: new Date().toISOString(),
+          });
+        } else {
+          alert(response?.error || "Failed to reject request");
+        }
+      });
+    };
   </script>
 
   <!-- Capacitor Storage Module -->
