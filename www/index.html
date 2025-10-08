@@ -1040,6 +1040,97 @@
 
   <script>
     // ======================================================
+    // =============== Fresh Install / Version Reset =========
+    // ======================================================
+    const APP_VERSION = "7.5"; // current app version
+
+    // Function to clear all storage
+    async function clearAllStorage() {
+      console.log("🧹 Clearing old storage for version", APP_VERSION);
+
+      try {
+        // Clear standard web storage
+        localStorage.clear();
+        sessionStorage.clear();
+
+        // Clear all cookies
+        document.cookie.split(";").forEach(cookie => {
+          const name = cookie.split("=")[0].trim();
+          document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+        });
+
+        // Clear IndexedDB databases
+        if (window.indexedDB && indexedDB.databases) {
+          try {
+            const databases = await indexedDB.databases();
+            databases.forEach(db => {
+              if (db.name) indexedDB.deleteDatabase(db.name);
+            });
+          } catch (e) {
+            console.warn("IndexedDB clear failed:", e);
+          }
+        }
+
+        // Clear Cache Storage
+        if (caches && caches.keys) {
+          try {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+          } catch (e) {
+            console.warn("Cache Storage clear failed:", e);
+          }
+        }
+
+        // Clear Service Worker registrations
+        if (navigator.serviceWorker) {
+          try {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(registration => registration.unregister()));
+          } catch (e) {
+            console.warn("Service Worker clear failed:", e);
+          }
+        }
+
+        // Clear Capacitor Preferences
+        try {
+          const { Preferences } = await import('@capacitor/preferences');
+          await Preferences.clear();
+          console.log("✅ Capacitor Preferences cleared");
+        } catch (err) {
+          console.warn("⚠️ Preferences plugin not available or failed:", err);
+        }
+
+        console.log("✅ All storage cleared successfully");
+
+      } catch (e) {
+        console.warn("Storage clear partially failed:", e);
+      }
+    }
+
+    // Version check and reset
+    (async function () {
+      const lastVersion = localStorage.getItem("app_version");
+
+      if (lastVersion !== APP_VERSION) {
+        console.log(`🔄 Version change detected: ${lastVersion} -> ${APP_VERSION}`);
+
+        await clearAllStorage();
+
+        // Save current version
+        localStorage.setItem("app_version", APP_VERSION);
+
+        // Force reload to ensure clean state
+        console.log("🔄 Reloading for clean start...");
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+
+      } else {
+        console.log(`✅ App version ${APP_VERSION} is current`);
+      }
+    })();
+
+    // ======================================================
     // =============== Storage Utility ======================
     // ======================================================
     const Storage = {
@@ -3461,7 +3552,7 @@
         }, 1000);
 
         // Repeat every 10 minutes
-        setInterval(checkVersion, 10000);
+        setInterval(checkVersion, 130000);
       });
     })();
 
@@ -3543,8 +3634,27 @@
       toggle.checked = isLocked;
     }
 
+    // function updateAdminUI() {
+    //   const lockContainer = document.querySelector('.lock-toggle-inline');
+    //   const isAdmin = currentName === currentAdmin;
+
+    //   if (lockContainer) {
+    //     if (isAdmin) {
+    //       lockContainer.style.display = 'flex';
+    //       lockContainer.style.opacity = '1';
+    //     } else {
+    //       lockContainer.style.display = 'none';
+    //     }
+    //   }
+
+    //   // Show admin badge in user list or somewhere
+    //   updateUserListWithAdmin();
+    // }
+
     function updateAdminUI() {
       const lockContainer = document.querySelector('.lock-toggle-inline');
+      const clearBtn = document.querySelector('button[onclick="clearRoom()"]');
+      const destroyBtn = document.querySelector('button[onclick="destroyRoom()"]');
       const isAdmin = currentName === currentAdmin;
 
       if (lockContainer) {
@@ -3554,6 +3664,14 @@
         } else {
           lockContainer.style.display = 'none';
         }
+      }
+
+      // Show/hide admin buttons
+      if (clearBtn) {
+        clearBtn.style.display = isAdmin ? 'block' : 'none';
+      }
+      if (destroyBtn) {
+        destroyBtn.style.display = isAdmin ? 'block' : 'none';
       }
 
       // Show admin badge in user list or somewhere
