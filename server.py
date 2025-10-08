@@ -788,6 +788,18 @@ async def approve_join_request(sid, data):
             },
             room=user_sid,
         )
+    else:
+        # If user socket not found, try to find it in mapping
+        user_sid = USER_SOCKET_MAPPING.get(username)
+        if user_sid:
+            await sio.emit(
+                "join_approved",
+                {
+                    "room": room,
+                    "message": f"Your join request for room '{room}' has been approved!",
+                },
+                room=user_sid,
+            )
 
     # Notify admin
     await sio.emit(
@@ -909,6 +921,14 @@ async def join(sid, data):
     is_existing_user = (
         username in ROOM_HISTORY.get(room, set()) or username in room_users
     )
+
+    # ✅ FIX: Remove user from pending requests if they're trying to join normally
+    if room in PENDING_JOIN_REQUESTS:
+        PENDING_JOIN_REQUESTS[room] = [
+            r for r in PENDING_JOIN_REQUESTS[room] if r["user"] != username
+        ]
+        if not PENDING_JOIN_REQUESTS[room]:
+            del PENDING_JOIN_REQUESTS[room]
 
     if is_locked and not is_existing_user:
         # New user trying to join locked room - send join request

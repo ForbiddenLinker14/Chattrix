@@ -1,4 +1,4 @@
-  <!-- ওঁ নমো 
+<!-- ওঁ নমো 
 
 সিদ্ধিদাতা গণেশায় নমঃ                        সিদ্ধিদাতা গণেশায় নমঃ                                   সিদ্ধিদাতা গণেশায় নমঃ -->
 
@@ -758,6 +758,64 @@
       transform: translateY(-2px);
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
+
+    /* Alert System */
+    .alert-overlay {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .alert {
+      padding: 12px 20px;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      animation: slideIn 0.3s ease, fadeOut 0.5s ease 1.5s forwards;
+      min-width: 300px;
+      text-align: center;
+    }
+
+    .alert.success {
+      background: #27ae60;
+      border-left: 4px solid #2ecc71;
+    }
+
+    .alert.error {
+      background: #e74c3c;
+      border-left: 4px solid #c0392b;
+    }
+
+    .alert.info {
+      background: #3498db;
+      border-left: 4px solid #2980b9;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes fadeOut {
+      to {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+    }
   </style>
 </head>
 
@@ -1145,6 +1203,11 @@
         alert("Enter name and room first!");
         return;
       }
+
+      // Clear any previous pending state
+      Storage.remove("pending_room");
+      Storage.remove("pending_name");
+
       if (joinedRooms.has(currentRoom)) {
         alert(`You are already in room "${currentRoom}"!`);
         return;
@@ -1171,13 +1234,18 @@
 
     // Add this new function to handle join requests
     async function sendJoinRequest(room, username) {
-      if (!socket) {
-        // Initialize socket connection first
-        socket = io("https://realtime-chat-1mv3.onrender.com", {
-          path: "/socket.io",
-          transports: ["websocket"],
-        });
+      // Clear any existing socket to prevent conflicts
+      if (socket) {
+        socket.off();
+        socket.disconnect();
+        socket = null;
       }
+
+      // Initialize new socket connection
+      socket = io("https://realtime-chat-1mv3.onrender.com", {
+        path: "/socket.io",
+        transports: ["websocket"],
+      });
 
       // Store pending info
       Storage.set("pending_room", room);
@@ -1186,38 +1254,49 @@
       // Setup socket events for join request flow
       setupJoinRequestSocketHandlers();
 
+      let requestSent = false;
+
       // Connect and send join request
       socket.on("connect", () => {
         console.log("🔗 Socket connected for join request");
 
-        // The server will detect this is a locked room + new user and send join request automatically
-        // when we try to join
-        const fcmToken = localStorage.getItem("fcm_token") || null;
-        socket.emit(
-          "join",
-          {
-            room: room,
-            sender: username,
-            lastTs: null,
-            fcmToken: fcmToken,
-          },
-          (ack) => {
-            if (ack && ack.error === "room_locked") {
-              // This is expected - server will handle the join request
-              console.log("Join request sent to admin");
-              addMessage({
-                sender: "System",
-                text: "Join request sent to admin. Waiting for approval...",
-                ts: new Date().toISOString(),
-              });
+        if (!requestSent) {
+          requestSent = true;
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+
+          socket.emit(
+            "join",
+            {
+              room: room,
+              sender: username,
+              lastTs: null,
+              fcmToken: fcmToken,
+            },
+            (ack) => {
+              if (ack && ack.error === "room_locked") {
+                // This is expected - server will handle the join request
+                console.log("Join request sent to admin");
+                showAlert("Join request sent to admin. Waiting for approval...", "info");
+              } else if (ack && ack.success) {
+                // This shouldn't happen for locked rooms, but handle it
+                proceedWithJoin(room, username);
+              }
             }
-          }
-        );
+          );
+        }
+      });
+
+      // Handle connection errors
+      socket.on("connect_error", (error) => {
+        console.error("Connection failed:", error);
+        showAlert("Failed to connect. Please try again.", "error");
+        // Reset socket to allow retry
+        socket = null;
       });
 
       // Show waiting message
       document.getElementById("chat-container").style.display = "flex";
-      document.getElementById("input-area").style.display = "none"; // Don't show input area while waiting
+      document.getElementById("input-area").style.display = "none";
       document.getElementById("intro").style.display = "none";
       document.getElementById("messages").style.display = "block";
       document.getElementById("messages").innerHTML = "";
@@ -1244,30 +1323,59 @@
 
       // Handle join approval
       socket.on("join_approved", (data) => {
+        showAlert("Join request approved! Joining room...", "success");
+
+        // Clear pending state
+        Storage.remove("pending_room");
+        Storage.remove("pending_name");
+
         addMessage({
           sender: "System",
           text: data.message,
           ts: new Date().toISOString(),
         });
 
-        // Now proceed with actual join
+        // Now proceed with actual join after a short delay to show the alert
         setTimeout(() => {
           proceedWithJoin(currentRoom, currentName);
-        }, 1000);
+        }, 1500);
       });
 
       // Handle join rejection  
       socket.on("join_rejected", (data) => {
+        showAlert("Join request was rejected by admin", "error");
+
+        // Clear pending state to allow new requests
+        Storage.remove("pending_room");
+        Storage.remove("pending_name");
+
         addMessage({
           sender: "System",
           text: data.message,
           ts: new Date().toISOString(),
         });
 
-        // Show intro page if rejected
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
+        // Reset socket to allow new join requests
+        if (socket) {
+          socket.disconnect();
+          socket = null;
+        }
+
+        // Show intro page if rejected after delay
+        setTimeout(() => {
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+        }, 2000);
+      });
+
+      // Handle unexpected disconnections
+      socket.on("disconnect", (reason) => {
+        console.log("Socket disconnected:", reason);
+        if (reason === "io server disconnect") {
+          // Server disconnected, allow reconnection
+          socket.connect();
+        }
       });
     }
 
@@ -2754,6 +2862,18 @@
     };
 
     async function leaveRoom() {
+
+      // Clear any pending join request state
+      Storage.remove("pending_room");
+      Storage.remove("pending_name");
+
+      // Reset socket to allow fresh connections
+      if (socket) {
+        socket.off(); // Remove all listeners
+        socket.disconnect();
+        socket = null;
+      }
+
       if (!currentRoom) {
         alert("You are not in a room!");
         return;
@@ -3514,6 +3634,32 @@
         }
       });
     };
+
+    // ======================================================
+    // =============== Alert System ========================
+    // ======================================================
+    function showAlert(message, type = 'info') {
+      let alertOverlay = document.getElementById('alert-overlay');
+      if (!alertOverlay) {
+        alertOverlay = document.createElement('div');
+        alertOverlay.id = 'alert-overlay';
+        alertOverlay.className = 'alert-overlay';
+        document.body.appendChild(alertOverlay);
+      }
+
+      const alert = document.createElement('div');
+      alert.className = `alert ${type}`;
+      alert.textContent = message;
+
+      alertOverlay.appendChild(alert);
+
+      // Remove alert after animation completes
+      setTimeout(() => {
+        if (alert.parentNode) {
+          alert.parentNode.removeChild(alert);
+        }
+      }, 2000);
+    }
   </script>
 
   <!-- Capacitor Storage Module -->
