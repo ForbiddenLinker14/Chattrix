@@ -2890,12 +2890,30 @@
         alert("Join a room first!");
         return;
       }
+
+      // Check if user is admin and in the room
+      if (currentName !== currentAdmin) {
+        alert("Only room admin can clear the room");
+        return;
+      }
+
+      if (!joinedRooms.has(currentRoom)) {
+        alert("You must be in the room to clear it");
+        return;
+      }
+
       try {
         const res = await fetch(
           `${API_BASE}/clear/${encodeURIComponent(currentRoom)}`,
           {
             method: "DELETE",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              user: currentName,
+              room: currentRoom
+            }),
             cache: "no-store",
           }
         );
@@ -2920,14 +2938,33 @@
         alert("Join a room first!");
         return;
       }
-      if (!confirm(`Are you sure you want to destroy room "${currentRoom}"?`))
+
+      // Check if user is admin and in the room
+      if (currentName !== currentAdmin) {
+        alert("Only room admin can destroy the room");
         return;
+      }
+
+      if (!joinedRooms.has(currentRoom)) {
+        alert("You must be in the room to destroy it");
+        return;
+      }
+
+      if (!confirm(`Are you sure you want to destroy room "${currentRoom}"? This action cannot be undone!`))
+        return;
+
       try {
         const res = await fetch(
           `${API_BASE}/destroy/${encodeURIComponent(currentRoom)}`,
           {
             method: "DELETE",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              user: currentName,
+              room: currentRoom
+            }),
           }
         );
         const data = await res.json();
@@ -2935,11 +2972,13 @@
           throw new Error(
             data?.error || `Failed to destroy room: ${res.status}`
           );
+
+        // Handle successful destruction
         unsubscribeUser(currentName, currentRoom);
         document.getElementById("messages").innerHTML = "";
         addMessage({
           sender: "System",
-          text: "Room destroyed. All messages cleared. Please join a new room.",
+          text: "Room destroyed by admin. All messages cleared.",
           ts: new Date().toISOString(),
         });
         lastPersistedTs = null;
@@ -3766,7 +3805,7 @@
         if (alert.parentNode) {
           alert.parentNode.removeChild(alert);
         }
-      }, 2000);
+      }, 5000);
     }
   </script>
 

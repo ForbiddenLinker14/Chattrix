@@ -663,35 +663,74 @@ def extract_favicon_from_text(text: str) -> str | None:
 
 # ---------------- REST: admin-ish ----------------
 @app.delete("/clear/{room}")
-async def clear_messages(room: str):
+async def clear_messages(room: str, request: Request):
     """
-    Clear chat history for a specific room.
+    Clear chat history for a specific room - ADMIN ONLY
     """
+    # Get the user from query parameters or body
+    body = await request.json() if request.method == "POST" else {}
+    user = body.get("user") or request.query_params.get("user")
+
+    if not user:
+        return JSONResponse({"error": "User identification required"}, status_code=400)
+
+    # Check if user is admin of the room
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != user:
+        return JSONResponse(
+            {"error": "Only room admin can clear the room"}, status_code=403
+        )
+
+    # Check if user is currently in the room
+    if room not in ROOM_USERS or user not in ROOM_USERS[room]:
+        return JSONResponse(
+            {"error": "You must be in the room to clear it"}, status_code=403
+        )
+
     clear_room(room)  # delete all messages from DB
 
     # Notify everyone in the room
     await sio.emit(
-        "clear", {"room": room, "message": "Room history cleared."}, room=room
+        "clear", {"room": room, "message": "Room history cleared by admin."}, room=room
     )
 
-    print(f"🧹 Room {room} history cleared.")
+    print(f"🧹 Room {room} history cleared by admin {user}.")
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
 
 @app.delete("/destroy/{room}")
-async def destroy_room(room: str):
+async def destroy_room(room: str, request: Request):
+    # Get the user from query parameters or body
+    body = await request.json() if request.method == "POST" else {}
+    user = body.get("user") or request.query_params.get("user")
+
+    if not user:
+        return JSONResponse({"error": "User identification required"}, status_code=400)
+
+    # Check if user is admin of the room
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != user:
+        return JSONResponse(
+            {"error": "Only room admin can destroy the room"}, status_code=403
+        )
+
+    # Check if user is currently in the room
+    if room not in ROOM_USERS or user not in ROOM_USERS[room]:
+        return JSONResponse(
+            {"error": "You must be in the room to destroy it"}, status_code=403
+        )
+
+    # Continue with existing destroy logic...
     # 0. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
         print(f"🛑 All webpush subscriptions cleared for room {room}")
 
     # 0b. Clear in-memory FCM tokens for this room
-    for user in list(FCM_TOKENS.keys()):
-        if room in FCM_TOKENS[user]:
-            del FCM_TOKENS[user][room]
-            print(f"🧹 Removed FCM tokens for {user} in room {room}")
-        if not FCM_TOKENS[user]:
-            del FCM_TOKENS[user]
+    for user_token in list(FCM_TOKENS.keys()):
+        if room in FCM_TOKENS[user_token]:
+            del FCM_TOKENS[user_token][room]
+            print(f"🧹 Removed FCM tokens for {user_token} in room {room}")
+        if not FCM_TOKENS[user_token]:
+            del FCM_TOKENS[user_token]
 
     # 0c. Clear persisted FCM tokens in DB
     delete_fcm_tokens_for_room(room)
@@ -709,16 +748,14 @@ async def destroy_room(room: str):
     # 4. Notify clients + force disconnect
     await sio.emit(
         "clear",
-        {"room": room, "message": "Room destroyed. All messages cleared."},
+        {"room": room, "message": "Room destroyed by admin. All messages cleared."},
         room=room,
     )
 
     # notify everyone who was in the room (in-room clients)
     await sio.emit("room_destroyed", {"room": room}, room=room)
 
-    # --- NEW: also broadcast to all connected clients so clients
-    # who have already left the room (but still have it in localStorage)
-    # can remove it from their sidebar.
+    # Broadcast to all connected clients
     await sio.emit("room_destroyed", {"room": room})
     namespace = "/"
     if namespace in sio.manager.rooms and room in sio.manager.rooms[namespace]:
@@ -735,7 +772,9 @@ async def destroy_room(room: str):
     # ✅ NEW: Broadcast to ALL connected clients to clear this room from storage
     await sio.emit("clear_room_from_storage", {"room": room})
 
-    print(f"💥 Room {room} destroyed (history + FCM tokens wiped from memory + DB).")
+    print(
+        f"💥 Room {room} destroyed by admin {user} (history + FCM tokens wiped from memory + DB)."
+    )
     return {"status": "ok"}
 
 
@@ -959,7 +998,7 @@ async def join(sid, data):
             "join_request_sent",
             {
                 "room": room,
-                "message": f"Join request sent to admin. Waiting for approval...",
+                "message": f"Match join request awaiting administrator approval...",
             },
             to=sid,
         )
