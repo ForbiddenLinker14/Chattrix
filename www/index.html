@@ -703,39 +703,30 @@
       margin-left: 4px;
     }
 
-    /* Admin badge */
+
+    /* Add to your existing CSS */
     .admin-badge {
-      background: #f39c12;
-      color: white;
-      padding: 2px 6px;
-      border-radius: 10px;
-      font-size: 10px;
-      margin-left: 5px;
+      font-size: 12px;
+      animation: glow 2s ease-in-out infinite alternate;
     }
 
-    /* Kick button */
-    .kick-btn {
-      transition: all 0.2s;
+    @keyframes glow {
+      from {
+        text-shadow: 0 0 5px #ffd700;
+      }
+
+      to {
+        text-shadow: 0 0 10px #ffd700, 0 0 15px #ffd700;
+      }
     }
 
-    .kick-btn:hover {
-      transform: scale(1.2);
+    #locked-room-alert {
+      animation: fadeIn 0.3s ease-out;
     }
 
-    /* Join request notification */
-    .join-request {
-      background: #2c3e50 !important;
-      border-left: 4px solid #f39c12;
-    }
-
-    /* Disabled lock controls for non-admin */
-    .lock-toggle input:disabled+.lock-slider {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .lock-toggle input:disabled+.lock-slider:before {
-      opacity: 0.5;
+    #locked-room-alert button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(39, 174, 96, 0.4);
     }
   </style>
 </head>
@@ -961,44 +952,6 @@
 
   <script>
     // ======================================================
-    // =============== Fresh Install / Version Reset =========
-    // ======================================================
-    const APP_VERSION = "7.5"; // current app version
-
-    const lastVersion = localStorage.getItem("app_version");
-    if (lastVersion !== APP_VERSION) {
-      console.log("🧹 Clearing old storage for version", APP_VERSION);
-      try {
-        localStorage.clear();
-        sessionStorage.clear();
-      } catch (e) {
-        console.warn("Storage clear failed:", e);
-      }
-
-      // 🧩 Clear IndexedDB and Cache Storage
-      if (indexedDB?.databases) {
-        indexedDB.databases().then(dbs => dbs.forEach(db => indexedDB.deleteDatabase(db.name)));
-      }
-      if (caches?.keys) {
-        caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
-      }
-
-      // 🧩 Clear Capacitor Preferences safely
-      (async () => {
-        try {
-          const { Preferences } = await import('@capacitor/preferences');
-          await Preferences.clear();
-          console.log("✅ Capacitor Preferences cleared");
-        } catch (err) {
-          console.warn("⚠️ Preferences plugin not available or failed:", err);
-        }
-      })();
-
-      // Save current version
-      localStorage.setItem("app_version", APP_VERSION);
-    }
-
-    // ======================================================
     // =============== Storage Utility ======================
     // ======================================================
     const Storage = {
@@ -1108,8 +1061,7 @@
     let roomTimestamps = {};
     let joinedRoomsByUser = {};
     let unreadCounts = {};
-    let pendingJoinRequests = new Set();
-    const API_BASE = "https://realtime-chat-1mv3.onrender.com";
+    let currentAdmin = null;
 
     // ======================================================
     // =============== Utility Functions ====================
@@ -1163,62 +1115,19 @@
         alert("Enter name and room first!");
         return;
       }
-
-      // Check if there's already a pending request for this room
-      const requestKey = `${currentRoom}_${currentName}`;
-      if (pendingJoinRequests.has(requestKey)) {
-        showAutoCloseAlert("You already have a pending join request for this room.");
-        return;
-      }
-
       if (joinedRooms.has(currentRoom)) {
         alert(`You are already in room "${currentRoom}"!`);
         return;
       }
 
-      // ✅ Check room lock status FIRST
-      let isLocked = false;
-      try {
-        isLocked = await checkRoomLockStatus(currentRoom);
-        console.log(`🔒 Room ${currentRoom} lock status: ${isLocked}`);
-      } catch (err) {
-        console.warn("Failed to check room lock status:", err);
-        // Continue with join attempt even if lock check fails
-      }
-
-      // ✅ FIXED: Check if user is a room member using the new persistent system
-      let isRoomMember = false;
-      try {
+      // Check room lock status first
+      const isLocked = await checkRoomLockStatus(currentRoom);
+      if (isLocked) {
         const roomUsers = await getRoomUsers(currentRoom);
-        isRoomMember = roomUsers.includes(currentName);
-        console.log(`👥 User ${currentName} is room member of ${currentRoom}: ${isRoomMember}, Room members:`, roomUsers);
-      } catch (err) {
-        console.warn("Failed to get room users:", err);
-        // If we can't get room members, assume user is not a member to be safe
-        isRoomMember = false;
-      }
+        const isExistingUser = roomUsers.includes(currentName);
 
-      // ✅ NEW LOGIC: If room is locked and user is NOT a room member, require admin approval
-      if (isLocked && !isRoomMember) {
-        console.log(`🚫 Room is locked and user is not a room member, sending join request`);
-
-        // Mark this request as pending
-        pendingJoinRequests.add(requestKey);
-
-        // Send join request to admin via socket
-        if (socket && socket.connected) {
-          socket.emit('join_request', {
-            room: currentRoom,
-            username: currentName
-          });
-
-          console.log(`📤 Join request emitted for ${currentName} to room ${currentRoom}`);
-          showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
-          return;
-        } else {
-          console.log(`❌ Socket not connected, cannot send join request`);
-          showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
-          pendingJoinRequests.delete(requestKey); // Remove if failed
+        if (!isExistingUser) {
+          showLockedRoomAlert(currentRoom, `Room "${currentRoom}" is locked. You cannot join at this time.`);
           return;
         }
       }
@@ -1278,9 +1187,6 @@
             if (ack && ack.success) {
               joinedRooms.add(currentRoom);
               sendActive(!document.hidden);
-
-              // ✅ Fetch admin info immediately after successful join
-              fetchAdminInfo();
             } else {
               setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
             }
@@ -1307,6 +1213,26 @@
         document.getElementById("user-list").innerHTML = "";
         currentRoom = "";
         renderJoinedRooms();
+      });
+
+      // Add admin update handler
+      socket.on("room_admin_update", (data) => {
+        if (data.room === currentRoom) {
+          currentAdmin = data.admin;
+          updateAdminUI();
+
+          // Also update lock state if provided
+          if (data.locked !== undefined) {
+            roomLockStates[currentRoom] = data.locked;
+            document.getElementById("roomLockToggle").checked = data.locked;
+            updateLockUI(data.locked);
+          }
+        }
+      });
+
+      // Handle room locked alerts
+      socket.on("room_locked_alert", (data) => {
+        showLockedRoomAlert(data.room, data.message);
       });
 
       socket.on("users_update", updateUserList);
@@ -1377,25 +1303,6 @@
                 joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
                 fetchUnreadCounts();
-
-                // ✅ ADD ADMIN INFO FETCH HERE TOO - For reconnection scenarios
-                try {
-                  fetch(`${API_BASE}/room-admin/${encodeURIComponent(currentRoom)}`)
-                    .then(response => {
-                      if (response.ok) return response.json();
-                      throw new Error('Failed to fetch admin info');
-                    })
-                    .then(data => {
-                      currentAdmin = data.admin;
-                      updateAdminUI();
-                      console.log(`👑 Current admin (reconnect): ${currentAdmin}`);
-                    })
-                    .catch(err => {
-                      console.warn('Failed to get admin info on reconnect:', err);
-                    });
-                } catch (err) {
-                  console.warn('Failed to get admin info on reconnect:', err);
-                }
               } else {
                 setTimeout(() => {
                   socket.disconnect();
@@ -1409,122 +1316,6 @@
         }
       });
 
-      // ✅ ADD ADMIN-RELATED SOCKET LISTENERS HERE
-      // Add these socket listeners in your joinRoom function
-      // Add this with other socket listeners in joinRoom function
-      socket.on('admin_changed', (data) => {
-        if (data.room === currentRoom) {
-          currentAdmin = data.admin;
-          updateAdminUI();
-
-          // Show system message when admin changes
-          if (data.admin !== currentName) {
-            addMessage({
-              sender: 'System',
-              text: `👑 ${data.admin} is now the room admin`,
-              ts: new Date().toISOString()
-            });
-          }
-        }
-      });
-
-      socket.on('join_request', (data) => {
-        if (data.room === currentRoom && currentName === currentAdmin) {
-          showJoinRequest(data.username, data.room);
-        }
-      });
-
-      socket.on('join_request_cancelled', (data) => {
-        if (data.room === currentRoom && currentName === currentAdmin) {
-          // Remove the join request notification from admin view
-          const notification = document.querySelector(`.join-request[data-user="${data.username}"]`);
-          if (notification) {
-            notification.remove();
-
-            // Optional: Show a system message that request was cancelled
-            addMessage({
-              sender: 'System',
-              text: `Join request from ${data.username} was cancelled`,
-              ts: new Date().toISOString()
-            });
-          }
-        }
-      });
-
-      socket.on('kicked', (data) => {
-        if (data.room === currentRoom) {
-          alert(`You were kicked from the room: ${data.reason}`);
-          leaveRoom();
-        }
-      });
-
-      // Update the pending request alert to show cancel button
-      socket.on('join_pending', (data) => {
-        if (data.room === currentRoom) {
-          showAutoCloseAlert('Join request sent to room admin. Waiting for approval...', 0, true);
-        }
-      });
-
-      // Replace the existing join_approved and join_rejected event handlers with these:
-
-      socket.on('join_approved', (data) => {
-        if (data.room === currentRoom) {
-          const requestKey = `${data.room}_${currentName}`;
-          pendingJoinRequests.delete(requestKey); // Clean up approved request
-
-          // ✅ Remove the pending request alert
-          const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
-          if (alertDiv) {
-            alertDiv.remove();
-          }
-
-          showAutoCloseAlert('Your join request was approved!');
-          // Retry joining after a short delay
-          setTimeout(() => {
-            joinRoom();
-          }, 500);
-        }
-      });
-
-      socket.on('join_rejected', (data) => {
-        if (data.room === currentRoom) {
-          const requestKey = `${data.room}_${currentName}`;
-          pendingJoinRequests.delete(requestKey); // Clean up rejected request
-
-          // ✅ Remove the pending request alert
-          const alertDiv = document.querySelector('div[style*="position: fixed"][style*="top: 50%"]');
-          if (alertDiv) {
-            alertDiv.remove();
-          }
-
-          showAutoCloseAlert('Your join request was rejected.', 3000);
-
-          // Reset UI to intro state
-          document.getElementById('room').value = '';
-          document.getElementById('intro').style.display = 'block';
-          document.getElementById('chat-container').style.display = 'none';
-          document.getElementById('input-area').style.display = 'none';
-          document.getElementById('messages').innerHTML = '';
-          document.getElementById('user-list').innerHTML = '';
-
-          // Remove from joined rooms
-          if (joinedRoomsByUser[currentName]) {
-            joinedRoomsByUser[currentName] = joinedRoomsByUser[currentName].filter(r => r !== currentRoom);
-            localStorage.setItem('joinedRoomsByUser', JSON.stringify(joinedRoomsByUser));
-            renderJoinedRooms();
-          }
-
-          // Reset current room
-          currentRoom = '';
-          Storage.remove("chat_room");
-        }
-      });
-
-      // Also clean up pending requests when leaving the page
-      window.addEventListener('beforeunload', () => {
-        pendingJoinRequests.clear();
-      });
-
       // Add this in the joinRoom function where other socket events are handled
       socket.on("room_lock_changed", (data) => {
         if (data.room === currentRoom) {
@@ -1535,7 +1326,8 @@
           // Show system message
           addMessage({
             sender: "System",
-            text: `Room has been ${data.locked ? "locked" : "unlocked"} by ${data.lockedBy}`,
+            text: `Room has been ${data.locked ? "locked" : "unlocked"} by ${data.lockedBy
+              }`,
             ts: new Date().toISOString(),
           });
         }
@@ -2648,20 +2440,20 @@
       const list = document.getElementById("user-list");
       const seen = new Set();
       const existing = new Map();
-      list
-        .querySelectorAll("li")
-        .forEach((li) => existing.set(li.getAttribute("data-name"), li));
+      list.querySelectorAll("li").forEach((li) => existing.set(li.getAttribute("data-name"), li));
+
       const sortedUsers = [...data.users].sort((a, b) => {
         if (a.active === b.active) return a.name.localeCompare(b.name);
         return a.active ? -1 : 1;
       });
+
       sortedUsers.forEach((u) => {
         if (seen.has(u.name)) return;
         seen.add(u.name);
         const color = u.active ? "#25d366" : "#e74c3c";
-        const displayName =
-          u.name === currentName ? `${u.name} (Me)` : u.name;
+        const displayName = u.name === currentName ? `${u.name} (Me)` : u.name;
         let li = existing.get(u.name);
+
         if (li) {
           li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
           existing.delete(u.name);
@@ -2672,7 +2464,18 @@
           li.innerHTML = `<span style="color:${color}">●</span> ${displayName}`;
           list.appendChild(li);
         }
+
+        // Add admin badge if this user is admin
+        if (u.name === currentAdmin) {
+          const adminBadge = document.createElement('span');
+          adminBadge.className = 'admin-badge';
+          adminBadge.textContent = ' 👑';
+          adminBadge.style.marginLeft = '5px';
+          adminBadge.style.color = '#ffd700';
+          li.appendChild(adminBadge);
+        }
       });
+
       existing.forEach((li) => {
         li.classList.add("fade-out");
         setTimeout(() => li.remove(), 300);
@@ -2717,6 +2520,7 @@
     // ======================================================
     // =============== Room Actions =========================
     // ======================================================
+    const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
     window.clearRoom = async function clearRoom() {
       if (!currentRoom) {
@@ -3025,6 +2829,7 @@
     // 🔔 Auto Update Alert (Manifest-based with Auto Fade-Out)
     // =============================
     (async function () {
+      const API_BASE = "https://realtime-chat-1mv3.onrender.com";
       let overlay = null,
         fadeOutTimer = null;
 
@@ -3235,9 +3040,9 @@
       });
     })();
 
-    // =============================
-    // Room lock state management
-    // =============================
+    // Add these functions to the JavaScript in index.html
+
+    // Room lock state
     let roomLockStates = {};
 
     // Toggle room lock
@@ -3248,9 +3053,9 @@
         return;
       }
 
-      // ✅ Check if user is admin before allowing lock toggle
+      // Check if current user is admin
       if (currentName !== currentAdmin) {
-        alert("Only room admin can lock/unlock the room!");
+        alert("Only room admin can lock/unlock the room");
         document.getElementById("roomLockToggle").checked = !document.getElementById("roomLockToggle").checked;
         return;
       }
@@ -3267,7 +3072,15 @@
           }
         );
 
-        if (!response.ok) throw new Error("Failed to update room lock");
+        if (!response.ok) {
+          if (response.status === 403) {
+            const errorData = await response.json();
+            alert(errorData.error);
+            document.getElementById("roomLockToggle").checked = !isLocked;
+            return;
+          }
+          throw new Error("Failed to update room lock");
+        }
 
         const data = await response.json();
         roomLockStates[currentRoom] = isLocked;
@@ -3303,42 +3116,131 @@
 
       // Ensure toggle matches the state
       toggle.checked = isLocked;
+    }
 
-      // ✅ Only enable toggle for admin users who are in the room
+    function updateAdminUI() {
+      const lockContainer = document.querySelector('.lock-toggle-inline');
       const isAdmin = currentName === currentAdmin;
-      const inRoom = !!currentRoom;
 
-      if (toggle) {
-        toggle.disabled = !(isAdmin && inRoom);
-        if (toggle.disabled) {
-          toggle.parentElement.style.opacity = "0.5";
-          toggle.style.cursor = "not-allowed";
+      if (lockContainer) {
+        if (isAdmin) {
+          lockContainer.style.display = 'flex';
+          lockContainer.style.opacity = '1';
         } else {
-          toggle.parentElement.style.opacity = "1";
-          toggle.style.cursor = "pointer";
+          lockContainer.style.display = 'none';
         }
       }
+
+      // Show admin badge in user list or somewhere
+      updateUserListWithAdmin();
+    }
+
+    function updateUserListWithAdmin() {
+      const userList = document.getElementById("user-list");
+      const items = userList.getElementsByTagName("li");
+
+      for (let item of items) {
+        const userName = item.getAttribute("data-name");
+        // Remove existing admin badge
+        const existingBadge = item.querySelector('.admin-badge');
+        if (existingBadge) {
+          existingBadge.remove();
+        }
+
+        // Add admin badge if this user is admin
+        if (userName === currentAdmin) {
+          const adminBadge = document.createElement('span');
+          adminBadge.className = 'admin-badge';
+          adminBadge.textContent = ' 👑';
+          adminBadge.style.marginLeft = '5px';
+          adminBadge.style.color = '#ffd700';
+          item.appendChild(adminBadge);
+        }
+      }
+    }
+
+    // Show locked room alert
+    function showLockedRoomAlert(room, message) {
+      // Close any existing alert
+      closeLockedRoomAlert();
+
+      const overlay = document.createElement("div");
+      overlay.id = "locked-room-alert";
+      overlay.style = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(5px);
+    `;
+
+      const alertBox = document.createElement("div");
+      alertBox.style = `
+        background: #1a1812;
+        padding: 25px;
+        border-radius: 16px;
+        border: 2px solid #e74c3c;
+        max-width: 400px;
+        text-align: center;
+        color: #eaeaea;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    `;
+
+      alertBox.innerHTML = `
+        <div style="margin-bottom: 20px;">
+            <div style="font-size: 48px; margin-bottom: 10px;">🔒</div>
+            <h3 style="color: #e74c3c; margin-top: 0; margin-bottom: 15px;">Room Locked</h3>
+            <p style="margin: 10px 0; line-height: 1.5;">${message}</p>
+            <p style="font-size: 14px; color: #888; margin-top: 15px;">
+                Only the room admin can unlock this room.
+            </p>
+        </div>
+        <button onclick="closeLockedRoomAlert()" style="
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        " onmouseover="this.style.background='#2ecc71'" 
+          onmouseout="this.style.background='#27ae60'">
+            OK
+        </button>
+    `;
+
+      overlay.appendChild(alertBox);
+      document.body.appendChild(overlay);
+    }
+
+    function closeLockedRoomAlert() {
+      const alert = document.getElementById("locked-room-alert");
+      if (alert) alert.remove();
     }
 
     // Check room lock status
     async function checkRoomLockStatus(room) {
       try {
-        console.log(`🔒 Checking lock status for room: ${room}`);
-        const response = await fetch(`${API_BASE}/room-lock/${encodeURIComponent(room)}`);
+        const response = await fetch(
+          `${API_BASE}/room-lock/${encodeURIComponent(room)}`
+        );
         if (response.ok) {
           const data = await response.json();
-          console.log(`🔒 Room ${room} lock status:`, data.locked);
+          roomLockStates[room] = data.locked;
           return data.locked;
-        } else {
-          console.warn(`❌ Failed to check room lock: ${response.status}`);
-          return false;
         }
       } catch (err) {
-        console.warn("❌ Failed to check room lock status:", err);
-        return false;
+        console.warn("Failed to check room lock status:", err);
       }
+      return false;
     }
-
 
     // Load room lock state from storage
     function loadRoomLockState(room) {
@@ -3354,295 +3256,17 @@
     // Add this helper function to get room users from server
     async function getRoomUsers(room) {
       try {
-        console.log(`🔍 Fetching users for room: ${room}`);
         const response = await fetch(
           `${API_BASE}/room-users/${encodeURIComponent(room)}`
         );
         if (response.ok) {
           const data = await response.json();
-          console.log(`🔍 Room ${room} users:`, data.users);
           return data.users || [];
-        } else {
-          console.warn(`❌ Failed to get room users: ${response.status}`);
-          return [];
         }
       } catch (err) {
-        console.warn("❌ Failed to get room users:", err);
-        return [];
+        console.warn("Failed to get room users:", err);
       }
-    }
-
-
-    // =============================
-    // Admin Features 
-    // =============================
-
-    // Track current admin
-    let currentAdmin = null;
-
-    // Update UI based on admin status
-    function updateAdminUI() {
-      const isAdmin = currentName === currentAdmin;
-      const inRoom = !!currentRoom;
-
-      console.log(`🛠️ updateAdminUI: currentName=${currentName}, currentAdmin=${currentAdmin}, isAdmin=${isAdmin}, inRoom=${inRoom}`);
-
-      // Update lock controls based on admin status and room presence
-      updateLockUI(roomLockStates[currentRoom] || false);
-
-      // Update user list with kick buttons
-      updateUserListUI();
-    }
-
-    // Update user list with kick buttons for admin
-    function updateUserListUI() {
-      const userList = document.getElementById('user-list');
-      const users = userList.querySelectorAll('li');
-      const isAdmin = currentName === currentAdmin;
-
-      users.forEach(userItem => {
-        const username = userItem.getAttribute('data-name');
-        const isMe = username === currentName || username.includes('(Me)');
-
-        // Remove existing kick button
-        const existingKickBtn = userItem.querySelector('.kick-btn');
-        if (existingKickBtn) {
-          existingKickBtn.remove();
-        }
-
-        // Add kick button for admin (except for self)
-        if (isAdmin && !isMe) {
-          const kickBtn = document.createElement('span');
-          kickBtn.className = 'kick-btn';
-          kickBtn.innerHTML = '👢';
-          kickBtn.title = 'Kick user';
-          kickBtn.style.cssText = 'margin-left: 8px; cursor: pointer; color: #e74c3c; font-size: 12px;';
-          kickBtn.onclick = (e) => {
-            e.stopPropagation();
-            kickUser(username);
-          };
-          userItem.appendChild(kickBtn);
-        }
-      });
-    }
-
-    // Kick a user
-    async function kickUser(username) {
-      if (!currentAdmin || currentName !== currentAdmin) {
-        alert('Only admin can kick users!');
-        return;
-      }
-
-      if (!confirm(`Kick ${username} from the room?`)) {
-        return;
-      }
-
-      try {
-        const response = await fetch(`${API_BASE}/kick-user`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            room: currentRoom,
-            target_user: username.replace(' (Me)', ''),
-            admin_user: currentName
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to kick user');
-        }
-
-        console.log(`👢 Kicked user: ${username}`);
-      } catch (err) {
-        console.error('❌ Kick failed:', err);
-        alert('Failed to kick user');
-      }
-    }
-
-    // Handle join requests (admin only)
-    async function handleJoinRequest(username, approve) {
-      if (!currentAdmin || currentName !== currentAdmin) {
-        alert('Only admin can process join requests!');
-        return;
-      }
-
-      try {
-        const response = await fetch(`${API_BASE}/join-response/${encodeURIComponent(currentRoom)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: username,
-            approved: approve,
-            admin_user: currentName
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to process join request');
-        }
-
-        // Remove the notification
-        const notification = document.querySelector(`.join-request[data-user="${username}"]`);
-        if (notification) {
-          notification.remove();
-        }
-
-        if (approve) {
-          addMessage({
-            sender: 'System',
-            text: `✅ Join request from ${username} was approved`,
-            ts: new Date().toISOString()
-          });
-        } else {
-          addMessage({
-            sender: 'System',
-            text: `❌ Join request from ${username} was rejected`,
-            ts: new Date().toISOString()
-          });
-        }
-      } catch (err) {
-        console.error('❌ Join response failed:', err);
-        alert('Failed to process join request');
-      }
-    }
-
-    // Show join request notification
-    function showJoinRequest(username) {
-      const messages = document.getElementById('messages');
-
-      // Check if notification already exists
-      const existingNotification = document.querySelector(`.join-request[data-user="${username}"]`);
-      if (existingNotification) {
-        return; // Don't show duplicate
-      }
-
-      const notification = document.createElement('div');
-      notification.className = 'msg system join-request';
-      notification.setAttribute('data-user', username);
-      notification.innerHTML = `
-        <strong>🔒 Join Request</strong><br>
-        <span style="color: #25d366; font-weight: bold;">${username}</span> wants to join the locked room<br>
-        <small>Click below to approve or reject</small><br>
-        <button onclick="handleJoinRequest('${username}', true)" style="background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer; font-size: 14px;">✅ Accept</button>
-        <button onclick="handleJoinRequest('${username}', false)" style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin: 5px 5px 0 0; cursor: pointer; font-size: 14px;">❌ Reject</button>
-    `;
-      messages.appendChild(notification);
-      messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
-
-      // ✅ Show browser notification if available
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("Join Request", {
-          body: `${username} wants to join room ${currentRoom}`,
-          icon: "/icons/favicon.ico"
-        });
-      }
-
-      // ✅ Flash tab title for attention
-      const originalTitle = document.title;
-      document.title = `🔔 Join Request - ${currentRoom}`;
-      setTimeout(() => {
-        document.title = originalTitle;
-      }, 3000);
-    }
-
-    // ✅ Add this helper function to fetch admin info
-    async function fetchAdminInfo() {
-      if (!currentRoom) return;
-
-      try {
-        const response = await fetch(`${API_BASE}/room-admin/${encodeURIComponent(currentRoom)}`);
-        if (response.ok) {
-          const data = await response.json();
-          currentAdmin = data.admin;
-          updateAdminUI();
-          console.log(`👑 Current admin: ${currentAdmin}`);
-        } else {
-          // If no admin exists yet, the first user becomes admin
-          currentAdmin = currentName;
-          updateAdminUI();
-          console.log(`👑 First user, setting as admin: ${currentAdmin}`);
-        }
-      } catch (err) {
-        console.warn('Failed to get admin info:', err);
-        // On error, assume current user is admin if no admin exists
-        currentAdmin = currentName;
-        updateAdminUI();
-      }
-    }
-
-    // Add this function
-    // Update the cancelJoinRequest function
-    // Update the cancelJoinRequest function
-    function cancelJoinRequest(room, username) {
-      const requestKey = `${room}_${username}`;
-      if (pendingJoinRequests.has(requestKey)) {
-        pendingJoinRequests.delete(requestKey);
-
-        // Remove ALL join request alerts
-        const alerts = document.querySelectorAll('.join-request-alert');
-        alerts.forEach(alert => alert.remove());
-
-        // Also remove any alerts by style as fallback
-        const fallbackAlerts = document.querySelectorAll('div[style*="position: fixed"][style*="top: 50%"]');
-        fallbackAlerts.forEach(alert => alert.remove());
-
-        showAutoCloseAlert('Join request cancelled.', 2000, false);
-
-        // Notify server to remove the pending request from admin view
-        if (socket && socket.connected) {
-          socket.emit('cancel_join_request', { room, username });
-        }
-      }
-    }
-
-    // Update the showAutoCloseAlert function to return the alert element
-    // Update the showAutoCloseAlert function
-    function showAutoCloseAlert(message, duration = 2000, showCancelButton = false) {
-      // First, remove any existing alerts to prevent duplicates
-      const existingAlerts = document.querySelectorAll('div[style*="position: fixed"][style*="top: 50%"]');
-      existingAlerts.forEach(alert => alert.remove());
-
-      const alertDiv = document.createElement('div');
-      alertDiv.style.cssText = `
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.9);
-    color: white;
-    padding: 20px;
-    border-radius: 10px;
-    border: 2px solid #25d366;
-    z-index: 10000;
-    text-align: center;
-    max-width: 300px;
-    font-size: 14px;
-  `;
-
-      // Add a specific class for easier identification
-      alertDiv.className = 'join-request-alert';
-
-      alertDiv.innerHTML = `
-    <div>${message}</div>
-    ${showCancelButton ?
-          `<button onclick="cancelJoinRequest('${currentRoom}', '${currentName}')" 
-              style="margin-top: 10px; padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer;">
-        Cancel Request
-      </button>`
-          : ''}
-  `;
-
-      document.body.appendChild(alertDiv);
-
-      if (!showCancelButton && duration > 0) {
-        setTimeout(() => {
-          if (alertDiv.parentNode) {
-            alertDiv.remove();
-          }
-        }, duration);
-      }
-
-      return alertDiv;
+      return [];
     }
   </script>
 
@@ -3666,6 +3290,7 @@
       return value ? JSON.parse(value) : null;
     }
 
+    const API_BASE_CAP = "https://realtime-chat-1mv3.onrender.com";
     const state = await loadChatState();
     if (state) {
       try {
