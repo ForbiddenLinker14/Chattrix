@@ -33,6 +33,13 @@ FCM_TOKENS = {"<username>": {"<room_id>": ["<token1>", "<token2>", ...]}}
 ROOM_ADMINS = {}  # { room: admin_username }
 ROOM_LOCK_STATES = {}  # { room: boolean }
 
+PENDING_JOIN_REQUESTS = (
+    {}
+)  # { room: { request_id: { "user": username, "timestamp": iso_string } } }
+JOIN_REQUEST_NOTIFICATIONS = (
+    {}
+)  # { room: [ { "user": username, "timestamp": iso_string, "request_id": id } ] }
+
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
 PUSH_RECENT_MAX = 100
@@ -753,7 +760,277 @@ async def join(sid, data):
         to=sid,
     )
 
-    return {"success": True}
+    return {"success": True}  # Add this function to handle join requests
+
+
+@sio.event
+async def join_request(sid, data):
+    room = data.get("room")
+    username = data.get("username")
+
+    if not room or not username:
+        return {"success": False, "error": "Room and username required"}
+
+    # Check if room exists and is locked
+    is_locked = ROOM_LOCK_STATES.get(room, False)
+    if not is_locked:
+        return {"success": False, "error": "Room is not locked"}
+
+    # Check if user is already in room history
+    if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
+        return {"success": False, "error": "User was previously in room"}
+
+    # Check if user already has pending request
+    if room in PENDING_JOIN_REQUESTS:
+        for req_id, req_data in PENDING_JOIN_REQUESTS[room].items():
+            if req_data["user"] == username:
+                return {"success": False, "error": "Join request already pending"}
+
+    # Create join request
+    request_id = hashlib.md5(
+        f"{room}{username}{datetime.now(timezone.utc).isoformat()}".encode()
+    ).hexdigest()
+
+    PENDING_JOIN_REQUESTS.setdefault(room, {})[request_id] = {
+        "user": username,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "sid": sid,  # Store the socket ID of requester
+    }
+
+    # Store notification for admin
+    JOIN_REQUEST_NOTIFICATIONS.setdefault(room, []).append(
+        {
+            "user": username,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": request_id,
+        }
+    )
+
+    # Notify admin about join request
+    admin = ROOM_ADMINS.get(room)
+    if admin:
+        admin_sid = ROOM_USERS.get(room, {}).get(admin)
+        if admin_sid:
+            await sio.emit(
+                "join_request_notification",
+                {
+                    "room": room,
+                    "username": username,
+                    "request_id": request_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+                to=admin_sid,
+            )
+
+        # Also send push notification to admin (even if offline)
+        await send_join_request_push_notification(room, admin, username, request_id)
+
+    print(f"📨 Join request from {username} for locked room {room}")
+    return {
+        "success": True,
+        "request_id": request_id,
+        "message": "Join request sent to admin",
+    }
+
+
+# Add this function to handle join request responses
+@sio.event
+async def join_request_response(sid, data):
+    room = data.get("room")
+    request_id = data.get("request_id")
+    response = data.get("response")  # "accept" or "reject"
+    admin_user = data.get("admin_user")
+
+    if not room or not request_id or not response or not admin_user:
+        return {"success": False, "error": "Missing required fields"}
+
+    # Verify admin privileges
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != admin_user:
+        return {
+            "success": False,
+            "error": "Only room admin can respond to join requests",
+        }
+
+    # Check if request exists
+    if (
+        room not in PENDING_JOIN_REQUESTS
+        or request_id not in PENDING_JOIN_REQUESTS[room]
+    ):
+        return {"success": False, "error": "Join request not found"}
+
+    request_data = PENDING_JOIN_REQUESTS[room][request_id]
+    username = request_data["user"]
+    requester_sid = request_data.get("sid")
+
+    if response == "accept":
+        # Add user to room history to allow joining
+        ROOM_HISTORY.setdefault(room, set()).add(username)
+
+        # Notify requester that they can now join
+        if requester_sid:
+            await sio.emit(
+                "join_request_accepted",
+                {
+                    "room": room,
+                    "message": f"Your join request for room '{room}' has been accepted by admin",
+                },
+                to=requester_sid,
+            )
+
+        # Send push notification to requester
+        await send_join_request_result_push_notification(room, username, True)
+
+        print(f"✅ Join request accepted for {username} in room {room}")
+
+    else:  # reject
+        # Notify requester that request was rejected
+        if requester_sid:
+            await sio.emit(
+                "join_request_rejected",
+                {
+                    "room": room,
+                    "message": f"Your join request for room '{room}' was rejected by admin",
+                },
+                to=requester_sid,
+            )
+
+        # Send push notification to requester
+        await send_join_request_result_push_notification(room, username, False)
+
+        print(f"❌ Join request rejected for {username} in room {room}")
+
+    # Clean up
+    del PENDING_JOIN_REQUESTS[room][request_id]
+    if not PENDING_JOIN_REQUESTS[room]:
+        del PENDING_JOIN_REQUESTS[room]
+
+    # Remove from notifications
+    if room in JOIN_REQUEST_NOTIFICATIONS:
+        JOIN_REQUEST_NOTIFICATIONS[room] = [
+            req
+            for req in JOIN_REQUEST_NOTIFICATIONS[room]
+            if req["request_id"] != request_id
+        ]
+        if not JOIN_REQUEST_NOTIFICATIONS[room]:
+            del JOIN_REQUEST_NOTIFICATIONS[room]
+
+    return {"success": True, "response": response}
+
+
+# Add this function to get pending join requests
+@sio.event
+async def get_pending_join_requests(sid, data):
+    room = data.get("room")
+    admin_user = data.get("admin_user")
+
+    if not room or not admin_user:
+        return {"success": False, "error": "Room and admin_user required"}
+
+    # Verify admin privileges
+    if room not in ROOM_ADMINS or ROOM_ADMINS[room] != admin_user:
+        return {"success": False, "error": "Only room admin can view join requests"}
+
+    pending_requests = list(PENDING_JOIN_REQUESTS.get(room, {}).values())
+
+    return {
+        "success": True,
+        "requests": pending_requests,
+        "count": len(pending_requests),
+    }
+
+
+# Add push notification functions
+async def send_join_request_push_notification(
+    room: str, admin: str, username: str, request_id: str
+):
+    """Send push notification to admin about join request"""
+    now = datetime.now(timezone.utc)
+
+    # FCM notification
+    if admin in FCM_TOKENS:
+        for room_tokens in FCM_TOKENS[admin].values():
+            for token in room_tokens:
+                try:
+                    msg = messaging.Message(
+                        notification=messaging.Notification(
+                            title="Chattrix - Join Request",
+                            body=f"{username} wants to join room '{room}'",
+                        ),
+                        token=token,
+                        data={
+                            "type": "join_request",
+                            "room": room,
+                            "username": username,
+                            "request_id": request_id,
+                            "timestamp": now.isoformat(),
+                        },
+                        android=messaging.AndroidConfig(
+                            priority="high",
+                            notification=messaging.AndroidNotification(
+                                channel_id="chat_messages",
+                                sound="default",
+                            ),
+                        ),
+                    )
+                    response = messaging.send(msg)
+                    print(f"📲 Join request FCM sent to admin {admin}")
+                except Exception as e:
+                    print(f"❌ Join request FCM failed for admin {admin}: {e}")
+
+    # WebPush notification
+    if room in subscriptions and admin in subscriptions[room]:
+        payload = {
+            "title": "Chattrix - Join Request",
+            "body": f"{username} wants to join room '{room}'",
+            "type": "join_request",
+            "room": room,
+            "username": username,
+            "request_id": request_id,
+            "timestamp": now.isoformat(),
+        }
+
+        for sub in subscriptions[room][admin]:
+            try:
+                webpush(
+                    subscription_info=sub,
+                    data=json.dumps(payload),
+                    vapid_private_key=VAPID_PRIVATE_KEY,
+                    vapid_claims={"sub": "mailto:anitsaha976@gmail.com"},
+                )
+                print(f"🌍 Join request WebPush sent to admin {admin}")
+            except WebPushException as e:
+                print(f"❌ Join request WebPush failed for admin {admin}: {e}")
+
+
+async def send_join_request_result_push_notification(
+    room: str, username: str, accepted: bool
+):
+    """Send push notification to user about join request result"""
+    now = datetime.now(timezone.utc)
+    status = "accepted" if accepted else "rejected"
+
+    # FCM notification
+    if username in FCM_TOKENS:
+        for room_tokens in FCM_TOKENS[username].values():
+            for token in room_tokens:
+                try:
+                    msg = messaging.Message(
+                        notification=messaging.Notification(
+                            title="Chattrix - Join Request",
+                            body=f"Your join request for room '{room}' was {status}",
+                        ),
+                        token=token,
+                        data={
+                            "type": "join_request_result",
+                            "room": room,
+                            "accepted": str(accepted),
+                            "timestamp": now.isoformat(),
+                        },
+                    )
+                    response = messaging.send(msg)
+                    print(f"📲 Join result FCM sent to {username}")
+                except Exception as e:
+                    print(f"❌ Join result FCM failed for {username}: {e}")
 
 
 @sio.event
