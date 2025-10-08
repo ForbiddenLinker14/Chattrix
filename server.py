@@ -32,6 +32,11 @@ USER_STATUS = {}  # sid -> {"user": username, "active": bool}
 FCM_TOKENS = {"<username>": {"<room_id>": ["<token1>", "<token2>", ...]}}
 ROOM_ADMINS = {}  # { room: admin_username }
 PENDING_JOIN_REQUESTS = {}  # { room: { username: sid } }
+# Add these NEW globals for proper user tracking
+ROOM_MEMBERS = (
+    {}
+)  # { room: set([usernames...]) } - Tracks ALL users who ever joined each room
+ALL_KNOWN_USERS = set()  # Track all users who have ever joined ANY room
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -74,6 +79,94 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
+def add_user_to_room_members(room: str, username: str):
+    """Add user to room members (persistent membership)"""
+    if room not in ROOM_MEMBERS:
+        ROOM_MEMBERS[room] = set()
+    ROOM_MEMBERS[room].add(username)
+    ALL_KNOWN_USERS.add(username)
+    print(
+        f"✅ Added {username} to room {room} members. Total members: {len(ROOM_MEMBERS[room])}"
+    )
+
+
+def is_user_room_member(room: str, username: str) -> bool:
+    """Check if user is a member of this room"""
+    return room in ROOM_MEMBERS and username in ROOM_MEMBERS[room]
+
+
+def load_room_members_from_db():
+    """Load room members from database on startup"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        # Create table if not exists
+        c.execute(
+            """
+            CREATE TABLE IF NOT EXISTS room_members (
+                room TEXT NOT NULL,
+                username TEXT NOT NULL,
+                joined_at TEXT NOT NULL,
+                PRIMARY KEY (room, username)
+            )
+        """
+        )
+
+        # Load all room members
+        c.execute("SELECT room, username FROM room_members")
+        rows = c.fetchall()
+
+        for room, username in rows:
+            if room not in ROOM_MEMBERS:
+                ROOM_MEMBERS[room] = set()
+            ROOM_MEMBERS[room].add(username)
+            ALL_KNOWN_USERS.add(username)
+
+        conn.close()
+        print(
+            f"✅ Loaded room members from DB: {sum(len(members) for members in ROOM_MEMBERS.values())} total members"
+        )
+    except Exception as e:
+        print(f"❌ Error loading room members: {e}")
+
+
+def save_room_member(room: str, username: str):
+    """Save room member to database"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute(
+            "INSERT OR REPLACE INTO room_members (room, username, joined_at) VALUES (?, ?, ?)",
+            (room, username, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"❌ Error saving room member: {e}")
+
+
+def remove_room_member(room: str, username: str):
+    """Remove user from room members (when they leave permanently)"""
+    if room in ROOM_MEMBERS and username in ROOM_MEMBERS[room]:
+        ROOM_MEMBERS[room].remove(username)
+        # Don't remove from ALL_KNOWN_USERS as they might be in other rooms
+
+        # Also remove from database
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute(
+                "DELETE FROM room_members WHERE room = ? AND username = ?",
+                (room, username),
+            )
+            conn.commit()
+            conn.close()
+            print(f"🗑️ Removed {username} from room {room} members")
+        except Exception as e:
+            print(f"❌ Error removing room member: {e}")
+
+
 def load_destroyed_rooms():
     """Load all permanently destroyed rooms from DB"""
     try:
@@ -134,7 +227,7 @@ def cleanup_old_destroyed_rooms():
                 # Clear from all in-memory data structures
                 ROOM_HISTORY.pop(room, None)
                 ROOM_USERS.pop(room, None)
-                # inside the loop for room in rooms_to_delete:
+                ROOM_MEMBERS.pop(room, None)  # ✅ NEW: Clear room members
                 REVIVED_USERS.pop(room, None)
 
                 # Clear FCM tokens from memory
@@ -158,6 +251,10 @@ def cleanup_old_destroyed_rooms():
                 ]
                 for key in room_message_keys:
                     LAST_MESSAGE.pop(key, None)
+
+                # ✅ Delete room members from database
+                c.execute("DELETE FROM room_members WHERE room = ?", (room,))
+                conn.commit()
 
                 # ✅ IMPORTANT: Remove from DESTROYED_ROOMS set
                 if room in DESTROYED_ROOMS:
@@ -406,6 +503,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS destroyed_rooms (
             room TEXT PRIMARY KEY,
             destroyed_at TEXT NOT NULL
+        )
+    """
+    )
+
+    # ✅ ADD: Room members table
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS room_members (
+            room TEXT NOT NULL,
+            username TEXT NOT NULL,
+            joined_at TEXT NOT NULL,
+            PRIMARY KEY (room, username)
         )
     """
     )
@@ -672,20 +781,15 @@ async def join_request(sid, data):
     if username not in PENDING_JOIN_REQUESTS[room]:
         PENDING_JOIN_REQUESTS[room][username] = sid
 
-        # Notify admin (try to find admin sid in-room first, then in USER_STATUS)
+    # Notify admin
     admin = ROOM_ADMINS.get(room)
-    admin_sid = None
     if admin:
-        admin_sid = ROOM_USERS.get(room, {}).get(admin)
-        if not admin_sid:
-            # admin might be connected but not currently in the room — search USER_STATUS
-            for s, st in USER_STATUS.items():
-                if st.get("user") == admin:
-                    admin_sid = s
-                    break
+        admin_sid = None
+        # Find admin's current socket ID
+        if room in ROOM_USERS and admin in ROOM_USERS[room]:
+            admin_sid = ROOM_USERS[room][admin]
 
-    if admin_sid:
-        try:
+        if admin_sid:
             await sio.emit(
                 "join_request",
                 {
@@ -695,15 +799,9 @@ async def join_request(sid, data):
                 },
                 to=admin_sid,
             )
-            print(
-                f"✅ Join request sent to admin {admin} (sid={admin_sid}) for user {username}"
-            )
-        except Exception as e:
-            print(f"❌ Failed to send join_request to admin sid {admin_sid}: {e}")
-    else:
-        print(
-            f"❌ No connected admin sid found for {admin} in room {room}; stored as pending."
-        )
+            print(f"✅ Join request sent to admin {admin} for user {username}")
+        else:
+            print(f"❌ Admin {admin} not found in room {room}")
 
     await sio.emit(
         "join_pending",
@@ -756,7 +854,7 @@ async def join(sid, data):
     token = data.get("fcmToken")
 
     print(f"🔍 JOIN DEBUG - Room: {room}, User: {username}")
-    print(f"🔍 ROOM_HISTORY for {room}: {ROOM_HISTORY.get(room, set())}")
+    print(f"🔍 ROOM_MEMBERS for {room}: {ROOM_MEMBERS.get(room, set())}")
 
     # ✅ Check if room is locked
     is_locked = False
@@ -771,15 +869,14 @@ async def join(sid, data):
     except Exception as e:
         print(f"Error checking room lock: {e}")
 
-    # ✅ FIXED: Better logic for checking if user should send join request
-    # Check if user is in THIS room's history
-    user_in_this_room_history = room in ROOM_HISTORY and username in ROOM_HISTORY[room]
-    print(f"🔍 User {username} in room {room} history: {user_in_this_room_history}")
+    # ✅ NEW LOGIC: Check if user is a member of this room
+    is_room_member = is_user_room_member(room, username)
+    print(f"🔍 User {username} is room member: {is_room_member}")
 
-    # If room is locked and user is not in THIS room's history, require admin approval
-    if is_locked and not user_in_this_room_history:
+    # If room is locked and user is NOT a room member, require admin approval
+    if is_locked and not is_room_member:
         print(
-            f"🚫 Room {room} is locked and user {username} not in this room's history - requiring approval"
+            f"🚫 Room {room} is locked and user {username} is not a member - requiring approval"
         )
 
         # Store pending request
@@ -833,9 +930,12 @@ async def join(sid, data):
         # Broadcast admin change to the room
         await sio.emit("admin_changed", {"room": room, "admin": username}, room=room)
 
-    # ✅ Ensure history exists and add user to THIS room's history
+    # ✅ Add user to room members (persistent)
+    add_user_to_room_members(room, username)
+    save_room_member(room, username)
+
+    # ✅ Ensure history exists and add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
-    print(f"✅ Added {username} to room {room} history")
 
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
@@ -870,26 +970,6 @@ async def join(sid, data):
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
-
-    # If the joining user is the room admin and there are pending join requests, notify them now
-    if ROOM_ADMINS.get(room) == username and room in PENDING_JOIN_REQUESTS:
-        try:
-            pending_list = list(PENDING_JOIN_REQUESTS[room].keys())
-            for pending_user in pending_list:
-                await sio.emit(
-                    "join_request",
-                    {
-                        "room": room,
-                        "username": pending_user,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                    to=sid,
-                )
-                print(
-                    f"🔔 Notified admin {username} about pending request from {pending_user}"
-                )
-        except Exception as e:
-            print(f"❌ Failed to notify admin of pending join requests: {e}")
 
     # 🔑 register token in memory + DB
     if token:
@@ -1155,10 +1235,10 @@ async def leave(sid, data):
 
     # 🔥 ADMIN TRANSFER: If leaving user was admin, transfer to next user
     if reason == "leave" and ROOM_ADMINS.get(room) == username:
-        # Find next user in room history (oldest remaining user)
-        remaining_users = list(ROOM_HISTORY.get(room, set()))
-        if remaining_users:
-            new_admin = remaining_users[0]  # First user in history becomes admin
+        # Find next user in room members (oldest remaining user)
+        remaining_members = list(ROOM_MEMBERS.get(room, set()))
+        if remaining_members:
+            new_admin = remaining_members[0]  # First member becomes admin
             ROOM_ADMINS[room] = new_admin
 
             # Broadcast admin change
@@ -1182,8 +1262,11 @@ async def leave(sid, data):
             del ROOM_ADMINS[room]
             print(f"👑 Room {room} has no admin (all users left)")
 
-    # 🛑 Only cleanup tokens/subscriptions on a *real leave*
+    # 🛑 Only cleanup tokens/subscriptions AND membership on a *real leave*
     if reason == "leave":
+        # Remove user from room members when they permanently leave
+        remove_room_member(room, username)
+
         # cleanup FCM tokens
         if username in FCM_TOKENS and room in FCM_TOKENS[username]:
             tokens = list(FCM_TOKENS[username][room])
@@ -1344,8 +1427,14 @@ async def startup_tasks():
     global FCM_TOKENS, DESTROYED_ROOMS
     FCM_TOKENS = load_fcm_tokens()
     DESTROYED_ROOMS = load_destroyed_rooms()
+    # ✅ ADD: Load room members
+    load_room_members_from_db()
+
     print(f"🔑 Loaded {sum(len(v) for v in FCM_TOKENS.values())} FCM tokens from DB")
     print(f"🚫 Loaded {len(DESTROYED_ROOMS)} permanently destroyed rooms from DB")
+    print(
+        f"👥 Loaded {len(ALL_KNOWN_USERS)} known users and {len(ROOM_MEMBERS)} rooms with members"
+    )
 
     # Clean up old destroyed rooms on startup
     cleaned = cleanup_old_destroyed_rooms()
@@ -1492,20 +1581,9 @@ async def handle_join_request(room: str, request: Request):
     if user_sid:
         PENDING_JOIN_REQUESTS[room][username] = user_sid
 
-        # Notify admin (try to find admin sid in-room first, then in USER_STATUS)
-    admin = ROOM_ADMINS.get(room)
-    admin_sid = None
-    if admin:
+        # Notify admin
         admin_sid = ROOM_USERS.get(room, {}).get(admin)
-        if not admin_sid:
-            # admin might be connected but not currently in the room — search USER_STATUS
-            for s, st in USER_STATUS.items():
-                if st.get("user") == admin:
-                    admin_sid = s
-                    break
-
-    if admin_sid:
-        try:
+        if admin_sid:
             await sio.emit(
                 "join_request",
                 {
@@ -1515,15 +1593,10 @@ async def handle_join_request(room: str, request: Request):
                 },
                 to=admin_sid,
             )
-            print(
-                f"✅ Join request sent to admin {admin} (sid={admin_sid}) for user {username}"
-            )
-        except Exception as e:
-            print(f"❌ Failed to send join_request to admin sid {admin_sid}: {e}")
-    else:
-        print(
-            f"❌ No connected admin sid found for {admin} in room {room}; stored as pending."
-        )
+
+        return {"status": "pending", "message": "Join request sent to admin"}
+
+    return JSONResponse({"error": "User not connected"}, status_code=404)
 
 
 @app.post("/join-response/{room}")
@@ -1950,14 +2023,6 @@ async def set_room_lock(room: str, request: Request):
     conn.commit()
     conn.close()
 
-    # Ensure in-memory ROOM_ADMINS reflects who locked the room (if not already set)
-    if user:
-        # only set admin if no admin exists yet (do not overwrite an existing admin)
-        previous_admin = ROOM_ADMINS.get(room)
-        if not previous_admin:
-            ROOM_ADMINS[room] = user
-            print(f"🔒 Room {room} locked by {user} — set ROOM_ADMINS[{room}] = {user}")
-
     # Broadcast to all clients in the room
     await sio.emit(
         "room_lock_changed",
@@ -1987,11 +2052,11 @@ async def get_room_lock(room: str):
 # Helper function to get room users
 @app.get("/room-users/{room}")
 async def get_room_users(room: str):
-    """Get all users who have ever joined this room"""
+    """Get all members of a room (users who have ever joined)"""
     try:
-        # Return users from ROOM_HISTORY for this specific room
-        users = list(ROOM_HISTORY.get(room, set()))
-        print(f"🔍 /room-users/{room} returning: {users}")
+        # Return users from ROOM_MEMBERS (persistent membership)
+        users = list(ROOM_MEMBERS.get(room, set()))
+        print(f"🔍 /room-users/{room} returning members: {users}")
         return {"users": users}
     except Exception as e:
         print(f"❌ Error in /room-users/{room}: {e}")
