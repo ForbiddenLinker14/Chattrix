@@ -34,7 +34,6 @@ ROOM_ADMINS = {}  # { room: admin_username }
 ROOM_LOCK_STATES = {}  # { room: boolean }
 PENDING_JOIN_REQUESTS = {}  # { room: [ {user, timestamp, sid} ] }
 USER_SOCKET_MAPPING = {}  # { username: sid } for quick lookup
-JOIN_REQUEST_COOLDOWNS = {}
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -77,33 +76,6 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
-def is_in_cooldown(room: str, username: str) -> bool:
-    key = (room, username)
-    if key in JOIN_REQUEST_COOLDOWNS:
-        cooldown_end = JOIN_REQUEST_COOLDOWNS[key]
-        if datetime.now(timezone.utc) < cooldown_end:
-            return True
-        else:
-            # Cooldown expired, remove it
-            del JOIN_REQUEST_COOLDOWNS[key]
-    return False
-
-
-# Add this function to set cooldown
-def set_cooldown(room: str, username: str, minutes: int = 5):
-    cooldown_end = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    JOIN_REQUEST_COOLDOWNS[(room, username)] = cooldown_end
-
-
-# Add this function to get remaining cooldown time
-def get_remaining_cooldown(room: str, username: str) -> int:
-    key = (room, username)
-    if key in JOIN_REQUEST_COOLDOWNS:
-        remaining = JOIN_REQUEST_COOLDOWNS[key] - datetime.now(timezone.utc)
-        return max(0, int(remaining.total_seconds()))
-    return 0
-
-
 async def notify_admin_about_join_request(room: str, username: str, user_sid: str):
     """Notify admin about a join request, even if admin is offline"""
     if room not in ROOM_ADMINS:
@@ -843,36 +815,6 @@ async def approve_join_request(sid, data):
     return {"success": True, "message": f"Approved {username}'s join request"}
 
 
-# Add this socket event handler for setting cooldown
-@sio.event
-async def set_join_cooldown(sid, data):
-    room = data.get("room")
-    user = data.get("user")
-    minutes = data.get("minutes", 5)
-
-    if room and user:
-        set_cooldown(room, user, minutes)
-        remaining_seconds = get_remaining_cooldown(room, user)
-
-        # Notify the user about the cooldown
-        user_sid = USER_SOCKET_MAPPING.get(user)
-        if user_sid:
-            await sio.emit(
-                "join_cooldown_set",
-                {
-                    "room": room,
-                    "user": user,
-                    "remaining_seconds": remaining_seconds,
-                    "message": f"Join request rejected. Please wait {remaining_seconds} seconds before trying again.",
-                },
-                room=user_sid,
-            )
-
-        return {"success": True, "remaining_seconds": remaining_seconds}
-
-    return {"success": False, "error": "Missing room or user"}
-
-
 @sio.event
 async def reject_join_request(sid, data):
     """Admin rejects a join request"""
@@ -895,10 +837,6 @@ async def reject_join_request(sid, data):
         if not PENDING_JOIN_REQUESTS[room]:
             del PENDING_JOIN_REQUESTS[room]
 
-    # 🛑 FIXED: Set cooldown and get remaining time
-    set_cooldown(room, username, 5)  # 5 minutes cooldown
-    remaining_seconds = get_remaining_cooldown(room, username)
-
     # Notify the user they've been rejected
     user_socket = USER_SOCKET_MAPPING.get(username)
     if user_socket:
@@ -906,8 +844,7 @@ async def reject_join_request(sid, data):
             "join_rejected",
             {
                 "room": room,
-                "message": f"Your join request for room '{room}' was rejected. Please wait {remaining_seconds} seconds before requesting again.",
-                "remaining_seconds": remaining_seconds,  # 🆕 IMPORTANT: Send remaining seconds
+                "message": f"Your join request for room '{room}' was rejected.",
             },
             room=user_socket,
         )
@@ -974,27 +911,6 @@ async def join(sid, data):
     )
 
     if is_locked and not is_existing_user:
-        # 🛑 FIXED: Check cooldown FIRST before processing join request
-        if is_in_cooldown(room, username):
-            remaining_seconds = get_remaining_cooldown(room, username)
-            await sio.emit(
-                "join_request_cooldown",
-                {
-                    "room": room,
-                    "message": f"Please wait {remaining_seconds} seconds before sending another join request.",
-                    "remaining_seconds": remaining_seconds,
-                },
-                to=sid,
-            )
-            return {
-                "success": False,
-                "error": "in_cooldown",
-                "remaining_seconds": remaining_seconds,
-            }
-
-        # 🛑 FIXED: Set cooldown IMMEDIATELY when sending join request
-        set_cooldown(room, username, 5)  # 5 minutes cooldown
-
         # New user trying to join locked room - send join request
         await notify_admin_about_join_request(room, username, sid)
 

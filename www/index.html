@@ -1,4 +1,4 @@
-<!-- ওঁ নমো 
+  <!-- ওঁ নমো 
 
 সিদ্ধিদাতা গণেশায় নমঃ                        সিদ্ধিদাতা গণেশায় নমঃ                                   সিদ্ধিদাতা গণেশায় নমঃ -->
 
@@ -1258,7 +1258,6 @@
 
       // Handle join rejection  
       socket.on("join_rejected", (data) => {
-        // Show the rejection message
         addMessage({
           sender: "System",
           text: data.message,
@@ -1269,14 +1268,6 @@
         document.getElementById("chat-container").style.display = "none";
         document.getElementById("input-area").style.display = "none";
         document.getElementById("intro").style.display = "block";
-
-        // 🆕 ADD THIS: Also start the cooldown timer
-        if (data.remaining_seconds) {
-          handleJoinRequestCooldown(data.remaining_seconds);
-        } else {
-          // If no remaining_seconds in rejection, use default 5 minutes (300 seconds)
-          handleJoinRequestCooldown(300);
-        }
       });
     }
 
@@ -1432,7 +1423,7 @@
     function setupSocketEventHandlers() {
       if (!socket) return;
 
-      // ==================== ROOM MANAGEMENT EVENTS ====================
+      // Existing socket event handlers
       socket.on("room_permanently_destroyed", (data) => {
         Storage.remove("chat_name");
         Storage.remove("chat_room");
@@ -1454,6 +1445,44 @@
         renderJoinedRooms();
       });
 
+      // Add this to the setupSocketEventHandlers function
+      socket.on("join_request", (data) => {
+        if (currentName === currentAdmin && data.room === currentRoom) {
+          showJoinRequestNotification(data);
+        }
+      });
+
+      // Add this to setupSocketEventHandlers
+      socket.on("pending_requests", (data) => {
+        if (data.room === currentRoom && currentName === currentAdmin) {
+          data.requests.forEach(request => {
+            showJoinRequestNotification(request);
+          });
+        }
+      });
+
+      socket.on("room_admin_update", (data) => {
+        if (data.room === currentRoom) {
+          currentAdmin = data.admin;
+          updateAdminUI();
+
+          if (data.locked !== undefined) {
+            roomLockStates[currentRoom] = data.locked;
+            document.getElementById("roomLockToggle").checked = data.locked;
+            updateLockUI(data.locked);
+          }
+        }
+      });
+
+      socket.on("room_locked_alert", (data) => {
+        showLockedRoomAlert(data.room, data.message);
+      });
+
+      socket.on("users_update", updateUserList);
+      socket.on("left_room", (data) => {
+        if (data.room === currentRoom)
+          document.getElementById("user-list").innerHTML = "";
+      });
       socket.on("room_destroyed", handleRoomDestroyed);
       socket.on("clear", handleRoomCleared);
       socket.on("clear_room_from_storage", (data) => {
@@ -1484,25 +1513,6 @@
         renderJoinedRooms();
       });
 
-      socket.on("left_room", (data) => {
-        if (data.room === currentRoom)
-          document.getElementById("user-list").innerHTML = "";
-      });
-
-      // ==================== ROOM LOCK & ADMIN EVENTS ====================
-      socket.on("room_admin_update", (data) => {
-        if (data.room === currentRoom) {
-          currentAdmin = data.admin;
-          updateAdminUI();
-
-          if (data.locked !== undefined) {
-            roomLockStates[currentRoom] = data.locked;
-            document.getElementById("roomLockToggle").checked = data.locked;
-            updateLockUI(data.locked);
-          }
-        }
-      });
-
       socket.on("room_lock_changed", (data) => {
         if (data.room === currentRoom) {
           roomLockStates[data.room] = data.locked;
@@ -1516,54 +1526,6 @@
         }
       });
 
-      socket.on("room_locked_alert", (data) => {
-        showLockedRoomAlert(data.room, data.message);
-      });
-
-      // ==================== JOIN REQUEST & COOLDOWN EVENTS ====================
-      socket.on("join_request", (data) => {
-        if (currentName === currentAdmin && data.room === currentRoom) {
-          showJoinRequestNotification(data);
-        }
-      });
-
-      socket.on("pending_requests", (data) => {
-        if (data.room === currentRoom && currentName === currentAdmin) {
-          data.requests.forEach(request => {
-            showJoinRequestNotification(request);
-          });
-        }
-      });
-
-      socket.on("join_request_cooldown", (data) => {
-        // Show cooldown message
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-
-        // Show intro page during cooldown
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-
-        // Start the cooldown timer
-        handleJoinRequestCooldown(data.remaining_seconds);
-      });
-
-      socket.on("join_cooldown_set", (data) => {
-        if (data.user === currentName && data.room === currentRoom) {
-          handleJoinRequestCooldown(data.remaining_seconds);
-        }
-      });
-
-      // ==================== USER MANAGEMENT EVENTS ====================
-      socket.on("users_update", updateUserList);
-
-      // ==================== MESSAGE EVENTS ====================
-      socket.on("message", addMessage);
-      socket.on("file", addFileMessage);
       socket.on("room_message_meta", (data) => {
         try {
           if (!currentName) return;
@@ -1597,7 +1559,10 @@
         }
       });
 
-      // ==================== INPUT HANDLERS ====================
+      socket.on("message", addMessage);
+      socket.on("file", addFileMessage);
+
+      // Setup input handlers
       document.getElementById("send").onclick = sendMessage;
       document.getElementById("input").onkeydown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -3544,74 +3509,11 @@
             text: response.message,
             ts: new Date().toISOString(),
           });
-
-          // Set cooldown for the rejected user
-          if (socket) {
-            socket.emit("set_join_cooldown", {
-              room: room,
-              user: user,
-              minutes: 5
-            });
-          }
         } else {
           alert(response?.error || "Failed to reject request");
         }
       });
     };
-
-    function handleJoinRequestCooldown(remainingSeconds) {
-      // Store the remaining seconds globally so we can access it
-      window.joinCooldownRemaining = remainingSeconds;
-
-      const minutes = Math.floor(remainingSeconds / 60);
-      const seconds = remainingSeconds % 60;
-      const cooldownMessage = `Please wait ${minutes}:${seconds.toString().padStart(2, '0')} before sending another join request.`;
-
-      // Disable the join button and show countdown
-      const joinButton = document.querySelector('button[onclick="joinRoom()"]');
-      const originalText = joinButton.textContent;
-      joinButton.disabled = true;
-
-      // Update button text with real-time countdown
-      const updateCountdown = () => {
-        if (window.joinCooldownRemaining > 0) {
-          const mins = Math.floor(window.joinCooldownRemaining / 60);
-          const secs = window.joinCooldownRemaining % 60;
-          joinButton.textContent = `Wait ${mins}:${secs.toString().padStart(2, '0')}`;
-          window.joinCooldownRemaining--;
-
-          // Update every second
-          setTimeout(updateCountdown, 1000);
-        } else {
-          // Cooldown finished
-          joinButton.disabled = false;
-          joinButton.textContent = originalText;
-
-          // Show completion message on intro page
-          if (document.getElementById("intro").style.display === "block") {
-            const introWrapper = document.getElementById("intro-wrapper");
-            if (introWrapper) {
-              const completionMsg = document.createElement("div");
-              completionMsg.style.background = "#256e4c";
-              completionMsg.style.color = "white";
-              completionMsg.style.padding = "10px";
-              completionMsg.style.borderRadius = "8px";
-              completionMsg.style.margin = "10px 0";
-              completionMsg.style.textAlign = "center";
-              completionMsg.textContent = "✅ You can now send another join request.";
-              introWrapper.insertBefore(completionMsg, introWrapper.firstChild);
-
-              // Remove the message after 5 seconds
-              setTimeout(() => {
-                completionMsg.remove();
-              }, 5000);
-            }
-          }
-        }
-      };
-
-      updateCountdown();
-    }
   </script>
 
   <!-- Capacitor Storage Module -->
