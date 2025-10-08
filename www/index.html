@@ -1367,6 +1367,15 @@
                 joinedRooms.add(room);
                 sendActive(!document.hidden);
                 fetchUnreadCounts();
+
+                // Check if we became admin and load pending requests
+                if (currentName === currentAdmin) {
+                  // Load any pending join requests for this room
+                  socket.emit("get_pending_requests", {
+                    room: room,
+                    user: currentName
+                  });
+                }
               } else {
                 setTimeout(() => {
                   socket.disconnect();
@@ -1440,6 +1449,15 @@
       socket.on("join_request", (data) => {
         if (currentName === currentAdmin && data.room === currentRoom) {
           showJoinRequestNotification(data);
+        }
+      });
+
+      // Add this to setupSocketEventHandlers
+      socket.on("pending_requests", (data) => {
+        if (data.room === currentRoom && currentName === currentAdmin) {
+          data.requests.forEach(request => {
+            showJoinRequestNotification(request);
+          });
         }
       });
 
