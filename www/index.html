@@ -1234,6 +1234,9 @@
 
     // Add this new function to handle join requests
     async function sendJoinRequest(room, username) {
+      console.log("🔄 Establishing connection for join request...");
+      showAlert("Connecting to server...", "info");
+
       // Clear any existing socket to prevent conflicts
       if (socket) {
         socket.off();
@@ -1241,10 +1244,25 @@
         socket = null;
       }
 
+      // Show waiting message UI immediately
+      document.getElementById("chat-container").style.display = "flex";
+      document.getElementById("input-area").style.display = "none";
+      document.getElementById("intro").style.display = "none";
+      document.getElementById("messages").style.display = "block";
+      document.getElementById("messages").innerHTML = "";
+
+      // Show initial waiting message
+      addMessage({
+        sender: "System",
+        text: `Connecting to server and sending join request for room "${room}"...`,
+        ts: new Date().toISOString(),
+      });
+
       // Initialize new socket connection
       socket = io("https://realtime-chat-1mv3.onrender.com", {
         path: "/socket.io",
         transports: ["websocket"],
+        timeout: 10000, // 10 second timeout
       });
 
       // Store pending info
@@ -1255,10 +1273,20 @@
       setupJoinRequestSocketHandlers();
 
       let requestSent = false;
+      let connectionTimeout;
 
-      // Connect and send join request
+      // Enhanced connection status handling
       socket.on("connect", () => {
-        console.log("🔗 Socket connected for join request");
+        console.log("🔗 Connected to server (waiting for admin)");
+        clearTimeout(connectionTimeout);
+        showAlert("Connected to server. Sending join request...", "info");
+
+        // Update waiting message
+        addMessage({
+          sender: "System",
+          text: `Connected! Sending join request to room admin...`,
+          ts: new Date().toISOString(),
+        });
 
         if (!requestSent) {
           requestSent = true;
@@ -1275,11 +1303,35 @@
             (ack) => {
               if (ack && ack.error === "room_locked") {
                 // This is expected - server will handle the join request
-                console.log("Join request sent to admin");
+                console.log("⏳ Join request sent to admin - waiting for approval");
                 showAlert("Join request sent to admin. Waiting for approval...", "info");
+
+                // Update UI to show waiting status
+                addMessage({
+                  sender: "System",
+                  text: `Join request for room "${room}" sent to admin. Waiting for approval...`,
+                  ts: new Date().toISOString(),
+                });
               } else if (ack && ack.success) {
                 // This shouldn't happen for locked rooms, but handle it
+                console.log("✅ Unexpected immediate join - proceeding");
                 proceedWithJoin(room, username);
+              } else {
+                console.error("❌ Join request failed:", ack);
+                showAlert("Failed to send join request. Please try again.", "error");
+
+                addMessage({
+                  sender: "System",
+                  text: `Failed to send join request: ${ack?.error || 'Unknown error'}`,
+                  ts: new Date().toISOString(),
+                });
+
+                // Reset after error
+                setTimeout(() => {
+                  document.getElementById("chat-container").style.display = "none";
+                  document.getElementById("input-area").style.display = "none";
+                  document.getElementById("intro").style.display = "block";
+                }, 3000);
               }
             }
           );
@@ -1288,24 +1340,51 @@
 
       // Handle connection errors
       socket.on("connect_error", (error) => {
-        console.error("Connection failed:", error);
-        showAlert("Failed to connect. Please try again.", "error");
+        console.error("❌ Connection failed:", error);
+        clearTimeout(connectionTimeout);
+        showAlert("Failed to connect to server. Please try again.", "error");
+
+        addMessage({
+          sender: "System",
+          text: `Connection failed: ${error.message || 'Unknown error'}`,
+          ts: new Date().toISOString(),
+        });
+
         // Reset socket to allow retry
         socket = null;
+
+        // Show intro page on connection failure after delay
+        setTimeout(() => {
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+        }, 3000);
       });
 
-      // Show waiting message
-      document.getElementById("chat-container").style.display = "flex";
-      document.getElementById("input-area").style.display = "none";
-      document.getElementById("intro").style.display = "none";
-      document.getElementById("messages").style.display = "block";
-      document.getElementById("messages").innerHTML = "";
+      // Set connection timeout
+      connectionTimeout = setTimeout(() => {
+        if (!requestSent) {
+          console.error("⏰ Connection timeout");
+          showAlert("Connection timeout. Please try again.", "error");
 
-      addMessage({
-        sender: "System",
-        text: `Sending join request for room "${room}"... Waiting for admin approval.`,
-        ts: new Date().toISOString(),
-      });
+          addMessage({
+            sender: "System",
+            text: "Connection timeout. Please try again.",
+            ts: new Date().toISOString(),
+          });
+
+          if (socket) {
+            socket.disconnect();
+            socket = null;
+          }
+
+          setTimeout(() => {
+            document.getElementById("chat-container").style.display = "none";
+            document.getElementById("input-area").style.display = "none";
+            document.getElementById("intro").style.display = "block";
+          }, 3000);
+        }
+      }, 10000); // 10 second connection timeout
     }
 
     // Add this function to setup socket handlers for join request flow
@@ -1314,6 +1393,7 @@
 
       // Handle join request sent response
       socket.on("join_request_sent", (data) => {
+        console.log("📨 Server confirmed join request received");
         addMessage({
           sender: "System",
           text: data.message,
@@ -1323,6 +1403,7 @@
 
       // Handle join approval
       socket.on("join_approved", (data) => {
+        console.log("✅ Join request approved by admin");
         showAlert("Join request approved! Joining room...", "success");
 
         // Clear pending state
@@ -1343,6 +1424,7 @@
 
       // Handle join rejection  
       socket.on("join_rejected", (data) => {
+        console.log("❌ Join request rejected by admin");
         showAlert("Join request was rejected by admin", "error");
 
         // Clear pending state to allow new requests
@@ -1369,12 +1451,27 @@
         }, 2000);
       });
 
+      // Handle pending requests when admin connects
+      socket.on("pending_requests", (data) => {
+        console.log(`📋 Received ${data.requests.length} pending requests`);
+        if (data.room === currentRoom && currentName === currentAdmin) {
+          data.requests.forEach(request => {
+            showJoinRequestNotification(request);
+          });
+        }
+      });
+
       // Handle unexpected disconnections
       socket.on("disconnect", (reason) => {
-        console.log("Socket disconnected:", reason);
-        if (reason === "io server disconnect") {
-          // Server disconnected, allow reconnection
+        console.log("🔌 Socket disconnected:", reason);
+
+        // Only attempt reconnect for unexpected server disconnects
+        // Don't reconnect if we were rejected or intentionally disconnected
+        if (reason === "io server disconnect" && !Storage.get("pending_room")) {
+          console.log("🔄 Attempting to reconnect...");
           socket.connect();
+        } else {
+          console.log(`🔌 Normal disconnect: ${reason}`);
         }
       });
     }
@@ -2961,7 +3058,7 @@
       // If you want to allow quick rejoining to other rooms, keep the socket connected.
       // If you want to completely reset the connection, you can disconnect after a delay:
       setTimeout(() => {
-        if (socket && Object.keys(joinedRooms).length === 0) {
+        if (socket && joinedRooms.size === 0) {
           // Only disconnect if no rooms are joined
           socket.disconnect();
           socket = null;

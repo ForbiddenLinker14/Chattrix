@@ -905,8 +905,11 @@ async def join(sid, data):
     last_ts = data.get("lastTs")
     token = data.get("fcmToken")
 
+    print(f"📨 Join attempt: {username} -> {room} (SID: {sid})")
+
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
+        print(f"🚫 Join rejected - Room destroyed: {username} -> {room}")
         await sio.emit("room_permanently_destroyed", {"room": room}, to=sid)
         return {"success": False, "error": "Room was permanently destroyed"}
 
@@ -931,6 +934,7 @@ async def join(sid, data):
             del PENDING_JOIN_REQUESTS[room]
 
     if is_locked and not is_existing_user:
+        print(f"⏳ Join request QUEUED (locked room): {username} -> {room}")
         # New user trying to join locked room - send join request
         await notify_admin_about_join_request(room, username, sid)
 
@@ -973,6 +977,8 @@ async def join(sid, data):
         ROOM_ADMINS[room] = username
         print(f"👑 {username} set as admin for room {room}")
 
+    print(f"✅ Immediate join: {username} -> {room}")
+
     # Continue with existing join logic...
     ROOM_HISTORY.setdefault(room, set()).add(username)
 
@@ -994,10 +1000,12 @@ async def join(sid, data):
     # handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
+        print(f"ℹ️  User already in room: {username} -> {room}")
         return {"success": True, "message": "Already in room"}
     if old_sid and old_sid != sid:
         try:
             await sio.leave_room(old_sid, room)
+            print(f"🔄 Replaced old session for {username} in {room}")
         except Exception:
             pass
 
@@ -1057,7 +1065,32 @@ async def join(sid, data):
         to=sid,
     )
 
+    print(f"🎉 User successfully joined: {username} -> {room}")
     return {"success": True}
+
+
+@sio.event
+async def connect(sid, environ):
+    print(f"🔗 WebSocket connected: {sid}")
+    # You can log additional connection info if needed
+
+
+@sio.event
+async def disconnect(sid):
+    print(f"🔌 WebSocket disconnected: {sid}")
+    # Clean up any pending join requests for this socket
+    for room, requests in list(PENDING_JOIN_REQUESTS.items()):
+        initial_count = len(requests)
+        PENDING_JOIN_REQUESTS[room] = [r for r in requests if r.get("sid") != sid]
+        removed_count = initial_count - len(PENDING_JOIN_REQUESTS[room])
+        if removed_count > 0:
+            print(
+                f"🧹 Cleaned {removed_count} pending requests for disconnected socket {sid}"
+            )
+        if not PENDING_JOIN_REQUESTS[room]:
+            del PENDING_JOIN_REQUESTS[room]
+
+    USER_STATUS.pop(sid, None)
 
 
 @sio.event
