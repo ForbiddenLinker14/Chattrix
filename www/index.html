@@ -1423,7 +1423,7 @@
     function setupSocketEventHandlers() {
       if (!socket) return;
 
-      // Existing socket event handlers
+      // ==================== ROOM MANAGEMENT EVENTS ====================
       socket.on("room_permanently_destroyed", (data) => {
         Storage.remove("chat_name");
         Storage.remove("chat_room");
@@ -1445,44 +1445,6 @@
         renderJoinedRooms();
       });
 
-      // Add this to the setupSocketEventHandlers function
-      socket.on("join_request", (data) => {
-        if (currentName === currentAdmin && data.room === currentRoom) {
-          showJoinRequestNotification(data);
-        }
-      });
-
-      // Add this to setupSocketEventHandlers
-      socket.on("pending_requests", (data) => {
-        if (data.room === currentRoom && currentName === currentAdmin) {
-          data.requests.forEach(request => {
-            showJoinRequestNotification(request);
-          });
-        }
-      });
-
-      socket.on("room_admin_update", (data) => {
-        if (data.room === currentRoom) {
-          currentAdmin = data.admin;
-          updateAdminUI();
-
-          if (data.locked !== undefined) {
-            roomLockStates[currentRoom] = data.locked;
-            document.getElementById("roomLockToggle").checked = data.locked;
-            updateLockUI(data.locked);
-          }
-        }
-      });
-
-      socket.on("room_locked_alert", (data) => {
-        showLockedRoomAlert(data.room, data.message);
-      });
-
-      socket.on("users_update", updateUserList);
-      socket.on("left_room", (data) => {
-        if (data.room === currentRoom)
-          document.getElementById("user-list").innerHTML = "";
-      });
       socket.on("room_destroyed", handleRoomDestroyed);
       socket.on("clear", handleRoomCleared);
       socket.on("clear_room_from_storage", (data) => {
@@ -1513,6 +1475,25 @@
         renderJoinedRooms();
       });
 
+      socket.on("left_room", (data) => {
+        if (data.room === currentRoom)
+          document.getElementById("user-list").innerHTML = "";
+      });
+
+      // ==================== ROOM LOCK & ADMIN EVENTS ====================
+      socket.on("room_admin_update", (data) => {
+        if (data.room === currentRoom) {
+          currentAdmin = data.admin;
+          updateAdminUI();
+
+          if (data.locked !== undefined) {
+            roomLockStates[currentRoom] = data.locked;
+            document.getElementById("roomLockToggle").checked = data.locked;
+            updateLockUI(data.locked);
+          }
+        }
+      });
+
       socket.on("room_lock_changed", (data) => {
         if (data.room === currentRoom) {
           roomLockStates[data.room] = data.locked;
@@ -1526,6 +1507,41 @@
         }
       });
 
+      socket.on("room_locked_alert", (data) => {
+        showLockedRoomAlert(data.room, data.message);
+      });
+
+      // ==================== JOIN REQUEST & COOLDOWN EVENTS ====================
+      socket.on("join_request", (data) => {
+        if (currentName === currentAdmin && data.room === currentRoom) {
+          showJoinRequestNotification(data);
+        }
+      });
+
+      socket.on("pending_requests", (data) => {
+        if (data.room === currentRoom && currentName === currentAdmin) {
+          data.requests.forEach(request => {
+            showJoinRequestNotification(request);
+          });
+        }
+      });
+
+      socket.on("join_request_cooldown", (data) => {
+        handleJoinRequestCooldown(data.remaining_seconds);
+      });
+
+      socket.on("join_cooldown_set", (data) => {
+        if (data.user === currentName && data.room === currentRoom) {
+          handleJoinRequestCooldown(data.remaining_seconds);
+        }
+      });
+
+      // ==================== USER MANAGEMENT EVENTS ====================
+      socket.on("users_update", updateUserList);
+
+      // ==================== MESSAGE EVENTS ====================
+      socket.on("message", addMessage);
+      socket.on("file", addFileMessage);
       socket.on("room_message_meta", (data) => {
         try {
           if (!currentName) return;
@@ -1559,10 +1575,7 @@
         }
       });
 
-      socket.on("message", addMessage);
-      socket.on("file", addFileMessage);
-
-      // Setup input handlers
+      // ==================== INPUT HANDLERS ====================
       document.getElementById("send").onclick = sendMessage;
       document.getElementById("input").onkeydown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -3509,11 +3522,58 @@
             text: response.message,
             ts: new Date().toISOString(),
           });
+
+          // Set cooldown for the rejected user
+          if (socket) {
+            socket.emit("set_join_cooldown", {
+              room: room,
+              user: user,
+              minutes: 5
+            });
+          }
         } else {
           alert(response?.error || "Failed to reject request");
         }
       });
     };
+
+    function handleJoinRequestCooldown(remainingSeconds) {
+      const minutes = Math.floor(remainingSeconds / 60);
+      const seconds = remainingSeconds % 60;
+      const cooldownMessage = `Please wait ${minutes}:${seconds.toString().padStart(2, '0')} before sending another join request.`;
+
+      addMessage({
+        sender: "System",
+        text: cooldownMessage,
+        ts: new Date().toISOString(),
+      });
+
+      // Disable the join button and show countdown
+      const joinButton = document.querySelector('button[onclick="joinRoom()"]');
+      const originalText = joinButton.textContent;
+      joinButton.disabled = true;
+
+      // Update button text with countdown
+      const updateCountdown = () => {
+        if (remainingSeconds > 0) {
+          const mins = Math.floor(remainingSeconds / 60);
+          const secs = remainingSeconds % 60;
+          joinButton.textContent = `Wait ${mins}:${secs.toString().padStart(2, '0')}`;
+          remainingSeconds--;
+          setTimeout(updateCountdown, 1000);
+        } else {
+          joinButton.disabled = false;
+          joinButton.textContent = originalText;
+          addMessage({
+            sender: "System",
+            text: "You can now send another join request.",
+            ts: new Date().toISOString(),
+          });
+        }
+      };
+
+      updateCountdown();
+    }
   </script>
 
   <!-- Capacitor Storage Module -->
