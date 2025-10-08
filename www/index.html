@@ -1199,29 +1199,47 @@
       }
 
       // If room is locked and user is not in room history, require admin approval
+      // --- Replace existing "room locked" block with this (fallback to REST)
       if (isLocked && !isExistingUser) {
         console.log(`🚫 Room is locked and user not in history, sending join request`);
-
-        // Mark this request as pending
+        // mark pending locally to avoid duplicates
         pendingJoinRequests.add(requestKey);
 
-        // Send join request to admin via socket
+        // Prefer socket (real-time) if available
         if (socket && socket.connected) {
-          socket.emit('join_request', {
-            room: currentRoom,
-            username: currentName
-          });
-
-          console.log(`📤 Join request emitted for ${currentName} to room ${currentRoom}`);
+          socket.emit('join_request', { room: currentRoom, username: currentName });
+          console.log(`📤 Join request emitted (socket) for ${currentName} to room ${currentRoom}`);
           showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
           return;
-        } else {
-          console.log(`❌ Socket not connected, cannot send join request`);
-          showAutoCloseAlert(`Room "${currentRoom}" is locked. Please try again.`);
-          pendingJoinRequests.delete(requestKey); // Remove if failed
+        }
+
+        // Fallback: call REST endpoint so user can request join without an open socket
+        try {
+          const resp = await fetch(`${API_BASE}/join-request/${encodeURIComponent(currentRoom)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: currentName })
+          });
+
+          if (resp.ok) {
+            console.log(`📤 Join request emitted (REST) for ${currentName} to room ${currentRoom}`);
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Your join request has been sent to the admin.`, 0, true);
+            return;
+          } else {
+            const data = await resp.json().catch(() => ({}));
+            console.warn('Join request REST failed:', data);
+            showAutoCloseAlert(`Room "${currentRoom}" is locked. Could not send join request.`, 3000);
+            pendingJoinRequests.delete(requestKey);
+            return;
+          }
+        } catch (err) {
+          console.error('❌ Join request REST failed:', err);
+          showAutoCloseAlert(`Room "${currentRoom}" is locked. Could not send join request.`, 3000);
+          pendingJoinRequests.delete(requestKey);
           return;
         }
       }
+
 
       const roomStatus = await checkRoomStatus(currentRoom, currentName);
       if (roomStatus.destroyed) {

@@ -672,15 +672,20 @@ async def join_request(sid, data):
     if username not in PENDING_JOIN_REQUESTS[room]:
         PENDING_JOIN_REQUESTS[room][username] = sid
 
-    # Notify admin
+        # Notify admin (try to find admin sid in-room first, then in USER_STATUS)
     admin = ROOM_ADMINS.get(room)
+    admin_sid = None
     if admin:
-        admin_sid = None
-        # Find admin's current socket ID
-        if room in ROOM_USERS and admin in ROOM_USERS[room]:
-            admin_sid = ROOM_USERS[room][admin]
+        admin_sid = ROOM_USERS.get(room, {}).get(admin)
+        if not admin_sid:
+            # admin might be connected but not currently in the room — search USER_STATUS
+            for s, st in USER_STATUS.items():
+                if st.get("user") == admin:
+                    admin_sid = s
+                    break
 
-        if admin_sid:
+    if admin_sid:
+        try:
             await sio.emit(
                 "join_request",
                 {
@@ -690,9 +695,15 @@ async def join_request(sid, data):
                 },
                 to=admin_sid,
             )
-            print(f"✅ Join request sent to admin {admin} for user {username}")
-        else:
-            print(f"❌ Admin {admin} not found in room {room}")
+            print(
+                f"✅ Join request sent to admin {admin} (sid={admin_sid}) for user {username}"
+            )
+        except Exception as e:
+            print(f"❌ Failed to send join_request to admin sid {admin_sid}: {e}")
+    else:
+        print(
+            f"❌ No connected admin sid found for {admin} in room {room}; stored as pending."
+        )
 
     await sio.emit(
         "join_pending",
@@ -859,6 +870,26 @@ async def join(sid, data):
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
+
+    # If the joining user is the room admin and there are pending join requests, notify them now
+    if ROOM_ADMINS.get(room) == username and room in PENDING_JOIN_REQUESTS:
+        try:
+            pending_list = list(PENDING_JOIN_REQUESTS[room].keys())
+            for pending_user in pending_list:
+                await sio.emit(
+                    "join_request",
+                    {
+                        "room": room,
+                        "username": pending_user,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                    to=sid,
+                )
+                print(
+                    f"🔔 Notified admin {username} about pending request from {pending_user}"
+                )
+        except Exception as e:
+            print(f"❌ Failed to notify admin of pending join requests: {e}")
 
     # 🔑 register token in memory + DB
     if token:
@@ -1461,9 +1492,20 @@ async def handle_join_request(room: str, request: Request):
     if user_sid:
         PENDING_JOIN_REQUESTS[room][username] = user_sid
 
-        # Notify admin
+        # Notify admin (try to find admin sid in-room first, then in USER_STATUS)
+    admin = ROOM_ADMINS.get(room)
+    admin_sid = None
+    if admin:
         admin_sid = ROOM_USERS.get(room, {}).get(admin)
-        if admin_sid:
+        if not admin_sid:
+            # admin might be connected but not currently in the room — search USER_STATUS
+            for s, st in USER_STATUS.items():
+                if st.get("user") == admin:
+                    admin_sid = s
+                    break
+
+    if admin_sid:
+        try:
             await sio.emit(
                 "join_request",
                 {
@@ -1473,10 +1515,15 @@ async def handle_join_request(room: str, request: Request):
                 },
                 to=admin_sid,
             )
-
-        return {"status": "pending", "message": "Join request sent to admin"}
-
-    return JSONResponse({"error": "User not connected"}, status_code=404)
+            print(
+                f"✅ Join request sent to admin {admin} (sid={admin_sid}) for user {username}"
+            )
+        except Exception as e:
+            print(f"❌ Failed to send join_request to admin sid {admin_sid}: {e}")
+    else:
+        print(
+            f"❌ No connected admin sid found for {admin} in room {room}; stored as pending."
+        )
 
 
 @app.post("/join-response/{room}")
@@ -1902,6 +1949,14 @@ async def set_room_lock(room: str, request: Request):
     )
     conn.commit()
     conn.close()
+
+    # Ensure in-memory ROOM_ADMINS reflects who locked the room (if not already set)
+    if user:
+        # only set admin if no admin exists yet (do not overwrite an existing admin)
+        previous_admin = ROOM_ADMINS.get(room)
+        if not previous_admin:
+            ROOM_ADMINS[room] = user
+            print(f"🔒 Room {room} locked by {user} — set ROOM_ADMINS[{room}] = {user}")
 
     # Broadcast to all clients in the room
     await sio.emit(
