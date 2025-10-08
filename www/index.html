@@ -1152,33 +1152,141 @@
 
       // Check room lock status first
       const isLocked = await checkRoomLockStatus(currentRoom);
+      let roomUsers = [];
 
       if (isLocked) {
-        const roomUsers = await getRoomUsers(currentRoom);
+        roomUsers = await getRoomUsers(currentRoom);
         const isExistingUser = roomUsers.includes(currentName);
 
         if (!isExistingUser) {
-          // This will trigger the join request flow
-          // The socket event handlers above will handle the response
-          await attemptJoinWithRequest();
-          return;
+          // Room is locked and user is not existing - send join request
+          await sendJoinRequest(currentRoom, currentName);
+          return; // Stop here, don't proceed with normal join
         }
       }
 
-      const roomStatus = await checkRoomStatus(currentRoom, currentName);
+      // If room is not locked OR user is existing, proceed with normal join
+      await proceedWithJoin(currentRoom, currentName);
+    }
+
+    // Add this new function to handle join requests
+    async function sendJoinRequest(room, username) {
+      if (!socket) {
+        // Initialize socket connection first
+        socket = io("https://realtime-chat-1mv3.onrender.com", {
+          path: "/socket.io",
+          transports: ["websocket"],
+        });
+      }
+
+      // Store pending info
+      Storage.set("pending_room", room);
+      Storage.set("pending_name", username);
+
+      // Setup socket events for join request flow
+      setupJoinRequestSocketHandlers();
+
+      // Connect and send join request
+      socket.on("connect", () => {
+        console.log("🔗 Socket connected for join request");
+
+        // The server will detect this is a locked room + new user and send join request automatically
+        // when we try to join
+        const fcmToken = localStorage.getItem("fcm_token") || null;
+        socket.emit(
+          "join",
+          {
+            room: room,
+            sender: username,
+            lastTs: null,
+            fcmToken: fcmToken,
+          },
+          (ack) => {
+            if (ack && ack.error === "room_locked") {
+              // This is expected - server will handle the join request
+              console.log("Join request sent to admin");
+              addMessage({
+                sender: "System",
+                text: "Join request sent to admin. Waiting for approval...",
+                ts: new Date().toISOString(),
+              });
+            }
+          }
+        );
+      });
+
+      // Show waiting message
+      document.getElementById("chat-container").style.display = "flex";
+      document.getElementById("input-area").style.display = "none"; // Don't show input area while waiting
+      document.getElementById("intro").style.display = "none";
+      document.getElementById("messages").style.display = "block";
+      document.getElementById("messages").innerHTML = "";
+
+      addMessage({
+        sender: "System",
+        text: `Sending join request for room "${room}"... Waiting for admin approval.`,
+        ts: new Date().toISOString(),
+      });
+    }
+
+    // Add this function to setup socket handlers for join request flow
+    function setupJoinRequestSocketHandlers() {
+      if (!socket) return;
+
+      // Handle join request sent response
+      socket.on("join_request_sent", (data) => {
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+      });
+
+      // Handle join approval
+      socket.on("join_approved", (data) => {
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+
+        // Now proceed with actual join
+        setTimeout(() => {
+          proceedWithJoin(currentRoom, currentName);
+        }, 1000);
+      });
+
+      // Handle join rejection  
+      socket.on("join_rejected", (data) => {
+        addMessage({
+          sender: "System",
+          text: data.message,
+          ts: new Date().toISOString(),
+        });
+
+        // Show intro page if rejected
+        document.getElementById("chat-container").style.display = "none";
+        document.getElementById("input-area").style.display = "none";
+        document.getElementById("intro").style.display = "block";
+      });
+    }
+
+    // Extract the main join logic into a separate function
+    async function proceedWithJoin(room, username) {
+      const roomStatus = await checkRoomStatus(room, username);
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
           closeDestroyedRoomAlert();
         } else {
-          showDestroyedRoomAlert(currentRoom, roomStatus.time_remaining);
+          showDestroyedRoomAlert(room, roomStatus.time_remaining);
           return;
         }
       } else {
         closeDestroyedRoomAlert();
       }
 
-      Storage.set("chat_name", currentName);
-      Storage.set("chat_room", currentRoom);
+      Storage.set("chat_name", username);
+      Storage.set("chat_room", room);
       document.getElementById("chat-container").style.display = "flex";
       document.getElementById("input-area").style.display = "flex";
       document.getElementById("intro").style.display = "none";
@@ -1195,38 +1303,118 @@
         socket.off();
         socket.disconnect();
       }
+
       socket = io("https://realtime-chat-1mv3.onrender.com", {
         path: "/socket.io",
         transports: ["websocket"],
       });
 
-      subscribeUser(currentName, currentRoom).catch((err) =>
+      // Setup all socket event handlers
+      setupSocketEventHandlers();
+
+      subscribeUser(username, room).catch((err) =>
         console.warn("⚠️ Subscription failed in joinRoom:", err)
       );
 
       function safeJoinWithRetry(attempt = 1) {
         if (!socket || !socket.connected) return;
-        if (joinedRooms.has(currentRoom)) return;
+        if (joinedRooms.has(room)) return;
         const fcmToken = localStorage.getItem("fcm_token") || null;
         socket.emit(
           "join",
           {
-            room: currentRoom,
-            sender: currentName,
+            room: room,
+            sender: username,
             lastTs: lastPersistedTs || null,
             fcmToken: fcmToken,
           },
           (ack) => {
             if (ack && ack.success) {
-              joinedRooms.add(currentRoom);
+              joinedRooms.add(room);
               sendActive(!document.hidden);
+
+              // Update UI with room lock state
+              const isLocked = roomLockStates[room];
+              if (isLocked !== undefined) {
+                document.getElementById("roomLockToggle").checked = isLocked;
+                updateLockUI(isLocked);
+              }
             } else {
-              setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+              if (ack && ack.error === 'room_locked') {
+                // This shouldn't happen in normal flow, but handle it
+                console.log("Room is locked during normal join");
+              } else {
+                setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+              }
             }
           }
         );
       }
 
+      socket.on("connect", () => {
+        if (room && username) {
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+          socket.emit(
+            "join",
+            {
+              room: room,
+              sender: username,
+              lastTs: lastPersistedTs || null,
+              fcmToken: fcmToken,
+            },
+            (ack) => {
+              if (ack && ack.success) {
+                joinedRooms.add(room);
+                sendActive(!document.hidden);
+                fetchUnreadCounts();
+              } else {
+                setTimeout(() => {
+                  socket.disconnect();
+                  socket.connect();
+                }, 500);
+              }
+            }
+          );
+        } else {
+          restoreChatState(socket);
+        }
+      });
+
+      // Add room to joined rooms list
+      const joinedList = document.getElementById("joined-rooms");
+      if (
+        ![...joinedList.children].some(
+          (li) => li.dataset.room === room
+        )
+      ) {
+        const li = document.createElement("li");
+        li.textContent = room;
+        li.dataset.room = room;
+        li.style.padding = "6px 10px";
+        li.style.cursor = "pointer";
+        li.onclick = () => switchRoom(room);
+        joinedList.appendChild(li);
+      }
+
+      joinedRoomsByUser = JSON.parse(
+        localStorage.getItem("joinedRoomsByUser") || "{}"
+      );
+      if (!joinedRoomsByUser[username])
+        joinedRoomsByUser[username] = [];
+      if (!joinedRoomsByUser[username].includes(room)) {
+        joinedRoomsByUser[username].push(room);
+        localStorage.setItem(
+          "joinedRoomsByUser",
+          JSON.stringify(joinedRoomsByUser)
+        );
+      }
+      renderJoinedRooms();
+    }
+
+    function setupSocketEventHandlers() {
+      if (!socket) return;
+
+      // Existing socket event handlers
       socket.on("room_permanently_destroyed", (data) => {
         Storage.remove("chat_name");
         Storage.remove("chat_room");
@@ -1248,13 +1436,11 @@
         renderJoinedRooms();
       });
 
-      // Add admin update handler
       socket.on("room_admin_update", (data) => {
         if (data.room === currentRoom) {
           currentAdmin = data.admin;
           updateAdminUI();
 
-          // Also update lock state if provided
           if (data.locked !== undefined) {
             roomLockStates[currentRoom] = data.locked;
             document.getElementById("roomLockToggle").checked = data.locked;
@@ -1263,51 +1449,8 @@
         }
       });
 
-      // Handle room locked alerts
       socket.on("room_locked_alert", (data) => {
         showLockedRoomAlert(data.room, data.message);
-      });
-
-      // Handle join request sent response
-      socket.on("join_request_sent", (data) => {
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-      });
-
-      // Handle join approval
-      socket.on("join_approved", (data) => {
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-
-        // Auto-retry joining the room after approval
-        setTimeout(() => {
-          joinRoom();
-        }, 1000);
-      });
-
-      // Handle join rejection  
-      socket.on("join_rejected", (data) => {
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
-
-        // Show intro page if rejected
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-      });
-
-      // Admin: Show join request notification in message container
-      socket.on("join_request", (data) => {
-        showJoinRequestNotification(data);
       });
 
       socket.on("users_update", updateUserList);
@@ -1317,19 +1460,13 @@
       });
       socket.on("room_destroyed", handleRoomDestroyed);
       socket.on("clear", handleRoomCleared);
-
-      // ✅ NEW: Listen for room storage clear command
       socket.on("clear_room_from_storage", (data) => {
         const roomToClear = data.room;
-
-        // Clear from localStorage
         const savedRoom = Storage.get("chat_room");
         if (savedRoom === roomToClear) {
           Storage.remove("chat_name");
           Storage.remove("chat_room");
         }
-
-        // Clear from joinedRoomsByUser
         const currentName = Storage.get("chat_name") || currentName;
         if (currentName && joinedRoomsByUser[currentName]) {
           joinedRoomsByUser[currentName] = joinedRoomsByUser[
@@ -1340,8 +1477,6 @@
             JSON.stringify(joinedRoomsByUser)
           );
         }
-
-        // If currently in this room, leave it
         if (currentRoom === roomToClear) {
           currentRoom = "";
           document.getElementById("chat-container").style.display = "none";
@@ -1350,59 +1485,17 @@
           document.getElementById("messages").innerHTML = "";
           document.getElementById("user-list").innerHTML = "";
         }
-
-        // Update UI
         renderJoinedRooms();
-        console.log(`🧹 Cleared room ${roomToClear} from storage`);
       });
 
-      // Update lock UI after joining
-      if (isLocked !== undefined) {
-        document.getElementById("roomLockToggle").checked = isLocked;
-        updateLockUI(isLocked);
-      }
-
-      socket.on("connect", () => {
-        if (currentRoom && currentName) {
-          const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit(
-            "join",
-            {
-              room: currentRoom,
-              sender: currentName,
-              lastTs: lastPersistedTs || null,
-              fcmToken: fcmToken,
-            },
-            (ack) => {
-              if (ack && ack.success) {
-                joinedRooms.add(currentRoom);
-                sendActive(!document.hidden);
-                fetchUnreadCounts();
-              } else {
-                setTimeout(() => {
-                  socket.disconnect();
-                  socket.connect();
-                }, 500);
-              }
-            }
-          );
-        } else {
-          restoreChatState(socket);
-        }
-      });
-
-      // Add this in the joinRoom function where other socket events are handled
       socket.on("room_lock_changed", (data) => {
         if (data.room === currentRoom) {
           roomLockStates[data.room] = data.locked;
           document.getElementById("roomLockToggle").checked = data.locked;
           updateLockUI(data.locked);
-
-          // Show system message
           addMessage({
             sender: "System",
-            text: `Room has been ${data.locked ? "locked" : "unlocked"} by ${data.lockedBy
-              }`,
+            text: `Room has been ${data.locked ? "locked" : "unlocked"} by ${data.lockedBy}`,
             ts: new Date().toISOString(),
           });
         }
@@ -1411,9 +1504,7 @@
       socket.on("room_message_meta", (data) => {
         try {
           if (!currentName) return;
-          joinedRoomsByUser =
-            joinedRoomsByUser ||
-            JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
+          joinedRoomsByUser = joinedRoomsByUser || JSON.parse(localStorage.getItem("joinedRoomsByUser") || "{}");
           const myRooms = joinedRoomsByUser[currentName] || [];
           if (!myRooms.includes(data.room)) return;
           if (data.room === currentRoom) return;
@@ -1422,15 +1513,9 @@
           updateBadge(data.room);
           const title = `Room ${data.room}`;
           const body = `${data.sender}: ${data.text}`;
-          if (
-            "Notification" in window &&
-            Notification.permission === "granted"
-          ) {
+          if ("Notification" in window && Notification.permission === "granted") {
             try {
-              const n = new Notification(title, {
-                body,
-                tag: `room-${data.room}`,
-              });
+              const n = new Notification(title, { body, tag: `room-${data.room}` });
               n.onclick = () => {
                 window.focus();
                 switchRoom(data.room);
@@ -1451,6 +1536,8 @@
 
       socket.on("message", addMessage);
       socket.on("file", addFileMessage);
+
+      // Setup input handlers
       document.getElementById("send").onclick = sendMessage;
       document.getElementById("input").onkeydown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -1463,35 +1550,6 @@
         document.getElementById("fileInput").click();
       };
       document.getElementById("fileInput").onchange = handleFileUpload;
-
-      const joinedList = document.getElementById("joined-rooms");
-      if (
-        ![...joinedList.children].some(
-          (li) => li.dataset.room === currentRoom
-        )
-      ) {
-        const li = document.createElement("li");
-        li.textContent = currentRoom;
-        li.dataset.room = currentRoom;
-        li.style.padding = "6px 10px";
-        li.style.cursor = "pointer";
-        li.onclick = () => switchRoom(currentRoom);
-        joinedList.appendChild(li);
-      }
-
-      joinedRoomsByUser = JSON.parse(
-        localStorage.getItem("joinedRoomsByUser") || "{}"
-      );
-      if (!joinedRoomsByUser[currentName])
-        joinedRoomsByUser[currentName] = [];
-      if (!joinedRoomsByUser[currentName].includes(currentRoom)) {
-        joinedRoomsByUser[currentName].push(currentRoom);
-        localStorage.setItem(
-          "joinedRoomsByUser",
-          JSON.stringify(joinedRoomsByUser)
-        );
-      }
-      renderJoinedRooms();
     }
 
     // previous: async function checkRoomStatus(room) { ... }
@@ -3344,18 +3402,6 @@
       return [];
     }
 
-
-
-    async function attemptJoinWithRequest() {
-      if (!socket || !currentRoom || !currentName) return;
-
-      // Store room info for retry after approval
-      Storage.set("pending_room", currentRoom);
-      Storage.set("pending_name", currentName);
-
-      // The socket connection and join event will handle the rest
-      // The server will detect this is a locked room + new user and send join request
-    }
     // Function to display join request in message area
     function showJoinRequestNotification(request) {
       const messages = document.getElementById("messages");
