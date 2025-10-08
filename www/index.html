@@ -1436,6 +1436,13 @@
         renderJoinedRooms();
       });
 
+      // Add this to the setupSocketEventHandlers function
+      socket.on("join_request", (data) => {
+        if (currentName === currentAdmin && data.room === currentRoom) {
+          showJoinRequestNotification(data);
+        }
+      });
+
       socket.on("room_admin_update", (data) => {
         if (data.room === currentRoom) {
           currentAdmin = data.admin;

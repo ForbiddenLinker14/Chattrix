@@ -102,10 +102,13 @@ async def notify_admin_about_join_request(room: str, username: str, user_sid: st
 
     if admin_sid and admin_sid in USER_STATUS and USER_STATUS[admin_sid].get("active"):
         # Admin is online and active - send immediate notification
-        await sio.emit("join_request", request, room=admin_sid)
-        print(
-            f"📨 Join request sent to online admin {admin_username} for user {username}"
-        )
+        try:
+            await sio.emit("join_request", request, room=admin_sid)
+            print(
+                f"📨 Join request sent to online admin {admin_username} for user {username}"
+            )
+        except Exception as e:
+            print(f"❌ Failed to send join request to admin: {e}")
     else:
         # Admin is offline - send push notification
         await send_join_request_push(room, admin_username, username)
@@ -945,6 +948,7 @@ async def join(sid, data):
 
     # ✅ REMOVED THE DUPLICATE CHECK - Continue with normal join process for existing users
     # ✅ Set first user as admin
+
     if room not in ROOM_ADMINS and not room_users:
         ROOM_ADMINS[room] = username
         print(f"👑 {username} set as admin for room {room}")
