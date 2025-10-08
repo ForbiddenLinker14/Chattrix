@@ -888,7 +888,7 @@ async def join(sid, data):
     room = data["room"]
     username = data["sender"]
     last_ts = data.get("lastTs")
-    token = data.get("fcmToken")  # 🔑 client should send token when joining
+    token = data.get("fcmToken")
 
     # ✅ Check if room was permanently destroyed - REJECT JOIN
     if room in DESTROYED_ROOMS:
@@ -943,17 +943,7 @@ async def join(sid, data):
             "message": "Join request sent to admin",
         }
 
-    if is_locked and username not in room_users:
-        await sio.emit(
-            "room_locked_alert",
-            {
-                "room": room,
-                "message": f"Room '{room}' is locked. You cannot join at this time.",
-            },
-            to=sid,
-        )
-        return {"success": False, "error": "Room is locked"}
-
+    # ✅ REMOVED THE DUPLICATE CHECK - Continue with normal join process for existing users
     # ✅ Set first user as admin
     if room not in ROOM_ADMINS and not room_users:
         ROOM_ADMINS[room] = username
