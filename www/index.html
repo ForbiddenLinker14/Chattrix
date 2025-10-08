@@ -2862,53 +2862,24 @@
     };
 
     async function leaveRoom() {
-
-      // Clear any pending join request state
-      Storage.remove("pending_room");
-      Storage.remove("pending_name");
-
-      // Reset socket to allow fresh connections
-      if (socket) {
-        socket.off(); // Remove all listeners
-        socket.disconnect();
-        socket = null;
-      }
-
       if (!currentRoom) {
         alert("You are not in a room!");
         return;
       }
+
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
 
-      if (savedToken) {
-        try {
-          await fetch("/api/unregister-fcm", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token: savedToken,
-              user: currentName,
-              room: currentRoom,
-            }),
-          });
-        } catch (err) {
-          console.error("❌ Failed to unregister FCM token:", err);
-        }
+      // First, send the leave event to the server
+      if (socket && socket.connected) {
+        socket.emit("leave", {
+          room: currentRoom,
+          sender: currentName,
+          reason: "leave",
+        });
       }
 
-      try {
-        await unsubscribeUser(currentName, currentRoom);
-      } catch (err) {
-        console.error("❌ Failed to unsubscribe WebPush:", err);
-      }
-
-      socket.emit("leave", {
-        room: currentRoom,
-        sender: currentName,
-        reason: "leave",
-      });
-
+      // Then clean up local state
       document.getElementById("input").disabled = true;
       document.getElementById("send").disabled = true;
       document.getElementById("attach").disabled = true;
@@ -2932,11 +2903,32 @@
         );
       }
 
-      // ✅ CORRECTED: Only remove lock state if this user was the last one in ALL their rooms
-      // This is a simplified approach - for a more accurate approach, we'd need to check server-side
+      // Clean up FCM tokens and WebPush (these can happen after socket operations)
+      if (savedToken) {
+        try {
+          await fetch("/api/unregister-fcm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token: savedToken,
+              user: currentName,
+              room: currentRoom,
+            }),
+          });
+        } catch (err) {
+          console.error("❌ Failed to unregister FCM token:", err);
+        }
+      }
+
+      try {
+        await unsubscribeUser(currentName, currentRoom);
+      } catch (err) {
+        console.error("❌ Failed to unsubscribe WebPush:", err);
+      }
+
+      // Clean up lock states
       const userRooms = joinedRoomsByUser[currentName] || [];
       if (userRooms.length === 0) {
-        // User has no rooms left, clean up their lock states
         Object.keys(roomLockStates).forEach((room) => {
           if (roomLockStates[room]) {
             Storage.remove(`room_lock_${room}`);
@@ -2944,6 +2936,11 @@
         });
       }
 
+      // Clear any pending join request state (keep this)
+      Storage.remove("pending_room");
+      Storage.remove("pending_name");
+
+      // Update UI
       renderJoinedRooms();
       currentRoom = "";
       Storage.remove("chat_name");
@@ -2956,6 +2953,20 @@
       // Reset lock UI
       document.getElementById("roomLockToggle").checked = false;
       updateLockUI(false);
+
+      // IMPORTANT: Don't disconnect the socket here if you want to keep the connection
+      // for potential reconnection to other rooms. Only disconnect if you're sure
+      // the user is completely done with chatting.
+
+      // If you want to allow quick rejoining to other rooms, keep the socket connected.
+      // If you want to completely reset the connection, you can disconnect after a delay:
+      setTimeout(() => {
+        if (socket && Object.keys(joinedRooms).length === 0) {
+          // Only disconnect if no rooms are joined
+          socket.disconnect();
+          socket = null;
+        }
+      }, 1000);
     }
 
     // ======================================================
