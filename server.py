@@ -667,8 +667,12 @@ async def clear_messages(room: str, request: Request):
     """
     Clear chat history for a specific room - ADMIN ONLY
     """
-    # Get the user from query parameters or body
-    body = await request.json() if request.method == "POST" else {}
+    # Parse body for both POST and DELETE methods
+    try:
+        body = await request.json()
+    except:
+        body = {}
+
     user = body.get("user") or request.query_params.get("user")
 
     if not user:
@@ -699,8 +703,12 @@ async def clear_messages(room: str, request: Request):
 
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str, request: Request):
-    # Get the user from query parameters or body
-    body = await request.json() if request.method == "POST" else {}
+    # Parse body for both POST and DELETE methods
+    try:
+        body = await request.json()
+    except:
+        body = {}
+
     user = body.get("user") or request.query_params.get("user")
 
     if not user:
