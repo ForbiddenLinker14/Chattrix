@@ -2981,6 +2981,7 @@
       errorDiv.className = "msg system";
       errorDiv.style.background = "#e74c3c";
       errorDiv.style.color = "white";
+      errorDiv.id = "admin-action-error";
       errorDiv.innerHTML = `
         <strong>❌ Admin Action Failed</strong><br>
         ${error}<br>
@@ -2988,6 +2989,13 @@
     `;
       messages.appendChild(errorDiv);
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+      // Auto-remove after 5 seconds
+      setTimeout(() => {
+        if (errorDiv.parentNode) {
+          errorDiv.remove();
+        }
+      }, 5000);
     }
     const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
@@ -3029,12 +3037,13 @@
           return;
         }
 
-        // Show success message
+        // Show success message that auto-disappears
         const messages = document.getElementById("messages");
         const successDiv = document.createElement("div");
         successDiv.className = "msg system";
         successDiv.style.background = "#27ae60";
         successDiv.style.color = "white";
+        successDiv.id = "clear-success-message"; // Add ID for easy removal
         successDiv.innerHTML = `
             <strong>✅ Room Cleared</strong><br>
             ${data.message}<br>
@@ -3042,6 +3051,13 @@
         `;
         messages.appendChild(successDiv);
         messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+        // Auto-remove after 5 seconds
+        setTimeout(() => {
+          if (successDiv.parentNode) {
+            successDiv.remove();
+          }
+        }, 5000);
 
       } catch (err) {
         console.error("❌ clearRoom error:", err);
@@ -3089,18 +3105,32 @@
           return;
         }
 
-        // Handle successful destruction
-        unsubscribeUser(currentName, currentRoom);
-        document.getElementById("messages").innerHTML = "";
+        // Show success message that auto-disappears
+        const messages = document.getElementById("messages");
+        const successDiv = document.createElement("div");
+        successDiv.className = "msg system";
+        successDiv.style.background = "#27ae60";
+        successDiv.style.color = "white";
+        successDiv.id = "destroy-success-message";
+        successDiv.innerHTML = `
+            <strong>✅ Room Destroyed</strong><br>
+            Room destroyed successfully. All messages and user data cleared.<br>
+            <small>${new Date().toLocaleString()}</small>
+        `;
+        messages.appendChild(successDiv);
+        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
 
-        // Show success message before redirecting
-        addMessage({
-          sender: "System",
-          text: "✅ Room destroyed successfully. All messages and user data cleared.",
-          ts: new Date().toISOString(),
-        });
-
+        // Auto-remove after 5 seconds
         setTimeout(() => {
+          if (successDiv.parentNode) {
+            successDiv.remove();
+          }
+        }, 5000);
+
+        // Handle cleanup after showing success message
+        setTimeout(() => {
+          unsubscribeUser(currentName, currentRoom);
+          document.getElementById("messages").innerHTML = "";
           lastPersistedTs = null;
           Storage.remove("chat_name");
           Storage.remove("chat_room");
