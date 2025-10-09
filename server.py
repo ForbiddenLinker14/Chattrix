@@ -697,7 +697,7 @@ async def clear_messages(room: str, request: Request):
         "clear", {"room": room, "message": "Room history cleared by admin."}, room=room
     )
 
-    print(f"🧹 Room {room} history cleared by admin {user}.")
+    print(f"🧹 Room {room} history cleared by admin {user}")
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
 
