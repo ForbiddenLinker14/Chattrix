@@ -3043,12 +3043,12 @@
         messages.appendChild(successDiv);
         messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
 
-        // // Auto-remove success message after 5 seconds
-        // setTimeout(() => {
-        //   if (successDiv.parentNode) {
-        //     successDiv.remove();
-        //   }
-        // }, 4000);
+        // Auto-remove success message after 5 seconds
+        setTimeout(() => {
+          if (successDiv.parentNode) {
+            successDiv.remove();
+          }
+        }, 4000);
 
       } catch (err) {
         console.error("❌ clearRoom error:", err);
