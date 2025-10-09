@@ -672,11 +672,12 @@ async def clear_messages(room: str, request: Request):
         body = await request.json()
     except:
         body = {}
-
+    
     user = body.get("user") or request.query_params.get("user")
 
     if not user:
         return JSONResponse({"error": "User identification required"}, status_code=400)
+
 
     # Check if user is admin of the room
     if room not in ROOM_ADMINS or ROOM_ADMINS[room] != user:
@@ -692,10 +693,10 @@ async def clear_messages(room: str, request: Request):
 
     clear_room(room)  # delete all messages from DB
 
-    # # Notify everyone in the room
-    # await sio.emit(
-    #     "clear", {"room": room, "message": "Room history cleared by admin."}, room=room
-    # )
+    # Notify everyone in the room
+    await sio.emit(
+        "clear", {"room": room, "message": "Room history cleared by admin."}, room=room
+    )
 
     print(f"🧹 Room {room} history cleared by admin {user}.")
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
@@ -703,12 +704,8 @@ async def clear_messages(room: str, request: Request):
 
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str, request: Request):
-    # Parse body for both POST and DELETE methods
-    try:
-        body = await request.json()
-    except:
-        body = {}
-
+    # Get the user from query parameters or body
+    body = await request.json() if request.method == "POST" else {}
     user = body.get("user") or request.query_params.get("user")
 
     if not user:
