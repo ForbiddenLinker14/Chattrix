@@ -692,10 +692,10 @@ async def clear_messages(room: str, request: Request):
 
     clear_room(room)  # delete all messages from DB
 
-    # Notify everyone in the room
-    await sio.emit(
-        "clear", {"room": room, "message": "Room history cleared by admin."}, room=room
-    )
+    # # Notify everyone in the room
+    # await sio.emit(
+    #     "clear", {"room": room, "message": "Room history cleared by admin."}, room=room
+    # )
 
     print(f"🧹 Room {room} history cleared by admin {user}.")
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
