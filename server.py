@@ -177,49 +177,51 @@ async def send_join_request_push(room: str, admin_username: str, requesting_user
                     print(f"❌ FCM push failed for join request: {e}")
 
 
-# Add this function to handle admin transfer
 async def transfer_admin(room: str):
     """Transfer admin to the next available user in the room"""
     if room in ROOM_USERS and ROOM_USERS[room]:
-        # Get the first user in the room (by insertion order)
-        new_admin = next(iter(ROOM_USERS[room].keys()))
-        ROOM_ADMINS[room] = new_admin
+        # Get the first user in the room (by insertion order) excluding any None values
+        users_in_room = list(ROOM_USERS[room].keys())
+        if users_in_room:
+            new_admin = users_in_room[0]
+            ROOM_ADMINS[room] = new_admin
 
-        # Also transfer the current lock state
-        current_lock_state = ROOM_LOCK_STATES.get(room, False)
+            # Also transfer the current lock state
+            current_lock_state = ROOM_LOCK_STATES.get(room, False)
 
-        print(f"👑 Admin transferred from previous admin to {new_admin} in room {room}")
+            print(f"👑 Admin transferred to {new_admin} in room {room}")
 
-        # Notify all clients in the room about the new admin
-        await sio.emit(
-            "room_admin_update",
-            {"room": room, "admin": new_admin, "locked": current_lock_state},
-            room=room,
-        )
+            # Notify all clients in the room about the new admin
+            await sio.emit(
+                "room_admin_update",
+                {"room": room, "admin": new_admin, "locked": current_lock_state},
+                room=room,
+            )
 
-        # Add system message about admin transfer
-        await sio.emit(
-            "message",
-            {
-                "sender": "System",
-                "text": f"👑 {new_admin} is now the room admin",
-                "ts": datetime.now(timezone.utc).isoformat(),
-            },
-            room=room,
-        )
-    else:
-        # No users left, remove admin and unlock room
-        ROOM_ADMINS.pop(room, None)
-        ROOM_LOCK_STATES.pop(room, None)
+            # Add system message about admin transfer
+            await sio.emit(
+                "message",
+                {
+                    "sender": "System",
+                    "text": f"👑 {new_admin} is now the room admin",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+                room=room,
+            )
+            return
 
-        # Clear lock state from database
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM room_locks WHERE room = ?", (room,))
-        conn.commit()
-        conn.close()
+    # No users left, remove admin and unlock room
+    ROOM_ADMINS.pop(room, None)
+    ROOM_LOCK_STATES.pop(room, None)
 
-        print(f"🏁 Room {room} has no users, admin removed and room unlocked")
+    # Clear lock state from database
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM room_locks WHERE room = ?", (room,))
+    conn.commit()
+    conn.close()
+
+    print(f"🏁 Room {room} has no users, admin removed and room unlocked")
 
 
 def load_destroyed_rooms():
@@ -818,9 +820,6 @@ async def destroy_room(room: str, request: Request):
 
 
 # ---------------- Socket.IO Events ----------------
-# Add these new socket events to server.py
-
-
 @sio.event
 async def approve_join_request(sid, data):
     """Admin approves a join request"""
@@ -1048,7 +1047,6 @@ async def join(sid, data):
             "message": "Join request sent to admin",
         }
 
-    # ✅ REMOVED THE DUPLICATE CHECK - Continue with normal join process for existing users
     # ✅ Set first user as admin
 
     if room not in ROOM_ADMINS and not room_users:
@@ -1220,9 +1218,6 @@ async def message(sid, data):
             key = (username, room)
             USER_LAST_SEEN[key] = now.isoformat()
 
-    # --- NEW: tell all connected clients a metadata event (room, sender, short text, ts)
-    # so clients can update unread counters for rooms they have joined.
-    # This is lightweight and does NOT include file binary data.
     try:
         await sio.emit(
             "room_message_meta",
@@ -1235,31 +1230,6 @@ async def message(sid, data):
 
     # Android push (FCM)
     await send_fcm_to_room(room, sender, text)
-
-
-# @sio.event
-# async def file(sid, data):
-#     room = data.get("room")
-#     if not room or room in DESTROYED_ROOMS:
-#         return
-#     save_message(
-#         room,
-#         data["sender"],
-#         filename=data["filename"],
-#         mimetype=data["mimetype"],
-#         filedata=data["data"],
-#     )
-#     await sio.emit(
-#         "file",
-#         {
-#             "sender": data["sender"],
-#             "filename": data["filename"],
-#             "mimetype": data["mimetype"],
-#             "data": data["data"],
-#             "ts": datetime.now(timezone.utc).isoformat(),
-#         },
-#         room=room,
-#     )
 
 
 @sio.event
@@ -1287,9 +1257,6 @@ async def file(sid, data):
         room=room,
     )
 
-    # --- If you have a file upload handler that emits "file", also add a meta broadcast there:
-    # after await sio.emit("file", {...}, room=room) add:
-
     try:
         await sio.emit(
             "room_message_meta",
@@ -1303,62 +1270,9 @@ async def file(sid, data):
     except Exception as e:
         print("Failed to emit room_message_meta (file):", e)
 
-    # (This keeps unread-count logic working for file messages too.)
-
-    # ✅ Send push notifications for file uploads
-    # message = f"{sender} sent a file: {filename}"
     message = filename
     await send_push_to_room(room, sender, message)
     await send_fcm_to_room(room, sender, message)
-
-
-# @sio.event
-# async def leave(sid, data):
-#     room = data.get("room")
-#     username = data.get("sender")
-
-#     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
-#         del ROOM_USERS[room][username]
-#         if not ROOM_USERS[room]:
-#             del ROOM_USERS[room]
-
-#     await sio.leave_room(sid, room)
-#     await broadcast_users(room)
-#     await sio.emit("left_room", {"room": room}, to=sid)
-
-#     # 🛑 Also cleanup FCM tokens in memory + DB
-#     if username in FCM_TOKENS and room in FCM_TOKENS[username]:
-#         tokens = list(FCM_TOKENS[username][room])  # copy
-#         for token in tokens:
-#             conn = sqlite3.connect(DB_PATH)
-#             c = conn.cursor()
-#             c.execute(
-#                 "DELETE FROM fcm_tokens WHERE user=? AND room=? AND token=?",
-#                 (username, room, token),
-#             )
-#             conn.commit()
-#             conn.close()
-#             print(f"🗑️ Deleted FCM token for {username} in {room} [{token[:10]}...]")
-#         del FCM_TOKENS[username][room]
-#         if not FCM_TOKENS[username]:
-#             del FCM_TOKENS[username]
-
-#     # 🛑 Also cleanup WebPush subscriptions
-#     if room in subscriptions and username in subscriptions[room]:
-#         del subscriptions[room][username]
-#         if not subscriptions[room]:
-#             del subscriptions[room]
-#         print(f"🛑 Cleared WebPush subs for {username} in {room}")
-
-#     await sio.emit(
-#         "message",
-#         {
-#             "sender": "System",
-#             "text": f"{username} left!",
-#             "ts": datetime.now(timezone.utc).isoformat(),
-#         },
-#         room=room,
-#     )
 
 
 @sio.event
@@ -1370,19 +1284,31 @@ async def leave(sid, data):
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         # Check if leaving user is the admin - ONLY for intentional leave (not switch)
         if reason == "leave" and room in ROOM_ADMINS and ROOM_ADMINS[room] == username:
-            await transfer_admin(room)
+            # Remove user from ROOM_USERS BEFORE transferring admin
+            del ROOM_USERS[room][username]
 
-        del ROOM_USERS[room][username]
-        # 🔥 NEW: Remove from ROOM_HISTORY to ensure they disappear from user list
-        if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
+            # Now transfer admin to the next available user (excluding the leaving user)
+            await transfer_admin(room)
+        else:
+            # For non-admin users or switch reason, just remove from ROOM_USERS
+            del ROOM_USERS[room][username]
+
+        # Remove from ROOM_HISTORY for intentional leave
+        if (
+            reason == "leave"
+            and room in ROOM_HISTORY
+            and username in ROOM_HISTORY[room]
+        ):
             ROOM_HISTORY[room].remove(username)
+
         if not ROOM_USERS[room]:
             del ROOM_USERS[room]
 
     await sio.leave_room(sid, room)
-    await broadcast_users(room)  # This will now properly update without the left user
+    await broadcast_users(room)
     await sio.emit("left_room", {"room": room}, to=sid)
 
+    # Rest of the cleanup code remains the same...
     # 🛑 Only cleanup tokens/subscriptions on a *real leave*
     if reason == "leave":
         # cleanup FCM tokens
