@@ -672,12 +672,11 @@ async def clear_messages(room: str, request: Request):
         body = await request.json()
     except:
         body = {}
-    
+
     user = body.get("user") or request.query_params.get("user")
 
     if not user:
         return JSONResponse({"error": "User identification required"}, status_code=400)
-
 
     # Check if user is admin of the room
     if room not in ROOM_ADMINS or ROOM_ADMINS[room] != user:
@@ -704,8 +703,12 @@ async def clear_messages(room: str, request: Request):
 
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str, request: Request):
-    # Get the user from query parameters or body
-    body = await request.json() if request.method == "POST" else {}
+    # Parse body for both POST and DELETE methods
+    try:
+        body = await request.json()
+    except:
+        body = {}
+
     user = body.get("user") or request.query_params.get("user")
 
     if not user:

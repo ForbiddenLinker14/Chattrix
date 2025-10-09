@@ -2974,6 +2974,21 @@
     // ======================================================
     // =============== Room Actions =========================
     // ======================================================
+
+    function showAdminActionError(error) {
+      const messages = document.getElementById("messages");
+      const errorDiv = document.createElement("div");
+      errorDiv.className = "msg system";
+      errorDiv.style.background = "#e74c3c";
+      errorDiv.style.color = "white";
+      errorDiv.innerHTML = `
+        <strong>❌ Admin Action Failed</strong><br>
+        ${error}<br>
+        <small>${new Date().toLocaleString()}</small>
+    `;
+      messages.appendChild(errorDiv);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }
     const API_BASE = "https://realtime-chat-1mv3.onrender.com";
 
     window.clearRoom = async function clearRoom() {
@@ -2984,12 +2999,12 @@
 
       // Check if user is admin and in the room
       if (currentName !== currentAdmin) {
-        alert("Only room admin can clear the room");
+        showAdminActionError("Only room admin can clear the room");
         return;
       }
 
       if (!joinedRooms.has(currentRoom)) {
-        alert("You must be in the room to clear it");
+        showAdminActionError("You must be in the room to clear it");
         return;
       }
 
@@ -3009,18 +3024,35 @@
           }
         );
         const data = await res.json();
-        if (!res.ok)
-          throw new Error(
-            data?.error || `Failed to clear room: ${res.status}`
-          );
-        addMessage({
-          sender: "System",
-          text: data.message,
-          ts: new Date().toISOString(),
-        });
+        if (!res.ok) {
+          showAdminActionError(data?.error || `Failed to clear room: ${res.status}`);
+          return;
+        }
+
+        // Show success message
+        const messages = document.getElementById("messages");
+        const successDiv = document.createElement("div");
+        successDiv.className = "msg system";
+        successDiv.style.background = "#27ae60";
+        successDiv.style.color = "white";
+        successDiv.innerHTML = `
+            <strong>✅ Room Cleared</strong><br>
+            ${data.message}<br>
+            <small>${new Date().toLocaleString()}</small>
+        `;
+        messages.appendChild(successDiv);
+        messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+        // Auto-remove success message after 5 seconds
+        setTimeout(() => {
+          if (successDiv.parentNode) {
+            successDiv.remove();
+          }
+        }, 4000);
+
       } catch (err) {
         console.error("❌ clearRoom error:", err);
-        alert(err.message);
+        showAdminActionError("Network error: " + err.message);
       }
     };
 
@@ -3032,12 +3064,12 @@
 
       // Check if user is admin and in the room
       if (currentName !== currentAdmin) {
-        alert("Only room admin can destroy the room");
+        showAdminActionError("Only room admin can destroy the room");
         return;
       }
 
       if (!joinedRooms.has(currentRoom)) {
-        alert("You must be in the room to destroy it");
+        showAdminActionError("You must be in the room to destroy it");
         return;
       }
 
@@ -3059,32 +3091,38 @@
           }
         );
         const data = await res.json();
-        if (!res.ok)
-          throw new Error(
-            data?.error || `Failed to destroy room: ${res.status}`
-          );
+        if (!res.ok) {
+          showAdminActionError(data?.error || `Failed to destroy room: ${res.status}`);
+          return;
+        }
 
         // Handle successful destruction
         unsubscribeUser(currentName, currentRoom);
         document.getElementById("messages").innerHTML = "";
+
+        // Show success message before redirecting
         addMessage({
           sender: "System",
-          text: "Room destroyed by admin. All messages cleared.",
+          text: "✅ Room destroyed successfully. All messages and user data cleared.",
           ts: new Date().toISOString(),
         });
-        lastPersistedTs = null;
-        Storage.remove("chat_name");
-        Storage.remove("chat_room");
-        joinedRooms.delete(currentRoom);
-        currentRoom = "";
-        document.getElementById("user-list").innerHTML = "";
-        document.getElementById("chat-container").style.display = "none";
-        document.getElementById("input-area").style.display = "none";
-        document.getElementById("intro").style.display = "block";
-        document.getElementById("messages").style.display = "none";
+
+        setTimeout(() => {
+          lastPersistedTs = null;
+          Storage.remove("chat_name");
+          Storage.remove("chat_room");
+          joinedRooms.delete(currentRoom);
+          currentRoom = "";
+          document.getElementById("user-list").innerHTML = "";
+          document.getElementById("chat-container").style.display = "none";
+          document.getElementById("input-area").style.display = "none";
+          document.getElementById("intro").style.display = "block";
+          document.getElementById("messages").style.display = "none";
+        }, 2000);
+
       } catch (err) {
         console.error("❌ destroyRoom error:", err);
-        alert(err.message);
+        showAdminActionError("Network error: " + err.message);
       }
     };
 
