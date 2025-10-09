@@ -3695,6 +3695,8 @@
       const destroyBtn = document.querySelector('button[onclick="destroyRoom()"]');
       const isAdmin = currentName === currentAdmin;
 
+      console.log(`🔧 Admin UI Update: ${currentName} is admin? ${isAdmin}, Current admin: ${currentAdmin}`);
+
       if (lockContainer) {
         if (isAdmin) {
           lockContainer.style.display = 'flex';
@@ -3712,7 +3714,7 @@
         destroyBtn.style.display = isAdmin ? 'block' : 'none';
       }
 
-      // Show admin badge in user list or somewhere
+      // Show admin badge in user list
       updateUserListWithAdmin();
     }
 
@@ -3963,6 +3965,29 @@
         }
       }, 5000);
     }
+  </script>
+
+  <script>
+    // Add this to your existing JavaScript, preferably in the initialization section
+    document.addEventListener('DOMContentLoaded', function () {
+      // Get the chat title element
+      const chatTitle = document.getElementById('chat-title');
+
+      if (chatTitle) {
+        chatTitle.addEventListener('click', function () {
+          console.log('💬 Chattrix title clicked - reloading page...');
+
+          // Simple and reliable reload that works in both web and Capacitor
+          window.location.reload();
+        });
+
+        // Add visual feedback for the click
+        chatTitle.style.cursor = 'pointer';
+        chatTitle.title = 'Click to reload the app';
+
+        console.log('💬 Chattrix reload handler initialized');
+      }
+    });
   </script>
 
   <!-- Capacitor Storage Module -->

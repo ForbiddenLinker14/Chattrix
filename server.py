@@ -181,14 +181,31 @@ async def send_join_request_push(room: str, admin_username: str, requesting_user
 async def transfer_admin(room: str):
     """Transfer admin to the next available user in the room"""
     if room in ROOM_USERS and ROOM_USERS[room]:
-        # Get the first user in the room (FIFO order)
+        # Get the first user in the room (by insertion order)
         new_admin = next(iter(ROOM_USERS[room].keys()))
         ROOM_ADMINS[room] = new_admin
-        print(f"👑 Admin transferred to {new_admin} in room {room}")
+
+        # Also transfer the current lock state
+        current_lock_state = ROOM_LOCK_STATES.get(room, False)
+
+        print(f"👑 Admin transferred from previous admin to {new_admin} in room {room}")
 
         # Notify all clients in the room about the new admin
         await sio.emit(
-            "room_admin_update", {"room": room, "admin": new_admin}, room=room
+            "room_admin_update",
+            {"room": room, "admin": new_admin, "locked": current_lock_state},
+            room=room,
+        )
+
+        # Add system message about admin transfer
+        await sio.emit(
+            "message",
+            {
+                "sender": "System",
+                "text": f"👑 {new_admin} is now the room admin",
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=room,
         )
     else:
         # No users left, remove admin and unlock room
@@ -730,7 +747,17 @@ async def destroy_room(room: str, request: Request):
             {"error": "You must be in the room to destroy it"}, status_code=403
         )
 
-    # Continue with existing destroy logic...
+    # 🔥 CRITICAL: Reset admin and lock state BEFORE cleaning up
+    ROOM_ADMINS.pop(room, None)
+    ROOM_LOCK_STATES.pop(room, None)
+
+    # Clear lock state from database
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM room_locks WHERE room = ?", (room,))
+    conn.commit()
+    conn.close()
+
     # 0. Clear webpush subscriptions
     if room in subscriptions:
         del subscriptions[room]
@@ -1341,9 +1368,10 @@ async def leave(sid, data):
     reason = data.get("reason", "leave")  # "leave" | "switch"
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
-        # Check if leaving user is the admin
-        if room in ROOM_ADMINS and ROOM_ADMINS[room] == username:
+        # Check if leaving user is the admin - ONLY for intentional leave (not switch)
+        if reason == "leave" and room in ROOM_ADMINS and ROOM_ADMINS[room] == username:
             await transfer_admin(room)
+
         del ROOM_USERS[room][username]
         # 🔥 NEW: Remove from ROOM_HISTORY to ensure they disappear from user list
         if room in ROOM_HISTORY and username in ROOM_HISTORY[room]:
