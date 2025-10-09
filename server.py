@@ -471,8 +471,10 @@ def save_message(room, sender, text=None, filename=None, mimetype=None, filedata
             datetime.now(timezone.utc).isoformat(),
         ),
     )
+    message_id = c.lastrowid  # Get the auto-increment ID
     conn.commit()
     conn.close()
+    return message_id  # Return the message ID
 
 
 def load_messages(room):
@@ -1168,6 +1170,21 @@ async def message(sid, data):
         return
     LAST_MESSAGE[key] = (text, now)
 
+    # Save message and get ID
+    message_id = save_message(room, sender, text=text)
+
+    # broadcast the message with ID
+    await sio.emit(
+        "message",
+        {
+            "id": message_id,  # Include message ID
+            "sender": sender,
+            "text": text,
+            "ts": now.isoformat(),
+        },
+        room=room,
+    )
+
     save_message(room, sender, text=text)
     # broadcast the usual message to the room (already present)
     await sio.emit(
@@ -1320,6 +1337,110 @@ async def file(sid, data):
 #         },
 #         room=room,
 #     )
+
+
+# Add after the existing socket events in server.py
+
+
+@sio.event
+async def edit_message(sid, data):
+    """Edit an existing message"""
+    message_id = data.get("id")
+    new_text = data.get("text")
+    room = data.get("room")
+    username = data.get("sender")
+
+    if not all([message_id, new_text, room, username]):
+        return {"success": False, "error": "Missing data"}
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        # Verify the user is the original sender and message exists
+        c.execute(
+            "SELECT sender FROM messages WHERE id = ? AND room = ?", (message_id, room)
+        )
+        result = c.fetchone()
+
+        if not result:
+            return {"success": False, "error": "Message not found"}
+
+        original_sender = result[0]
+        if original_sender != username:
+            return {"success": False, "error": "Can only edit your own messages"}
+
+        # Update the message
+        c.execute("UPDATE messages SET text = ? WHERE id = ?", (new_text, message_id))
+        conn.commit()
+        conn.close()
+
+        # Broadcast the edit to all clients in the room
+        await sio.emit(
+            "message_edited",
+            {
+                "id": message_id,
+                "text": new_text,
+                "room": room,
+                "sender": username,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=room,
+        )
+
+        print(f"✏️ Message {message_id} edited by {username} in {room}")
+        return {"success": True}
+
+    except Exception as e:
+        print(f"❌ Error editing message: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@sio.event
+async def delete_message(sid, data):
+    """Delete a message for everyone"""
+    message_id = data.get("id")
+    room = data.get("room")
+    username = data.get("sender")
+
+    if not all([message_id, room, username]):
+        return {"success": False, "error": "Missing data"}
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+
+        # Verify the user is the original sender and message exists
+        c.execute(
+            "SELECT sender FROM messages WHERE id = ? AND room = ?", (message_id, room)
+        )
+        result = c.fetchone()
+
+        if not result:
+            return {"success": False, "error": "Message not found"}
+
+        original_sender = result[0]
+        if original_sender != username:
+            return {"success": False, "error": "Can only delete your own messages"}
+
+        # Delete the message from database
+        c.execute("DELETE FROM messages WHERE id = ?", (message_id,))
+        conn.commit()
+        conn.close()
+
+        # Broadcast the deletion to all clients in the room
+        await sio.emit(
+            "message_deleted",
+            {"id": message_id, "room": room, "sender": username},
+            room=room,
+        )
+
+        print(f"🗑️ Message {message_id} deleted by {username} in {room}")
+        return {"success": True}
+
+    except Exception as e:
+        print(f"❌ Error deleting message: {e}")
+        return {"success": False, "error": str(e)}
 
 
 @sio.event

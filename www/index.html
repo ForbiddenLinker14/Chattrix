@@ -816,6 +816,82 @@
         transform: translateY(-20px);
       }
     }
+
+    /* Add to existing CSS */
+    .message-context-menu {
+      position: absolute;
+      background: #1a1812;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 8px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      display: flex;
+      gap: 8px;
+      animation: slideIn 0.2s ease;
+    }
+
+    .message-context-menu button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .message-context-menu .edit-btn {
+      background: #27ae60;
+      color: white;
+    }
+
+    .message-context-menu .delete-btn {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .message-context-menu button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .message-editing {
+      background: rgba(39, 174, 96, 0.1) !important;
+      border: 1px solid #27ae60 !important;
+    }
+
+    .edit-input-container {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .edit-input-container input {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #27ae60;
+      border-radius: 4px;
+      background: #100e09;
+      color: #eaeaea;
+    }
+
+    .edit-input-container button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .edit-input-container .save-btn {
+      background: #27ae60;
+      color: white;
+    }
+
+    .edit-input-container .cancel-btn {
+      background: #7f8c8d;
+      color: white;
+    }
   </style>
 </head>
 
@@ -2193,6 +2269,13 @@
       const inputEl = document.getElementById("input");
       const text = inputEl.value.trim();
       if (!text || !currentRoom) return;
+
+      // If editing, don't send new message
+      if (currentEditingMessageId) {
+        saveEditedMessage(currentEditingMessageId);
+        return;
+      }
+
       const nowTs = new Date().toISOString();
       lastPersistedTs = nowTs;
       try {
@@ -2315,6 +2398,7 @@
         const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
         div.className = "msg " + (isMe ? "me" : "other");
         div.dataset.ts = data.ts;
+        div.dataset.messageId = data.id;
         const safeText = escapeHtml(data.text);
         const formattedText = linkifyWithFavicon(safeText);
         div.innerHTML = `<strong>${data.sender
@@ -2323,6 +2407,11 @@
           ).toLocaleString()}</small>`;
         enableCopyOnMessage(div, data.text);
         div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
+
+        // Enable edit/delete actions for own messages
+        if (isMe) {
+          enableMessageActions(div, data);
+        }
       }
       messages.appendChild(div);
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
@@ -3341,6 +3430,244 @@
   </script>
 
   <script>
+    // ======================================================
+    // =============== Message Edit/Delete ==================
+    // ======================================================
+
+    let currentEditingMessageId = null;
+    let messageLongPressTimer = null;
+
+    // Enable long press for message actions
+    function enableMessageActions(messageElement, messageData) {
+      if (!messageElement || messageData.sender !== currentName) return;
+
+      let pressTimer;
+      const isOwnMessage = messageData.sender.toLowerCase() === currentName.toLowerCase();
+
+      if (!isOwnMessage) return;
+
+      messageElement.style.cursor = 'pointer';
+
+      // Touch events for mobile
+      messageElement.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        pressTimer = setTimeout(() => {
+          showMessageContextMenu(messageElement, messageData, e.touches[0].clientX, e.touches[0].clientY);
+        }, 4000); // 4 seconds
+      });
+
+      messageElement.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        clearTimeout(pressTimer);
+      });
+
+      messageElement.addEventListener('touchmove', (e) => {
+        e.stopPropagation();
+        clearTimeout(pressTimer);
+      });
+
+      // Mouse events for desktop
+      messageElement.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return; // Only left click
+        e.stopPropagation();
+        pressTimer = setTimeout(() => {
+          showMessageContextMenu(messageElement, messageData, e.clientX, e.clientY);
+        }, 4000); // 4 seconds
+      });
+
+      messageElement.addEventListener('mouseup', (e) => {
+        e.stopPropagation();
+        clearTimeout(pressTimer);
+      });
+
+      messageElement.addEventListener('mouseleave', (e) => {
+        clearTimeout(pressTimer);
+      });
+
+      // Right-click context menu
+      messageElement.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showMessageContextMenu(messageElement, messageData, e.clientX, e.clientY);
+      });
+    }
+
+    // Show context menu for message actions
+    function showMessageContextMenu(messageElement, messageData, x, y) {
+      // Remove any existing context menu
+      const existingMenu = document.querySelector('.message-context-menu');
+      if (existingMenu) existingMenu.remove();
+
+      const contextMenu = document.createElement('div');
+      contextMenu.className = 'message-context-menu';
+      contextMenu.style.left = x + 'px';
+      contextMenu.style.top = y + 'px';
+
+      contextMenu.innerHTML = `
+        <button class="edit-btn" onclick="editMessage('${messageData.id}', '${escapeAttr(messageData.text)}')">Edit</button>
+        <button class="delete-btn" onclick="deleteMessage('${messageData.id}')">Delete</button>
+    `;
+
+      document.body.appendChild(contextMenu);
+
+      // Close menu when clicking outside
+      const closeMenu = (e) => {
+        if (!contextMenu.contains(e.target)) {
+          contextMenu.remove();
+          document.removeEventListener('click', closeMenu);
+          document.removeEventListener('touchstart', closeMenu);
+        }
+      };
+
+      setTimeout(() => {
+        document.addEventListener('click', closeMenu);
+        document.addEventListener('touchstart', closeMenu);
+      }, 100);
+    }
+
+    // Edit message
+    function editMessage(messageId, currentText) {
+      // Remove any existing context menu
+      const existingMenu = document.querySelector('.message-context-menu');
+      if (existingMenu) existingMenu.remove();
+
+      // Remove any existing edit UI
+      cancelEdit();
+
+      currentEditingMessageId = messageId;
+
+      // Find the message element
+      const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
+      if (!messageElement) return;
+
+      messageElement.classList.add('message-editing');
+
+      // Create edit UI
+      const editContainer = document.createElement('div');
+      editContainer.className = 'edit-input-container';
+      editContainer.innerHTML = `
+        <input type="text" id="edit-input-${messageId}" value="${currentText}" placeholder="Edit your message...">
+        <button class="save-btn" onclick="saveEditedMessage('${messageId}')">Save</button>
+        <button class="cancel-btn" onclick="cancelEdit()">Cancel</button>
+    `;
+
+      messageElement.appendChild(editContainer);
+
+      // Focus the input
+      const editInput = document.getElementById(`edit-input-${messageId}`);
+      if (editInput) {
+        editInput.focus();
+        editInput.select();
+
+        // Handle Enter key
+        editInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            saveEditedMessage(messageId);
+          } else if (e.key === 'Escape') {
+            cancelEdit();
+          }
+        });
+      }
+    }
+
+    // Save edited message
+    function saveEditedMessage(messageId) {
+      const editInput = document.getElementById(`edit-input-${messageId}`);
+      if (!editInput || !editInput.value.trim()) return;
+
+      const newText = editInput.value.trim();
+
+      if (socket && socket.connected) {
+        socket.emit('edit_message', {
+          id: messageId,
+          text: newText,
+          room: currentRoom,
+          sender: currentName
+        }, (response) => {
+          if (response && response.success) {
+            console.log('✅ Message edited successfully');
+          } else {
+            alert(response?.error || 'Failed to edit message');
+          }
+        });
+      }
+
+      cancelEdit();
+    }
+
+    // Cancel editing
+    function cancelEdit() {
+      if (currentEditingMessageId) {
+        const messageElement = document.querySelector(`[data-message-id="${currentEditingMessageId}"]`);
+        if (messageElement) {
+          messageElement.classList.remove('message-editing');
+          const editContainer = messageElement.querySelector('.edit-input-container');
+          if (editContainer) editContainer.remove();
+        }
+        currentEditingMessageId = null;
+      }
+
+      // Remove context menu
+      const existingMenu = document.querySelector('.message-context-menu');
+      if (existingMenu) existingMenu.remove();
+    }
+
+    // Delete message
+    function deleteMessage(messageId) {
+      // Remove any existing context menu
+      const existingMenu = document.querySelector('.message-context-menu');
+      if (existingMenu) existingMenu.remove();
+
+      if (!confirm('Are you sure you want to delete this message for everyone?')) {
+        return;
+      }
+
+      if (socket && socket.connected) {
+        socket.emit('delete_message', {
+          id: messageId,
+          room: currentRoom,
+          sender: currentName
+        }, (response) => {
+          if (response && response.success) {
+            console.log('✅ Message deleted successfully');
+          } else {
+            alert(response?.error || 'Failed to delete message');
+          }
+        });
+      }
+    }
+
+    // Handle message edited event
+    socket.on('message_edited', (data) => {
+      const messageElement = document.querySelector(`[data-message-id="${data.id}"]`);
+      if (messageElement) {
+        // Update message text
+        const textElement = messageElement.querySelector('.message-text');
+        if (textElement) {
+          const safeText = escapeHtml(data.text);
+          const formattedText = linkifyWithFavicon(safeText);
+          textElement.innerHTML = formattedText;
+        }
+
+        // Update timestamp
+        const timestampElement = messageElement.querySelector('.timestamp');
+        if (timestampElement) {
+          timestampElement.innerHTML = `<small>${new Date(data.ts).toLocaleString()} (edited)</small>`;
+        }
+
+        messageElement.classList.remove('message-editing');
+      }
+    });
+
+    // Handle message deleted event
+    socket.on('message_deleted', (data) => {
+      const messageElement = document.querySelector(`[data-message-id="${data.id}"]`);
+      if (messageElement) {
+        messageElement.remove();
+      }
+    });
+
+
     // =============================
     // 🔔 Auto Update Alert (Manifest-based with Auto Fade-Out)
     // =============================
