@@ -1702,29 +1702,36 @@
         let finalPayload = {
           room: currentRoom,
           sender: currentName,
-          text: text,
+          text: text, // Fallback plaintext
           ts: new Date().toISOString()
         };
 
-        // Encrypt message for all users in the room
-        const users = Array.from(ROOM_HISTORY.get(currentRoom) || []);
+        // Get users from the user list for encryption
+        const userList = document.getElementById('user-list');
         const encryptedMessages = {};
 
-        for (const user of users) {
-          if (user !== currentName && signalProtocol.sessions[user]) {
-            try {
-              const encrypted = await signalProtocol.encryptMessage(user, text);
-              encryptedMessages[user] = encrypted;
-            } catch (error) {
-              console.warn(`Could not encrypt for ${user}:`, error);
+        if (userList) {
+          const userItems = userList.getElementsByTagName('li');
+
+          for (let item of userItems) {
+            const user = item.getAttribute('data-name');
+            if (user && user !== currentName && signalProtocol.sessions[user]) {
+              try {
+                const encrypted = await signalProtocol.encryptMessage(user, text);
+                encryptedMessages[user] = encrypted;
+              } catch (error) {
+                console.warn(`Could not encrypt for ${user}:`, error);
+              }
             }
           }
         }
 
-        // Add encryption info to payload
+        // Add encryption info to payload if we encrypted for anyone
         if (Object.keys(encryptedMessages).length > 0) {
           finalPayload.encrypted = encryptedMessages;
           finalPayload.encryptionVersion = "signal-v1";
+          // Remove plaintext for encrypted recipients (optional - for better security)
+          // finalPayload.text = ""; // Uncomment to only send encrypted
         }
 
         // Send the message
@@ -1830,7 +1837,22 @@
     async function initializeRoomEncryption() {
       if (!currentRoom) return;
 
-      const users = Array.from(ROOM_HISTORY.get(currentRoom) || []);
+      // Get users from the user list instead of ROOM_HISTORY
+      const userList = document.getElementById('user-list');
+      if (!userList) {
+        setTimeout(initializeRoomEncryption, 1000);
+        return;
+      }
+
+      const userItems = userList.getElementsByTagName('li');
+      const users = [];
+
+      for (let item of userItems) {
+        const username = item.getAttribute('data-name');
+        if (username && username !== currentName) {
+          users.push(username);
+        }
+      }
 
       for (const user of users) {
         if (user !== currentName && !signalProtocol.sessions[user]) {
@@ -1842,6 +1864,23 @@
       }
     }
 
+    // Add this helper function
+    function getUsersFromUserList() {
+      const userList = document.getElementById('user-list');
+      const users = [];
+
+      if (userList) {
+        const userItems = userList.getElementsByTagName('li');
+        for (let item of userItems) {
+          const username = item.getAttribute('data-name');
+          if (username) {
+            users.push(username);
+          }
+        }
+      }
+
+      return users;
+    }
     // ======================================================
     // =============== Room Management ======================
     // ======================================================
@@ -1852,12 +1891,6 @@
         alert("Enter name and room first!");
         return;
       }
-
-      // Initialize encryption after joining
-      await initializeEncryption();
-      setTimeout(() => {
-        initializeRoomEncryption();
-      }, 2000);
 
       // Clear any previous pending state
       Storage.remove("pending_room");
@@ -1883,6 +1916,22 @@
         }
       }
 
+      // Initialize encryption after joining
+      await initializeEncryption();
+
+      // Wait for user list to be populated before initializing key exchanges
+      const waitForUserList = setInterval(() => {
+        const userList = document.getElementById('user-list');
+        if (userList && userList.getElementsByTagName('li').length > 0) {
+          clearInterval(waitForUserList);
+          setTimeout(() => {
+            initializeRoomEncryption();
+          }, 2000);
+        }
+      }, 500);
+
+      // Timeout after 10 seconds
+      setTimeout(() => clearInterval(waitForUserList), 10000);
       // If room is not locked OR user is existing, proceed with normal join
       await proceedWithJoin(currentRoom, currentName);
     }
