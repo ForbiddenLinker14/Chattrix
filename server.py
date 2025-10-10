@@ -474,13 +474,9 @@ def cleanup_old_messages():
     return before - after
 
 
-def save_message(
-    room, sender, text=None, filename=None, mimetype=None, filedata=None, ts=None
-):
+def save_message(room, sender, text=None, filename=None, mimetype=None, filedata=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # Use provided ts if given, otherwise generate server ts
-    ts_to_store = ts if ts is not None else datetime.now(timezone.utc).isoformat()
     c.execute(
         "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, ts) "
         "VALUES (?,?,?,?,?,?,?)",
@@ -491,7 +487,7 @@ def save_message(
             filename,
             mimetype,
             filedata,
-            ts_to_store,
+            datetime.now(timezone.utc).isoformat(),
         ),
     )
     conn.commit()
@@ -1291,13 +1287,7 @@ async def message(sid, data):
     room = data.get("room")
     sender = data.get("sender")
     text = (data.get("text") or "").strip()
-    # Accept client-provided ts if present (helps de-dup)
-    ts = data.get("ts")
     now = datetime.now(timezone.utc)
-
-    # If client didn't provide ts, use server now
-    if not ts:
-        ts = now.isoformat()
 
     # Handle encrypted messages
     encrypted_data = data.get("encrypted")
@@ -1306,37 +1296,18 @@ async def message(sid, data):
     if not text or not room or not sender:
         return
 
-    # Duplicate suppression: check DB for same room/sender/ts
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            "SELECT COUNT(*) FROM messages WHERE room = ? AND sender = ? AND ts = ?",
-            (room, sender, ts),
-        )
-        exists = c.fetchone()[0] > 0
-        conn.close()
-        if exists:
-            # Already stored/processed — skip
-            print(f"🛑 Duplicate message ignored: {sender} @ {room} [{ts}]")
-            return
-    except Exception as e:
-        print("❌ Duplicate-check DB error:", e)
-        # fall through and continue to save/broadcast to avoid data loss
-
-    # optional: keep lightweight in-memory duplicate suppression too
-    key = (room, sender, text, ts)
-    last = LAST_MESSAGE.get((room, sender))
+    # optional: keep duplicate suppression
+    key = (room, sender)
+    last = LAST_MESSAGE.get(key)
     if last and last[0] == text and (now - last[1]).total_seconds() < 1.5:
-        # still honor the previous heuristic (best-effort)
-        pass
-    LAST_MESSAGE[(room, sender)] = (text, now)
+        return
+    LAST_MESSAGE[key] = (text, now)
 
-    # Store the message (server doesn't need to understand encryption). Include ts.
-    save_message(room, sender, text=text, ts=ts)
+    # Store the message (server doesn't need to understand encryption)
+    save_message(room, sender, text=text)
 
     # Broadcast the message with encryption data intact
-    message_payload = {"sender": sender, "text": text, "ts": ts}
+    message_payload = {"sender": sender, "text": text, "ts": now.isoformat()}
 
     # Preserve encryption data if present
     if encrypted_data:
@@ -1348,13 +1319,13 @@ async def message(sid, data):
     # Update unread counts and send push notifications (existing code)
     for username in ROOM_HISTORY.get(room, set()):
         if username != sender:
-            key2 = (username, room)
-            USER_LAST_SEEN[key2] = now.isoformat()
+            key = (username, room)
+            USER_LAST_SEEN[key] = now.isoformat()
 
     try:
         await sio.emit(
             "room_message_meta",
-            {"room": room, "sender": sender, "text": text, "ts": ts},
+            {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
         )
     except Exception as e:
         print("Failed to emit room_message_meta:", e)

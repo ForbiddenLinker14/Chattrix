@@ -1931,6 +1931,11 @@
         }
       }
 
+      // ✅ CRITICAL FIX: Update timestamp to prevent message replay on reconnect
+      if (data.ts) {
+        updateRoomTimestamp(currentRoom, data.ts);
+      }
+
       // Add to UI
       const messages = document.getElementById("messages");
       const div = document.createElement("div");
@@ -1959,6 +1964,28 @@
 
       messages.appendChild(div);
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }
+
+    // Add these functions to manage room timestamps
+    function updateRoomTimestamp(room, timestamp) {
+      if (!room || !timestamp) return;
+
+      // Update in-memory timestamp
+      if (!lastPersistedTs || timestamp > lastPersistedTs) {
+        lastPersistedTs = timestamp;
+      }
+
+      // Persist to localStorage for reconnects
+      const roomTimestamps = JSON.parse(localStorage.getItem('roomTimestamps') || '{}');
+      roomTimestamps[room] = timestamp;
+      localStorage.setItem('roomTimestamps', JSON.stringify(roomTimestamps));
+
+      console.log(`🕒 Updated timestamp for ${room}: ${timestamp}`);
+    }
+
+    function getRoomTimestamp(room) {
+      const roomTimestamps = JSON.parse(localStorage.getItem('roomTimestamps') || '{}');
+      return roomTimestamps[room] || null;
     }
 
     // Key exchange management
@@ -2108,6 +2135,10 @@
         alert("Enter name and room first!");
         return;
       }
+
+      // ✅ FIX: Load persisted timestamp for this room
+      lastPersistedTs = getRoomTimestamp(currentRoom);
+      console.log(`🕒 Joining room with timestamp: ${lastPersistedTs}`);
 
       // Clear any previous pending state
       Storage.remove("pending_room");
@@ -2399,6 +2430,9 @@
 
     // Extract the main join logic into a separate function
     async function proceedWithJoin(room, username) {
+      // ✅ FIX: Preserve the timestamp when proceeding with join
+      const savedTimestamp = getRoomTimestamp(room);
+      lastPersistedTs = savedTimestamp;
       const roomStatus = await checkRoomStatus(room, username);
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
@@ -2413,12 +2447,13 @@
 
       Storage.set("chat_name", username);
       Storage.set("chat_room", room);
+
       document.getElementById("chat-container").style.display = "flex";
       document.getElementById("input-area").style.display = "flex";
       document.getElementById("intro").style.display = "none";
       document.getElementById("messages").style.display = "block";
       document.getElementById("messages").innerHTML = "";
-      lastPersistedTs = null;
+      // lastPersistedTs = null; //12
       alreadyFetchingHistory = false;
       document.getElementById("input").disabled = false;
       document.getElementById("send").disabled = false;
@@ -2480,12 +2515,17 @@
       socket.on("connect", () => {
         if (room && username) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
+
+          // ✅ FIX: Use the persisted timestamp
+          const timestampToSend = lastPersistedTs || null;
+          console.log(`🕒 Sending timestamp to server: ${timestampToSend}`);
+
           socket.emit(
             "join",
             {
               room: room,
               sender: username,
-              lastTs: lastPersistedTs || null,
+              lastTs: lastPersistedTs,
               fcmToken: fcmToken,
             },
             (ack) => {
@@ -2989,13 +3029,24 @@
 
     function switchRoom(room) {
       if (!room || room === currentRoom) return;
+      // ✅ FIX: Update timestamp for the previous room before switching
+      if (currentRoom) {
+        const messages = document.getElementById("messages");
+        const lastMessage = messages.lastElementChild;
+        if (lastMessage && lastMessage.dataset.ts) {
+          updateRoomTimestamp(currentRoom, lastMessage.dataset.ts);
+        }
+      }
+
       const previousRoom = currentRoom;
       const messagesEl = document.getElementById("messages");
       const usersEl = document.getElementById("user-list");
       messagesEl && (messagesEl.innerHTML = "");
       usersEl && (usersEl.innerHTML = "");
       currentRoom = room;
-      lastPersistedTs = null;
+
+      // ✅ FIX: Load timestamp for the new room
+      lastPersistedTs = getRoomTimestamp(room);
       document.getElementById("room").value = currentRoom;
       Storage.set("chat_room", currentRoom);
       Array.from(document.getElementById("joined-rooms").children).forEach(
@@ -3967,6 +4018,13 @@
       }
     };
 
+    function cleanupRoomTimestamp(room) {
+      const roomTimestamps = JSON.parse(localStorage.getItem('roomTimestamps') || '{}');
+      delete roomTimestamps[room];
+      localStorage.setItem('roomTimestamps', JSON.stringify(roomTimestamps));
+      console.log(`🧹 Cleaned timestamp for room: ${room}`);
+    }
+
     async function leaveRoom() {
       if (!currentRoom) {
         alert("You are not in a room!");
@@ -3975,6 +4033,9 @@
 
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
+
+      // ✅ Clean up timestamp when leaving
+      cleanupRoomTimestamp(leftRoom);
 
       // First, send the leave event to the server
       if (socket && socket.connected) {
