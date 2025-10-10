@@ -20,6 +20,10 @@ from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, messaging
 
+from nacl.public import PrivateKey, PublicKey, Box
+from nacl.secret import SecretBox
+from nacl.utils import random
+
 # ---------------- Globals ----------------
 DB_PATH = "chat.db"
 DESTROYED_ROOMS = set()
@@ -34,6 +38,8 @@ ROOM_ADMINS = {}  # { room: admin_username }
 ROOM_LOCK_STATES = {}  # { room: boolean }
 PENDING_JOIN_REQUESTS = {}  # { room: [ {user, timestamp, sid} ] }
 USER_SOCKET_MAPPING = {}  # { username: sid } for quick lookup
+ROOM_KEYS = {}  # { room: {"public_key": str, "private_key": str} }
+USER_KEYS = {}  # { (room, username): {"public_key": str, "ephemeral_public_key": str} }
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -41,8 +47,6 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
-# ---------------- E2EE support ----------------
-ROOM_PUBKEYS: dict[str, dict[str, str]] = {}
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -78,14 +82,6 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
-def is_e2e_payload(text: str) -> bool:
-    try:
-        j = json.loads(text)
-        return isinstance(j, dict) and j.get("__e2e")
-    except Exception:
-        return False
-
-
 async def notify_admin_about_join_request(room: str, username: str, user_sid: str):
     """Notify admin about a join request, even if admin is offline"""
     if room not in ROOM_ADMINS:
@@ -690,6 +686,210 @@ def extract_favicon_from_text(text: str) -> str | None:
     return f"{parsed.scheme}://{parsed.netloc}/favicon.ico"
 
 
+# =============== ENCRYPTION HELPERS ===============
+class EncryptionManager:
+    @staticmethod
+    def generate_keypair():
+        """Generate a new keypair for a room"""
+        private_key = PrivateKey.generate()
+        public_key = private_key.public_key
+        return {
+            "private_key": base64.b64encode(bytes(private_key)).decode("utf-8"),
+            "public_key": base64.b64encode(bytes(public_key)).decode("utf-8"),
+        }
+
+    @staticmethod
+    def encrypt_message(plaintext, recipient_public_key_b64, sender_private_key_b64):
+        """Encrypt a message for a specific recipient"""
+        try:
+            # Decode keys from base64
+            recipient_public_key = PublicKey(base64.b64decode(recipient_public_key_b64))
+            sender_private_key = PrivateKey(base64.b64decode(sender_private_key_b64))
+
+            # Create encryption box
+            box = Box(sender_private_key, recipient_public_key)
+
+            # Encrypt the message
+            encrypted = box.encrypt(plaintext.encode("utf-8"))
+
+            # Return base64 encoded ciphertext
+            return base64.b64encode(encrypted).decode("utf-8")
+        except Exception as e:
+            print(f"❌ Encryption error: {e}")
+            return None
+
+    @staticmethod
+    def decrypt_message(
+        ciphertext_b64, sender_public_key_b64, recipient_private_key_b64
+    ):
+        """Decrypt a message from a specific sender"""
+        try:
+            # Decode keys and ciphertext from base64
+            sender_public_key = PublicKey(base64.b64decode(sender_public_key_b64))
+            recipient_private_key = PrivateKey(
+                base64.b64decode(recipient_private_key_b64)
+            )
+            ciphertext = base64.b64decode(ciphertext_b64)
+
+            # Create decryption box
+            box = Box(recipient_private_key, sender_public_key)
+
+            # Decrypt the message
+            decrypted = box.decrypt(ciphertext)
+
+            return decrypted.decode("utf-8")
+        except Exception as e:
+            print(f"❌ Decryption error: {e}")
+            return None
+
+
+class RoomKeyManager:
+    @staticmethod
+    def get_or_create_room_keys(room):
+        """Get existing room keys or create new ones"""
+        if room not in ROOM_KEYS:
+            ROOM_KEYS[room] = EncryptionManager.generate_keypair()
+            print(f"🔐 Generated new encryption keys for room: {room}")
+        return ROOM_KEYS[room]
+
+    @staticmethod
+    def get_room_public_key(room):
+        """Get room's public key"""
+        keys = RoomKeyManager.get_or_create_room_keys(room)
+        return keys["public_key"]
+
+    @staticmethod
+    def get_room_private_key(room):
+        """Get room's private key (for testing/backup)"""
+        keys = RoomKeyManager.get_or_create_room_keys(room)
+        return keys["private_key"]
+
+
+# =============== ENCRYPTION SOCKET EVENTS ===============
+@sio.event
+async def exchange_keys(sid, data):
+    """Handle public key exchange between users"""
+    room = data.get("room")
+    username = data.get("username")
+    public_key = data.get("public_key")
+    ephemeral_public_key = data.get("ephemeral_public_key")
+
+    if not all([room, username, public_key]):
+        return {"success": False, "error": "Missing required fields"}
+
+    print(f"🔑 Key exchange: {username} in room {room}")
+
+    # Store user's public key
+    USER_KEYS[(room, username)] = {
+        "public_key": public_key,
+        "ephemeral_public_key": ephemeral_public_key or public_key,
+    }
+
+    # Get room's public key
+    room_public_key = RoomKeyManager.get_room_public_key(room)
+
+    # Broadcast to all users in room that a new user joined with their public key
+    await sio.emit(
+        "user_joined_with_key",
+        {
+            "room": room,
+            "username": username,
+            "public_key": public_key,
+            "ephemeral_public_key": ephemeral_public_key or public_key,
+            "room_public_key": room_public_key,
+        },
+        room=room,
+    )
+
+    # Send existing users' keys to the new user
+    existing_users_keys = []
+    for (r, u), keys in USER_KEYS.items():
+        if r == room and u != username:
+            existing_users_keys.append(
+                {
+                    "username": u,
+                    "public_key": keys["public_key"],
+                    "ephemeral_public_key": keys["ephemeral_public_key"],
+                }
+            )
+
+    await sio.emit(
+        "existing_users_keys",
+        {
+            "room": room,
+            "users": existing_users_keys,
+            "room_public_key": room_public_key,
+        },
+        to=sid,
+    )
+
+    print(f"✅ Key exchange completed for {username} in {room}")
+    return {"success": True}
+
+
+@sio.event
+async def encrypted_message(sid, data):
+    """Handle encrypted messages"""
+    room = data.get("room")
+    sender = data.get("sender")
+    encrypted_message = data.get("encrypted_message")
+    recipient = data.get("recipient")  # "all" for broadcast or specific username
+    message_type = data.get("type", "text")  # "text" or "key_exchange"
+
+    if not all([room, sender, encrypted_message]):
+        return {"success": False, "error": "Missing required fields"}
+
+    print(f"🔒 Encrypted message from {sender} in {room} to {recipient}")
+
+    # Store the encrypted message in database
+    save_message(
+        room,
+        sender,
+        text=encrypted_message,
+        filename=None,
+        mimetype="application/encrypted",
+    )
+
+    # Broadcast to recipients
+    if recipient == "all":
+        # Broadcast to all users in room except sender
+        await sio.emit(
+            "encrypted_message",
+            {
+                "room": room,
+                "sender": sender,
+                "encrypted_message": encrypted_message,
+                "recipient": "all",
+                "type": message_type,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            },
+            room=room,
+            skip_sid=sid,
+        )
+    else:
+        # Send to specific recipient
+        recipient_sid = None
+        if room in ROOM_USERS and recipient in ROOM_USERS[room]:
+            recipient_sid = ROOM_USERS[room][recipient]
+
+        if recipient_sid:
+            await sio.emit(
+                "encrypted_message",
+                {
+                    "room": room,
+                    "sender": sender,
+                    "encrypted_message": encrypted_message,
+                    "recipient": recipient,
+                    "type": message_type,
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                },
+                to=recipient_sid,
+            )
+
+    print(f"✅ Encrypted message delivered from {sender}")
+    return {"success": True}
+
+
 # ---------------- REST: admin-ish ----------------
 @app.delete("/clear/{room}")
 async def clear_messages(room: str, request: Request):
@@ -1099,6 +1299,18 @@ async def join(sid, data):
     ROOM_USERS[room][username] = sid
     USER_STATUS[sid] = {"user": username, "active": True}
 
+    # AFTER successful join, trigger key exchange
+    room_public_key = RoomKeyManager.get_room_public_key(room)
+
+    # Notify client to generate and send their public key
+    await sio.emit(
+        "request_key_exchange",
+        {"room": room, "room_public_key": room_public_key},
+        to=sid,
+    )
+
+    print(f"🔑 Requested key exchange from {username}")
+
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
@@ -1229,12 +1441,10 @@ async def message(sid, data):
             USER_LAST_SEEN[key] = now.isoformat()
 
     try:
-        meta_text = "(encrypted message)" if is_e2e_payload(text) else text
         await sio.emit(
             "room_message_meta",
-            {"room": room, "sender": sender, "text": meta_text, "ts": now.isoformat()},
+            {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
         )
-
     except Exception as e:
         print("Failed to emit room_message_meta:", e)
     # Web push
@@ -1242,19 +1452,6 @@ async def message(sid, data):
 
     # Android push (FCM)
     await send_fcm_to_room(room, sender, text)
-
-
-@sio.event
-async def set_pubkey(sid, data):
-    room = data.get("room")
-    user = data.get("user")
-    pubkey = data.get("pubkey")
-    if not room or not user or not pubkey:
-        return
-    ROOM_PUBKEYS.setdefault(room, {})[user] = pubkey
-    await sio.emit(
-        "pubkey_update", {"room": room, "user": user, "pubkey": pubkey}, room=room
-    )
 
 
 @sio.event
@@ -1305,6 +1502,12 @@ async def leave(sid, data):
     room = data.get("room")
     username = data.get("sender")
     reason = data.get("reason", "leave")  # "leave" | "switch"
+
+    # Clean up user keys
+    user_key = (room, username)
+    if user_key in USER_KEYS:
+        del USER_KEYS[user_key]
+        print(f"🗑️  Cleared encryption keys for {username} in {room}")
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         # Check if leaving user is the admin - ONLY for intentional leave (not switch)
@@ -1624,12 +1827,17 @@ from pywebpush import WebPushException
 async def send_push_to_room(room: str, sender: str, text: str):
     if room not in subscriptions:
         return
+
     now = datetime.now(timezone.utc)
-    display_text = "(encrypted message)" if is_e2e_payload(text) else text
     payload = {
         "title": "Chattrix",
         "sender": sender,
-        "text": display_text,
+        # 👇 If text looks like a filename, prepend "sent a file:"
+        "text": (
+            f"{sender} sent a file: {text}"
+            if not text.strip().startswith(("http", "www")) and "." in text
+            else text
+        ),
         "room": room,
         "url": f"/?room={room}",
         "timestamp": now.isoformat(),
@@ -1688,9 +1896,6 @@ async def send_push_to_room(room: str, sender: str, text: str):
 
 
 async def send_fcm_to_room(room: str, sender: str, text: str):
-    if is_e2e_payload(text):
-        text = "(encrypted message)"
-
     if room in DESTROYED_ROOMS:
         print(f"⛔ Skipping FCM: Room {room} is destroyed.")
         return
@@ -1996,11 +2201,6 @@ async def get_app_version():
             "name": "7.5",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
         },
     }
-
-
-@app.get("/room-pubkeys/{room}")
-async def get_room_pubkeys(room: str):
-    return {"pubkeys": ROOM_PUBKEYS.get(room, {})}
 
 
 # @app.post("/revive-room/{room}")
