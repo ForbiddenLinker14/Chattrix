@@ -1297,8 +1297,15 @@
         return;
       }
 
-      // Initialize encryption for this room
-      await exchangePublicKeys(currentRoom, currentName)
+      try {
+        // Initialize encryption for this room (with error handling)
+        await waitForSodium();
+        await exchangePublicKeys(currentRoom, currentName);
+
+      } catch (error) {
+        console.warn("⚠️ Encryption initialization failed, continuing without E2EE:", error);
+        // Continue without encryption - don't block the user from joining
+      }
 
       // Clear any previous pending state
       Storage.remove("pending_room");
@@ -3990,6 +3997,24 @@
     // =============================
     // End to End Encrypted
     // =============================
+    async function waitForSodium() {
+      if (window.sodium && sodium.ready) {
+        await sodium.ready;
+        return;
+      }
+
+      // Wait until sodium is loaded globally
+      await new Promise((resolve) => {
+        const check = setInterval(() => {
+          if (window.sodium) {
+            clearInterval(check);
+            sodium.ready.then(resolve);
+          }
+        }, 50);
+      });
+    }
+
+
     // Global variables for key management
     let userKeyPairs = new Map(); // room -> {publicKey, privateKey}
     let roomPublicKeys = new Map(); // room -> {username: publicKey}
@@ -4032,6 +4057,7 @@
 
     // Exchange public keys when joining room
     async function exchangePublicKeys(room, username) {
+      await waitForSodium();
       await sodium.ready;
       let publicKey;
 
