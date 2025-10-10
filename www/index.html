@@ -24,33 +24,6 @@
   <title>💬 Chattrix</title>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
-  <!-- Replace the libsodium script with this -->
-  <script>
-    // Enhanced libsodium loader with better timing control
-    window.libsodiumLoaded = new Promise((resolve) => {
-      const script = document.createElement('script');
-      script.src = "https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.13/sodium.min.js";
-      script.async = true;
-
-      script.onload = function () {
-        console.log("📦 libsodium script loaded, waiting for initialization...");
-        sodium.onload = function () {
-          console.log("🔐 libsodium initialized successfully!");
-          window.sodiumReady = true;
-          resolve();
-        };
-      };
-
-      script.onerror = function () {
-        console.error("❌ Failed to load libsodium");
-        resolve(); // Resolve anyway to prevent blocking
-      };
-
-      document.head.appendChild(script);
-    });
-  </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.13/sodium.min.js" async></script>
-
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#000000" />
@@ -843,6 +816,35 @@
         transform: translateY(-20px);
       }
     }
+
+    .encrypted-indicator {
+      font-size: 12px;
+      color: #25d366;
+      margin-left: 5px;
+    }
+
+    .msg.encrypted {
+      border-left: 3px solid #25d366;
+    }
+
+    .encryption-status {
+      padding: 10px;
+      margin: 10px 0;
+      background: #1a1812;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 14px;
+    }
+
+    .encryption-status.secure {
+      border: 1px solid #25d366;
+      color: #25d366;
+    }
+
+    .encryption-status.insecure {
+      border: 1px solid #e74c3c;
+      color: #e74c3c;
+    }
   </style>
 </head>
 
@@ -1311,424 +1313,535 @@
       }
     }
 
-    // =============== ENCRYPTION MANAGER ===============
-    // =============== ENCRYPTION MANAGER ===============
-    // =============== ENCRYPTION MANAGER ===============
-    const EncryptionManager = {
-      async waitForSodium() {
-        console.log("⏳ Waiting for libsodium to be ready...");
-        await window.libsodiumLoaded;
+    // ======================================================
+    // =============== End-to-End Encryption ================
+    // ======================================================
 
-        if (!window.sodiumReady) {
-          console.error("❌ libsodium failed to load properly");
-          throw new Error("libsodium not available");
-        }
+    class SignalProtocol {
+      constructor() {
+        this.identityKey = null;
+        this.registrationId = null;
+        this.preKeys = [];
+        this.signedPreKey = null;
+        this.sessions = {};
+        this.pendingKeyExchange = {};
+      }
 
-        console.log("✅ libsodium is ready for use");
-        return true;
-      },
+      // Initialize user's identity
+      async initialize() {
+        if (!this.identityKey) {
+          // Generate identity key pair (long-term)
+          this.identityKey = await this.generateKeyPair();
+          this.registrationId = Math.floor(Math.random() * 16380) + 1;
 
-      async generateKeypair() {
-        try {
-          await this.waitForSodium();
-          console.log("🔐 Generating keypair...");
+          // Generate pre-keys
+          await this.generatePreKeys();
 
-          const keypair = sodium.crypto_box_keypair();
-          const publicKey = sodium.to_base64(keypair.publicKey, sodium.base64_variants.ORIGINAL);
-          const privateKey = sodium.to_base64(keypair.privateKey, sodium.base64_variants.ORIGINAL);
+          // Generate signed pre-key
+          await this.generateSignedPreKey();
 
-          console.log("✅ Keypair generated successfully");
-          console.log("📊 Public key length:", publicKey.length);
-
-          return {
-            publicKey: publicKey,
-            privateKey: privateKey
-          };
-        } catch (error) {
-          console.error("❌ Key generation failed:", error);
-          return null;
-        }
-      },
-
-      async encryptMessage(plaintext, recipientPublicKeyBase64, senderPrivateKeyBase64) {
-        try {
-          await this.waitForSodium();
-
-          console.log("🔐 Encrypting message...");
-          console.log("📝 Plaintext length:", plaintext.length);
-          console.log("📡 Recipient public key length:", recipientPublicKeyBase64.length);
-
-          const recipientPublicKey = sodium.from_base64(recipientPublicKeyBase64, sodium.base64_variants.ORIGINAL);
-          const senderPrivateKey = sodium.from_base64(senderPrivateKeyBase64, sodium.base64_variants.ORIGINAL);
-
-          const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
-          const encrypted = sodium.crypto_box_easy(
-            plaintext,
-            nonce,
-            recipientPublicKey,
-            senderPrivateKey
-          );
-
-          const combined = new Uint8Array(nonce.length + encrypted.length);
-          combined.set(nonce);
-          combined.set(encrypted, nonce.length);
-
-          const result = sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
-          console.log("✅ Message encrypted successfully");
-          console.log("📦 Ciphertext length:", result.length);
-
-          return result;
-        } catch (error) {
-          console.error("❌ Encryption failed:", error);
-          return null;
-        }
-      },
-
-      async decryptMessage(ciphertextBase64, senderPublicKeyBase64, recipientPrivateKeyBase64) {
-        try {
-          await this.waitForSodium();
-
-          console.log("🔓 Decrypting message...");
-          console.log("📦 Ciphertext length:", ciphertextBase64.length);
-
-          const combined = sodium.from_base64(ciphertextBase64, sodium.base64_variants.ORIGINAL);
-          const senderPublicKey = sodium.from_base64(senderPublicKeyBase64, sodium.base64_variants.ORIGINAL);
-          const recipientPrivateKey = sodium.from_base64(recipientPrivateKeyBase64, sodium.base64_variants.ORIGINAL);
-
-          const nonce = combined.slice(0, sodium.crypto_box_NONCEBYTES);
-          const ciphertext = combined.slice(sodium.crypto_box_NONCEBYTES);
-
-          const decrypted = sodium.crypto_box_open_easy(
-            ciphertext,
-            nonce,
-            senderPublicKey,
-            recipientPrivateKey
-          );
-
-          if (decrypted) {
-            const result = sodium.to_string(decrypted);
-            console.log("✅ Message decrypted successfully");
-            console.log("📝 Decrypted length:", result.length);
-            return result;
-          } else {
-            console.error("❌ Decryption failed - invalid ciphertext or keys");
-            return null;
-          }
-        } catch (error) {
-          console.error("❌ Decryption error:", error);
-          return null;
+          console.log("🔐 Signal protocol initialized");
         }
       }
-    };
 
-    // Add this function to check libsodium status
-    async function ensureEncryptionReady() {
-      console.log("🔍 Checking encryption system status...");
-
-      try {
-        await EncryptionManager.waitForSodium();
-        console.log("🎉 Encryption system is fully ready!");
-        return true;
-      } catch (error) {
-        console.error("❌ Encryption system not available:", error);
-        return false;
+      // Generate EC key pair
+      async generateKeyPair() {
+        const keyPair = await window.crypto.subtle.generateKey(
+          {
+            name: "ECDH",
+            namedCurve: "P-256"
+          },
+          true,
+          ["deriveKey", "deriveBits"]
+        );
+        return keyPair;
       }
-    }
 
-    // =============== CLIENT ENCRYPTION STATE ===============
-    let clientKeypair = null;
-    let roomPublicKeys = {}; // { room: publicKey }
-    let userPublicKeys = {}; // { room: { username: publicKey } }
-    let currentRoomKeys = {}; // Current room's user keys
+      // Export public key to send to others
+      async exportPublicKey(keyPair) {
+        const publicKey = await window.crypto.subtle.exportKey(
+          "raw",
+          keyPair.publicKey
+        );
+        return this.arrayBufferToBase64(publicKey);
+      }
 
+      // Import public key from others
+      async importPublicKey(publicKeyBase64) {
+        const publicKeyBuffer = this.base64ToArrayBuffer(publicKeyBase64);
+        return await window.crypto.subtle.importKey(
+          "raw",
+          publicKeyBuffer,
+          {
+            name: "ECDH",
+            namedCurve: "P-256"
+          },
+          true,
+          []
+        );
+      }
 
-    // =============== ENCRYPTION SOCKET HANDLERS ===============
-    function setupEncryptionSocketHandlers() {
-      if (!socket) return;
-
-      // Request to generate and exchange keys when joining room
-      // Update the request_key_exchange handler
-      socket.on("request_key_exchange", async (data) => {
-        console.log("🔑 Server requesting key exchange for room:", data.room);
-        console.log("📡 Room public key received:", data.room_public_key ? "Yes" : "No");
-
-        // Store room public key
-        roomPublicKeys[data.room] = data.room_public_key;
-
-        // Ensure encryption is ready before generating keys
-        const encryptionReady = await ensureEncryptionReady();
-
-        if (!encryptionReady) {
-          console.error("❌ Cannot generate keys - encryption system not ready");
-          // Optionally, you can retry after a delay
-          setTimeout(() => {
-            socket.emit("request_key_exchange", data);
-          }, 1000);
-          return;
-        }
-
-        // Generate client keypair
-        console.log("🔄 Generating client keypair...");
-        clientKeypair = await EncryptionManager.generateKeypair();
-
-        if (clientKeypair && clientKeypair.publicKey) {
-          console.log("✅ Generated client keypair");
-          console.log("📊 Public key preview:", clientKeypair.publicKey.substring(0, 30) + "...");
-
-          // Send public key to server
-          socket.emit("exchange_keys", {
-            room: data.room,
-            username: currentName,
-            public_key: clientKeypair.publicKey,
-            ephemeral_public_key: clientKeypair.publicKey
+      // Generate pre-keys for key exchange
+      async generatePreKeys() {
+        this.preKeys = [];
+        for (let i = 0; i < 10; i++) {
+          const preKey = await this.generateKeyPair();
+          const publicKey = await this.exportPublicKey(preKey);
+          this.preKeys.push({
+            keyId: i,
+            keyPair: preKey,
+            publicKey: publicKey
           });
-          console.log("📤 Sent public key to server");
-        } else {
-          console.error("❌ Failed to generate keypair - will retry");
-          // Retry after a short delay
-          setTimeout(() => {
-            socket.emit("request_key_exchange", data);
-          }, 500);
         }
-      });
+      }
 
-      // Receive existing users' public keys
-      socket.on("existing_users_keys", (data) => {
-        console.log("🔑 Received existing users keys:", data.users.length, "users");
-        console.log("📡 Room public key:", data.room_public_key ? "Received" : "Missing");
+      // Generate signed pre-key
+      async generateSignedPreKey() {
+        this.signedPreKey = await this.generateKeyPair();
+        this.signedPreKeyPublic = await this.exportPublicKey(this.signedPreKey);
+      }
 
-        currentRoomKeys = {};
-        data.users.forEach(user => {
-          currentRoomKeys[user.username] = {
-            publicKey: user.public_key,
-            ephemeralPublicKey: user.ephemeral_public_key
-          };
-          console.log("👤 User key:", user.username, "-", user.public_key.substring(0, 20) + "...");
-        });
+      // Derive shared secret using ECDH
+      async deriveSharedSecret(privateKey, publicKey) {
+        const derivedBits = await window.crypto.subtle.deriveBits(
+          {
+            name: "ECDH",
+            public: publicKey
+          },
+          privateKey,
+          256
+        );
+        return new Uint8Array(derivedBits);
+      }
 
-        roomPublicKeys[data.room] = data.room_public_key;
-        console.log("✅ Loaded public keys for", Object.keys(currentRoomKeys).length, "users");
-      });
+      // HKDF key derivation
+      async hkdf(salt, ikm, info, length) {
+        // First extract
+        const key = await window.crypto.subtle.importKey(
+          "raw",
+          ikm,
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
 
-      // New user joined with their public key
-      socket.on("user_joined_with_key", (data) => {
-        console.log("🔑 New user joined with key:", data.username);
-        console.log("📡 Their public key:", data.public_key.substring(0, 20) + "...");
+        const prk = await window.crypto.subtle.sign(
+          "HMAC",
+          key,
+          salt
+        );
 
-        currentRoomKeys[data.username] = {
-          publicKey: data.public_key,
-          ephemeralPublicKey: data.ephemeral_public_key
+        // Then expand
+        const infoBuffer = new TextEncoder().encode(info);
+        const infoWithLength = new Uint8Array(infoBuffer.length + 1);
+        infoWithLength.set(infoBuffer);
+        infoWithLength[infoBuffer.length] = 0x01;
+
+        const hmacKey = await window.crypto.subtle.importKey(
+          "raw",
+          new Uint8Array(prk),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+
+        const okm = await window.crypto.subtle.sign(
+          "HMAC",
+          hmacKey,
+          infoWithLength
+        );
+
+        return new Uint8Array(okm).slice(0, length);
+      }
+
+      // Start key exchange with a user
+      async startKeyExchange(recipientId, recipientPreKey) {
+        const ephemeralKey = await this.generateKeyPair();
+        const recipientPublicKey = await this.importPublicKey(recipientPreKey);
+
+        // Derive shared secret
+        const sharedSecret = await this.deriveSharedSecret(
+          ephemeralKey.privateKey,
+          recipientPublicKey
+        );
+
+        // Derive encryption keys
+        const rootKey = await this.hkdf(
+          new Uint8Array(32).fill(0), // salt
+          sharedSecret,
+          "Root Key Derivation",
+          32
+        );
+
+        const chainKey = await this.hkdf(
+          rootKey,
+          new Uint8Array(32).fill(0),
+          "Chain Key Derivation",
+          32
+        );
+
+        // Store session
+        this.sessions[recipientId] = {
+          rootKey: rootKey,
+          chainKey: chainKey,
+          ephemeralKey: ephemeralKey,
+          recipientPublicKey: recipientPublicKey,
+          messageCount: 0
         };
 
-        roomPublicKeys[data.room] = data.room_public_key;
+        const ephemeralPublicKey = await this.exportPublicKey(ephemeralKey);
 
-        console.log("✅ Added new user to currentRoomKeys");
-      });
-
-      // Handle encrypted messages
-      socket.on("encrypted_message", async (data) => {
-        console.log("🔒 Received encrypted message from:", data.sender);
-        console.log("📦 Message type:", data.type);
-        console.log("🎯 Recipient:", data.recipient);
-
-        if (data.recipient === "all" || data.recipient === currentName) {
-          console.log("🔄 Attempting to decrypt message...");
-          const decrypted = await decryptIncomingMessage(data);
-
-          if (decrypted) {
-            if (data.type === "key_exchange") {
-              console.log("🔑 Key exchange message:", decrypted);
-            } else {
-              console.log("✅ Successfully decrypted message:", decrypted.substring(0, 50) + "...");
-
-              // Add to chat with encryption indicator
-              addMessage({
-                sender: data.sender,
-                text: decrypted,
-                ts: data.ts,
-                encrypted: true
-              });
-            }
-          } else {
-            console.error("❌ Failed to decrypt message");
-            addMessage({
-              sender: data.sender,
-              text: "🔒 [Encrypted message - decryption failed]",
-              ts: data.ts,
-              encrypted: true
-            });
-          }
-        }
-      });
-    }
-
-    // =============== ENCRYPTION UTILITIES ===============
-    async function sendEncryptedMessage(room, plaintext, recipient = "all") {
-      console.log("🔒 Starting encryption process...");
-      console.log("📝 Plaintext:", plaintext);
-      console.log("🎯 Recipient:", recipient);
-
-      if (!clientKeypair) {
-        console.error("❌ No keypair available for encryption");
-        return false;
+        return {
+          type: "key_exchange",
+          senderId: currentName,
+          ephemeralKey: ephemeralPublicKey,
+          identityKey: await this.exportPublicKey(this.identityKey),
+          preKeyId: 0 // In real implementation, you'd use actual pre-key ID
+        };
       }
 
-      let successCount = 0;
-      const encryptionPromises = [];
+      // Complete key exchange when receiving response
+      async completeKeyExchange(senderId, keyExchangeData) {
+        const ephemeralKey = await this.importPublicKey(keyExchangeData.ephemeralKey);
+        const senderIdentityKey = await this.importPublicKey(keyExchangeData.identityKey);
 
-      if (recipient === "all") {
-        console.log("🔄 Encrypting for all users in room...");
-
-        // Encrypt for all users in room
-        for (const username of Object.keys(currentRoomKeys)) {
-          if (username === currentName) {
-            console.log("⏭️ Skipping self:", username);
-            continue;
-          }
-
-          console.log("🔐 Encrypting for user:", username);
-          const promise = EncryptionManager.encryptMessage(
-            plaintext,
-            currentRoomKeys[username].publicKey,
-            clientKeypair.privateKey
-          ).then(encrypted => {
-            if (encrypted) {
-              socket.emit("encrypted_message", {
-                room: room,
-                sender: currentName,
-                encrypted_message: encrypted,
-                recipient: username,
-                type: "text"
-              });
-              successCount++;
-              console.log(`✅ Encrypted message for ${username}`);
-            } else {
-              console.error(`❌ Failed to encrypt for ${username}`);
-            }
-          });
-          encryptionPromises.push(promise);
-        }
-
-        // Also encrypt for room key (for persistence and system)
-        console.log("🔐 Encrypting for room key...");
-        const roomPromise = EncryptionManager.encryptMessage(
-          plaintext,
-          roomPublicKeys[room],
-          clientKeypair.privateKey
-        ).then(encrypted => {
-          if (encrypted) {
-            socket.emit("encrypted_message", {
-              room: room,
-              sender: currentName,
-              encrypted_message: encrypted,
-              recipient: "all",
-              type: "text"
-            });
-            successCount++;
-            console.log("✅ Encrypted message for room");
-          } else {
-            console.error("❌ Failed to encrypt for room");
-          }
-        });
-        encryptionPromises.push(roomPromise);
-
-        // Wait for all encryptions to complete
-        await Promise.all(encryptionPromises);
-
-      } else {
-        // Encrypt for specific recipient
-        console.log("🔐 Encrypting for specific recipient:", recipient);
-        const encrypted = await EncryptionManager.encryptMessage(
-          plaintext,
-          currentRoomKeys[recipient].publicKey,
-          clientKeypair.privateKey
+        // Derive shared secret
+        const sharedSecret = await this.deriveSharedSecret(
+          this.preKeys[0].keyPair.privateKey, // Use our pre-key private key
+          ephemeralKey
         );
 
-        if (encrypted) {
-          socket.emit("encrypted_message", {
-            room: room,
-            sender: currentName,
-            encrypted_message: encrypted,
-            recipient: recipient,
-            type: "text"
-          });
-          successCount++;
-          console.log("✅ Encrypted message for specific recipient");
-        } else {
-          console.error("❌ Failed to encrypt for specific recipient");
+        // Derive encryption keys
+        const rootKey = await this.hkdf(
+          new Uint8Array(32).fill(0),
+          sharedSecret,
+          "Root Key Derivation",
+          32
+        );
+
+        const chainKey = await this.hkdf(
+          rootKey,
+          new Uint8Array(32).fill(0),
+          "Chain Key Derivation",
+          32
+        );
+
+        // Store session
+        this.sessions[senderId] = {
+          rootKey: rootKey,
+          chainKey: chainKey,
+          ephemeralKey: ephemeralKey,
+          recipientPublicKey: senderIdentityKey,
+          messageCount: 0
+        };
+
+        console.log(`🔐 Session established with ${senderId}`);
+      }
+
+      // Derive message keys from chain key
+      async deriveMessageKeys(chainKey) {
+        const messageKey = await this.hkdf(
+          chainKey,
+          new TextEncoder().encode("Message Key"),
+          "Message Key Derivation",
+          32
+        );
+
+        const nextChainKey = await this.hkdf(
+          chainKey,
+          new TextEncoder().encode("Chain Key Step"),
+          "Chain Key Derivation",
+          32
+        );
+
+        return { messageKey, nextChainKey };
+      }
+
+      // Encrypt message for recipient
+      async encryptMessage(recipientId, message) {
+        const session = this.sessions[recipientId];
+        if (!session) {
+          throw new Error(`No session established with ${recipientId}`);
+        }
+
+        const { messageKey, nextChainKey } = await this.deriveMessageKeys(session.chainKey);
+
+        // Encrypt with AES-GCM
+        const iv = window.crypto.getRandomValues(new Uint8Array(12));
+        const encodedMessage = new TextEncoder().encode(message);
+
+        const cryptoKey = await window.crypto.subtle.importKey(
+          "raw",
+          messageKey,
+          { name: "AES-GCM" },
+          false,
+          ["encrypt"]
+        );
+
+        const encrypted = await window.crypto.subtle.encrypt(
+          {
+            name: "AES-GCM",
+            iv: iv
+          },
+          cryptoKey,
+          encodedMessage
+        );
+
+        // Update chain key
+        session.chainKey = nextChainKey;
+        session.messageCount += 1;
+
+        return {
+          ciphertext: this.arrayBufferToBase64(encrypted),
+          iv: this.arrayBufferToBase64(iv),
+          messageNumber: session.messageCount
+        };
+      }
+
+      // Decrypt message from sender
+      async decryptMessage(senderId, encryptedData) {
+        const session = this.sessions[senderId];
+        if (!session) {
+          throw new Error(`No session established with ${senderId}`);
+        }
+
+        // For simplicity, we're not handling out-of-order messages
+        // In production, you'd need to handle message numbering properly
+
+        const { messageKey, nextChainKey } = await this.deriveMessageKeys(session.chainKey);
+
+        const ciphertext = this.base64ToArrayBuffer(encryptedData.ciphertext);
+        const iv = this.base64ToArrayBuffer(encryptedData.iv);
+
+        const cryptoKey = await window.crypto.subtle.importKey(
+          "raw",
+          messageKey,
+          { name: "AES-GCM" },
+          false,
+          ["decrypt"]
+        );
+
+        try {
+          const decrypted = await window.crypto.subtle.decrypt(
+            {
+              name: "AES-GCM",
+              iv: iv
+            },
+            cryptoKey,
+            ciphertext
+          );
+
+          // Update chain key only if decryption successful
+          session.chainKey = nextChainKey;
+          session.messageCount += 1;
+
+          return new TextDecoder().decode(decrypted);
+        } catch (error) {
+          throw new Error("Failed to decrypt message");
         }
       }
 
-      console.log(`✅ Encryption completed: ${successCount} successful encryptions`);
-      return successCount > 0;
-    }
+      // Utility functions
+      arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let binary = '';
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      }
 
-    async function sendEncryptedSystemMessage(room, plaintext, recipient = "all") {
-      const encrypted = await EncryptionManager.encryptMessage(
-        plaintext,
-        roomPublicKeys[room],
-        clientKeypair.privateKey
-      );
+      base64ToArrayBuffer(base64) {
+        const binary = window.atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        return bytes.buffer;
+      }
 
-      if (encrypted) {
-        socket.emit("encrypted_message", {
-          room: room,
-          sender: "System",
-          encrypted_message: encrypted,
-          recipient: recipient,
-          type: "text"
-        });
-        console.log("✅ Sent encrypted system message");
+      // Get user's public key bundle for key exchange
+      getPublicKeyBundle() {
+        return {
+          identityKey: this.identityKey ? this.exportPublicKey(this.identityKey) : null,
+          preKeys: this.preKeys.map(pk => ({
+            keyId: pk.keyId,
+            publicKey: pk.publicKey
+          })),
+          signedPreKey: this.signedPreKeyPublic,
+          registrationId: this.registrationId
+        };
       }
     }
 
-    async function decryptIncomingMessage(data) {
-      console.log("🔓 Starting decryption process...");
-      console.log("👤 Sender:", data.sender);
+    // Initialize Signal protocol
+    const signalProtocol = new SignalProtocol();
 
-      if (!clientKeypair) {
-        console.error("❌ No keypair available for decryption");
-        return null;
+    // Initialize encryption when app starts
+    async function initializeEncryption() {
+      try {
+        await signalProtocol.initialize();
+        console.log("🔐 End-to-end encryption initialized");
+      } catch (error) {
+        console.error("❌ Failed to initialize encryption:", error);
       }
+    }
+
+    // Modified sendMessage function with encryption
+    async function sendEncryptedMessage() {
+      if (sending) return;
+
+      const inputEl = document.getElementById("input");
+      const text = inputEl.value.trim();
+      if (!text || !currentRoom) return;
+
+      sending = true;
+      document.getElementById("send").disabled = true;
 
       try {
-        let senderPublicKey;
+        let finalPayload = {
+          room: currentRoom,
+          sender: currentName,
+          text: text,
+          ts: new Date().toISOString()
+        };
 
-        if (data.sender === "System") {
-          // System messages use room public key
-          console.log("🔑 Using room public key for system message");
-          senderPublicKey = roomPublicKeys[data.room];
-        } else {
-          // User messages use their public key
-          console.log("🔑 Using user public key for user message");
-          senderPublicKey = currentRoomKeys[data.sender]?.publicKey;
+        // Encrypt message for all users in the room
+        const users = Array.from(ROOM_HISTORY.get(currentRoom) || []);
+        const encryptedMessages = {};
+
+        for (const user of users) {
+          if (user !== currentName && signalProtocol.sessions[user]) {
+            try {
+              const encrypted = await signalProtocol.encryptMessage(user, text);
+              encryptedMessages[user] = encrypted;
+            } catch (error) {
+              console.warn(`Could not encrypt for ${user}:`, error);
+            }
+          }
         }
 
-        if (!senderPublicKey) {
-          console.error("❌ No public key found for sender:", data.sender);
-          console.log("📊 Available keys:", Object.keys(currentRoomKeys));
-          return null;
+        // Add encryption info to payload
+        if (Object.keys(encryptedMessages).length > 0) {
+          finalPayload.encrypted = encryptedMessages;
+          finalPayload.encryptionVersion = "signal-v1";
         }
 
-        console.log("🔄 Calling decryption function...");
-        const decrypted = await EncryptionManager.decryptMessage(
-          data.encrypted_message,
-          senderPublicKey,
-          clientKeypair.privateKey
-        );
+        // Send the message
+        socket.emit("message", finalPayload, () => {
+          sending = false;
+          document.getElementById("send").disabled = false;
+        });
 
-        if (decrypted) {
-          console.log("✅ Decryption successful");
-          return decrypted;
-        } else {
-          console.error("❌ Decryption returned null");
-          return null;
-        }
+        inputEl.value = "";
+
       } catch (error) {
-        console.error("❌ Decryption error:", error);
-        return null;
+        console.error("❌ Error sending encrypted message:", error);
+        sending = false;
+        document.getElementById("send").disabled = false;
       }
     }
+
+    // Modified message handler for decryption
+    async function handleEncryptedMessage(data) {
+      let displayText = data.text;
+      let isEncrypted = false;
+
+      // Check if this message is encrypted for us
+      if (data.encrypted && data.encrypted[currentName]) {
+        try {
+          const encryptedData = data.encrypted[currentName];
+          displayText = await signalProtocol.decryptMessage(data.sender, encryptedData);
+          isEncrypted = true;
+        } catch (error) {
+          console.error("❌ Failed to decrypt message:", error);
+          displayText = "🔒 [Encrypted message - decryption failed]";
+          isEncrypted = true;
+        }
+      }
+
+      // Add to UI
+      const messages = document.getElementById("messages");
+      const div = document.createElement("div");
+
+      if (data.sender === "System") {
+        div.className = "msg system";
+        div.textContent = displayText;
+      } else {
+        const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
+        div.className = "msg " + (isMe ? "me" : "other");
+
+        const safeText = escapeHtml(displayText);
+        const formattedText = linkifyWithFavicon(safeText);
+
+        let lockIcon = "";
+        if (isEncrypted) {
+          lockIcon = isMe ? " 🔒" : " 🔒";
+        }
+
+        div.innerHTML = `<strong>${data.sender}${lockIcon}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
+
+        enableCopyOnMessage(div, displayText);
+        div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
+      }
+
+      messages.appendChild(div);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+    }
+
+    // Key exchange management
+    async function initiateKeyExchange(userId) {
+      try {
+        // In real implementation, you'd fetch the user's public key bundle from server
+        // For demo, we'll use a placeholder
+        const keyExchangeData = await signalProtocol.startKeyExchange(userId, "pre-key-placeholder");
+
+        socket.emit("key_exchange", {
+          targetUser: userId,
+          room: currentRoom,
+          ...keyExchangeData
+        });
+
+        console.log(`🔑 Key exchange initiated with ${userId}`);
+      } catch (error) {
+        console.error("❌ Key exchange failed:", error);
+      }
+    }
+
+    // Handle incoming key exchange
+    async function handleKeyExchange(data) {
+      if (data.targetUser === currentName) {
+        try {
+          await signalProtocol.completeKeyExchange(data.senderId, data);
+          console.log(`🔑 Key exchange completed with ${data.senderId}`);
+
+          // Send confirmation
+          socket.emit("key_exchange_complete", {
+            targetUser: data.senderId,
+            room: currentRoom
+          });
+        } catch (error) {
+          console.error("❌ Failed to complete key exchange:", error);
+        }
+      }
+    }
+
+    // Initialize key exchanges when joining room
+    async function initializeRoomEncryption() {
+      if (!currentRoom) return;
+
+      const users = Array.from(ROOM_HISTORY.get(currentRoom) || []);
+
+      for (const user of users) {
+        if (user !== currentName && !signalProtocol.sessions[user]) {
+          // Wait a bit before initiating key exchange to avoid race conditions
+          setTimeout(() => {
+            initiateKeyExchange(user);
+          }, 1000 + Math.random() * 2000);
+        }
+      }
+    }
+
     // ======================================================
     // =============== Room Management ======================
     // ======================================================
@@ -1740,14 +1853,11 @@
         return;
       }
 
-      console.log("🚪 Attempting to join room:", currentRoom);
-
-      // Wait for encryption system to be ready
-      const encryptionReady = await ensureEncryptionReady();
-      if (!encryptionReady) {
-        console.warn("⚠️ Proceeding without encryption support");
-        // You can choose to continue without encryption or show a warning
-      }
+      // Initialize encryption after joining
+      await initializeEncryption();
+      setTimeout(() => {
+        initializeRoomEncryption();
+      }, 2000);
 
       // Clear any previous pending state
       Storage.remove("pending_room");
@@ -2202,6 +2312,12 @@
         }
       });
 
+      // Add these NEW lines for encryption - put them with other socket.on handlers:
+      socket.on("key_exchange", handleKeyExchange);
+      socket.on("key_exchange_complete", (data) => {
+        console.log(`🔑 Key exchange confirmed with ${data.senderId}`);
+      });
+
       // Add this to setupSocketEventHandlers
       socket.on("pending_requests", (data) => {
         if (data.room === currentRoom && currentName === currentAdmin) {
@@ -2309,7 +2425,7 @@
         }
       });
 
-      socket.on("message", addMessage);
+      socket.on("message", handleEncryptedMessage);
       socket.on("file", addFileMessage);
 
       // Setup input handlers
@@ -2325,8 +2441,6 @@
         document.getElementById("fileInput").click();
       };
       document.getElementById("fileInput").onchange = handleFileUpload;
-
-      setupEncryptionSocketHandlers(); // Add this line
     }
 
     // previous: async function checkRoomStatus(room) { ... }
@@ -2644,48 +2758,8 @@
     // ======================================================
     // =============== Message Handling =====================
     // ======================================================
-    // Replace the existing sendMessage function
     async function sendMessage() {
-      if (sending) return;
-      const inputEl = document.getElementById("input");
-      const text = inputEl.value.trim();
-      if (!text || !currentRoom) return;
-
-      console.log("📤 Starting message send process...");
-      console.log("📝 Message:", text);
-      console.log("🏠 Room:", currentRoom);
-
-      sending = true;
-      document.getElementById("send").disabled = true;
-
-      try {
-        // Send encrypted message
-        console.log("🔒 Attempting to send encrypted message...");
-        const success = await sendEncryptedMessage(currentRoom, text, "all");
-
-        if (success) {
-          console.log("✅ Message sent successfully with encryption");
-
-          // Show the message locally with encryption indicator
-          addMessage({
-            sender: currentName,
-            text: text,
-            ts: new Date().toISOString(),
-            encrypted: true
-          });
-
-          inputEl.value = "";
-        } else {
-          console.error("❌ Failed to send encrypted message");
-          alert("Failed to send encrypted message. Please try again.");
-        }
-      } catch (error) {
-        console.error("❌ Send message error:", error);
-        alert("Error sending message: " + error.message);
-      } finally {
-        sending = false;
-        document.getElementById("send").disabled = false;
-      }
+      await sendEncryptedMessage();
     }
 
     function showCopyNotice(text) {
@@ -2760,13 +2834,10 @@
       });
     }
 
-    // Update the addMessage function to handle encrypted messages
     function addMessage(data) {
       const messages = document.getElementById("messages");
       if (data.ts) roomTimestamps[currentRoom] = data.ts;
-
       const div = document.createElement("div");
-
       if (data.sender === "System") {
         div.className = "msg system";
         div.textContent = data.text;
@@ -2776,24 +2847,15 @@
         const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
         div.className = "msg " + (isMe ? "me" : "other");
         div.dataset.ts = data.ts;
-
         const safeText = escapeHtml(data.text);
         const formattedText = linkifyWithFavicon(safeText);
-
-        // Add encryption indicator with better styling
-        const encryptionBadge = data.encrypted ?
-          '<span style="color: #25d366; font-weight: bold; margin-right: 5px;">🔒</span>' :
-          '<span style="color: #e74c3c; font-weight: bold; margin-right: 5px;">⚠️</span>';
-
-        div.innerHTML = `
-            <strong>${data.sender}</strong><br>
-            ${encryptionBadge}${formattedText}<br>
-            <small>${new Date(data.ts).toLocaleString()}</small>
-        `;
+        div.innerHTML = `<strong>${data.sender
+          }</strong><br>${formattedText}<br><small>${new Date(
+            data.ts
+          ).toLocaleString()}</small>`;
         enableCopyOnMessage(div, data.text);
         div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
       }
-
       messages.appendChild(div);
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
     }
@@ -3729,19 +3791,7 @@
     // =============== Initialization =======================
     // ======================================================
     window.addEventListener("load", async () => {
-      console.log("🚀 App starting...");
-
-      // Pre-initialize encryption system
-      console.log("🔐 Pre-loading encryption system...");
-      ensureEncryptionReady().then(ready => {
-        if (ready) {
-          console.log("🎉 Encryption system pre-loaded successfully!");
-        } else {
-          console.warn("⚠️ Encryption system failed to pre-load");
-        }
-      });
-
-
+      await initializeEncryption();
       await requestNotificationPermission();
       const savedName = Storage.get("chat_name");
       const savedRoom = Storage.get("chat_room");
