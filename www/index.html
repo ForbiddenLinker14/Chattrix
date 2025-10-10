@@ -1245,10 +1245,15 @@
     const STORE = window.idbKeyval; // safer storage backend
 
     (async () => {
-      await libsodium.ready;
-      sodium = libsodium;
-      SODIUM_READY = true;
-      console.log("🔐 libsodium ready (E2EE enabled)");
+      try {
+        const start = performance.now();
+        await libsodium.ready;
+        sodium = libsodium;
+        SODIUM_READY = true;
+        console.log(`🔐 libsodium ready in ${(performance.now() - start).toFixed(0)} ms`);
+      } catch (e) {
+        console.error("❌ libsodium init failed", e);
+      }
     })();
 
     function b64enc(u8) { return sodium.to_base64(u8, sodium.base64_variants.ORIGINAL); }
@@ -1661,6 +1666,24 @@
       document.getElementById("send").disabled = false;
       document.getElementById("attach").disabled = false;
       document.getElementById("user-list").innerHTML = "";
+
+      // 🔒 Disable Send button until encryption ready
+      const sendBtn = document.getElementById("send");
+      if (sendBtn) {
+        sendBtn.disabled = true;
+        (async () => {
+          try {
+            await libsodium.ready;
+            await ensureKeypair();
+            SODIUM_READY = true;
+            console.log("🔐 Encryption ready — Send button enabled");
+            sendBtn.disabled = false;
+          } catch (e) {
+            console.error("❌ E2EE init failed", e);
+            sendBtn.disabled = false; // allow plain text fallback
+          }
+        })();
+      }
 
       if (socket) {
         socket.off();
@@ -2260,6 +2283,7 @@
       const inputEl = document.getElementById("input");
       const text = inputEl.value.trim();
       if (!text || !currentRoom) return;
+
       const nowTs = new Date().toISOString();
       lastPersistedTs = nowTs;
       try {
@@ -2274,20 +2298,39 @@
       } catch (e) {
         console.warn("Could not persist chatState:", e);
       }
+
       sending = true;
       document.getElementById("send").disabled = true;
+
       let sub = null;
       try {
         const savedSub = localStorage.getItem("pushSub");
         sub = savedSub ? JSON.parse(savedSub) : null;
       } catch (err) {
-        console.warn(
-          "⚠️ Subscription failed, but sending message anyway:",
-          err
-        );
+        console.warn("⚠️ Subscription failed, but sending message anyway:", err);
       }
-      let payloadTextToSend = text;
+
+      /* 🧠 --- E2EE readiness guard block START --- */
+      if (!SODIUM_READY) {
+        console.warn("⚠️ libsodium not yet ready, delaying send...");
+        await libsodium.ready;
+        SODIUM_READY = true;
+      }
+
+      const keypair = await STORE.get("sodium_pk");
+      if (!keypair) {
+        console.warn("⚠️ No keypair yet — generating...");
+        await ensureKeypair();
+        await publishMyPubkey();
+      }
+
       const rk = await getRoomKey(currentRoom);
+      if (!rk) {
+        console.warn("⚠️ No room key — sending plain text (admin may not have shared key yet)");
+      }
+      /* 🧠 --- E2EE readiness guard block END --- */
+
+      let payloadTextToSend = text;
       if (rk && SODIUM_READY) {
         const key = b64dec(rk);
         const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
@@ -2299,6 +2342,7 @@
           nonce: b64enc(nonce),
         });
       }
+
       socket.emit(
         "message",
         { room: currentRoom, sender: currentName, text: payloadTextToSend, subscription: sub },
