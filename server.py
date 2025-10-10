@@ -474,9 +474,13 @@ def cleanup_old_messages():
     return before - after
 
 
-def save_message(room, sender, text=None, filename=None, mimetype=None, filedata=None):
+def save_message(
+    room, sender, text=None, filename=None, mimetype=None, filedata=None, ts=None
+):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    # Use provided ts if given, otherwise generate server ts
+    ts_to_store = ts if ts is not None else datetime.now(timezone.utc).isoformat()
     c.execute(
         "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, ts) "
         "VALUES (?,?,?,?,?,?,?)",
@@ -487,7 +491,7 @@ def save_message(room, sender, text=None, filename=None, mimetype=None, filedata
             filename,
             mimetype,
             filedata,
-            datetime.now(timezone.utc).isoformat(),
+            ts_to_store,
         ),
     )
     conn.commit()
@@ -1244,22 +1248,23 @@ async def request_public_keys(sid, data):
     target_user = data.get("targetUser")
     room = data.get("room")
     requester = data.get("requester")
-    
+
     # Forward the request to the target user
     if room in ROOM_USERS and target_user in ROOM_USERS[room]:
         target_sid = ROOM_USERS[room][target_user]
-        await sio.emit("request_public_keys", {
-            "requester": requester,
-            "room": room
-        }, room=target_sid)
+        await sio.emit(
+            "request_public_keys",
+            {"requester": requester, "room": room},
+            room=target_sid,
+        )
         print(f"🔑 Public key request forwarded from {requester} to {target_user}")
     else:
         # Notify requester that user is not available
-        await sio.emit("key_exchange_error", {
-            "error": "User not available for key exchange",
-            "targetUser": target_user
-        }, room=sid)
-
+        await sio.emit(
+            "key_exchange_error",
+            {"error": "User not available for key exchange", "targetUser": target_user},
+            room=sid,
+        )
 
 
 @sio.event
@@ -1268,15 +1273,15 @@ async def send_public_keys(sid, data):
     requester = data.get("requester")
     room = data.get("room")
     key_bundle = data.get("keyBundle")
-    
+
     # Forward the key bundle to the requester
     if room in ROOM_USERS and requester in ROOM_USERS[room]:
         requester_sid = ROOM_USERS[room][requester]
-        await sio.emit("receive_public_keys", {
-            "sender": data.get("sender"),
-            "keyBundle": key_bundle,
-            "room": room
-        }, room=requester_sid)
+        await sio.emit(
+            "receive_public_keys",
+            {"sender": data.get("sender"), "keyBundle": key_bundle, "room": room},
+            room=requester_sid,
+        )
         print(f"🔑 Public keys sent from {data.get('sender')} to {requester}")
 
 
@@ -1286,7 +1291,13 @@ async def message(sid, data):
     room = data.get("room")
     sender = data.get("sender")
     text = (data.get("text") or "").strip()
+    # Accept client-provided ts if present (helps de-dup)
+    ts = data.get("ts")
     now = datetime.now(timezone.utc)
+
+    # If client didn't provide ts, use server now
+    if not ts:
+        ts = now.isoformat()
 
     # Handle encrypted messages
     encrypted_data = data.get("encrypted")
@@ -1295,18 +1306,37 @@ async def message(sid, data):
     if not text or not room or not sender:
         return
 
-    # optional: keep duplicate suppression
-    key = (room, sender)
-    last = LAST_MESSAGE.get(key)
-    if last and last[0] == text and (now - last[1]).total_seconds() < 1.5:
-        return
-    LAST_MESSAGE[key] = (text, now)
+    # Duplicate suppression: check DB for same room/sender/ts
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute(
+            "SELECT COUNT(*) FROM messages WHERE room = ? AND sender = ? AND ts = ?",
+            (room, sender, ts),
+        )
+        exists = c.fetchone()[0] > 0
+        conn.close()
+        if exists:
+            # Already stored/processed — skip
+            print(f"🛑 Duplicate message ignored: {sender} @ {room} [{ts}]")
+            return
+    except Exception as e:
+        print("❌ Duplicate-check DB error:", e)
+        # fall through and continue to save/broadcast to avoid data loss
 
-    # Store the message (server doesn't need to understand encryption)
-    save_message(room, sender, text=text)
+    # optional: keep lightweight in-memory duplicate suppression too
+    key = (room, sender, text, ts)
+    last = LAST_MESSAGE.get((room, sender))
+    if last and last[0] == text and (now - last[1]).total_seconds() < 1.5:
+        # still honor the previous heuristic (best-effort)
+        pass
+    LAST_MESSAGE[(room, sender)] = (text, now)
+
+    # Store the message (server doesn't need to understand encryption). Include ts.
+    save_message(room, sender, text=text, ts=ts)
 
     # Broadcast the message with encryption data intact
-    message_payload = {"sender": sender, "text": text, "ts": now.isoformat()}
+    message_payload = {"sender": sender, "text": text, "ts": ts}
 
     # Preserve encryption data if present
     if encrypted_data:
@@ -1318,13 +1348,13 @@ async def message(sid, data):
     # Update unread counts and send push notifications (existing code)
     for username in ROOM_HISTORY.get(room, set()):
         if username != sender:
-            key = (username, room)
-            USER_LAST_SEEN[key] = now.isoformat()
+            key2 = (username, room)
+            USER_LAST_SEEN[key2] = now.isoformat()
 
     try:
         await sio.emit(
             "room_message_meta",
-            {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
+            {"room": room, "sender": sender, "text": text, "ts": ts},
         )
     except Exception as e:
         print("Failed to emit room_message_meta:", e)
