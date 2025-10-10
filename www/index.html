@@ -4032,6 +4032,7 @@
 
     // Exchange public keys when joining room
     async function exchangePublicKeys(room, username) {
+      await sodium.ready;
       let publicKey;
 
       // Load or generate keys
