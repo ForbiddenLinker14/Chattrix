@@ -4002,6 +4002,7 @@
     let signalStore;
     let signalProtocol;
     let sessionCiphers = {}; // { room_user: sessionCipher }
+    let ROOM_USERS = {}; // Add this line to define ROOM_USERS
 
     // Initialize Signal Protocol
     async function initializeSignalProtocol() {
@@ -4131,28 +4132,42 @@
     }
 
     // Import identity private key for signing
+    // Import identity private key for signing
     async function importIdentityPrivateKey() {
       const identityKeyPair = signalStore.identityKey;
       return await window.crypto.subtle.importKey(
         "pkcs8",
         base64ToArrayBuffer(identityKeyPair.privateKey),
         {
-          name: "ECDH",
+          name: "ECDSA", // Changed from ECDH to ECDSA for signing
           namedCurve: "P-256"
         },
         true,
-        ["deriveKey", "deriveBits"]
+        ["sign"] // Only need sign capability
       );
     }
 
     // Sign data with identity key
+    // Fix the signData function - use the correct algorithm for ECDSA
     async function signData(data, privateKey) {
+      // Import the private key with the correct algorithm for signing
+      const signKey = await window.crypto.subtle.importKey(
+        "pkcs8",
+        base64ToArrayBuffer(signalStore.identityKey.privateKey),
+        {
+          name: "ECDSA",
+          namedCurve: "P-256"
+        },
+        true,
+        ["sign"]
+      );
+
       return await window.crypto.subtle.sign(
         {
           name: "ECDSA",
           hash: { name: "SHA-256" }
         },
-        privateKey,
+        signKey,
         data
       );
     }
