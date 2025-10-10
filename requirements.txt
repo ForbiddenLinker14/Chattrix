@@ -16,7 +16,6 @@ python-multipart   # 👈 for file uploads
 # --- Push Notifications (Web + FCM) ---
 pywebpush
 cryptography
-pynacl
 
 # --- Firebase Admin SDK (for FCM) ---
 firebase-admin
