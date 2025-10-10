@@ -4114,6 +4114,7 @@
     // Encrypt message using hybrid encryption
     async function encryptMessage(room, message) {
       if (!encryptionEnabled || !myKeyPair) {
+        console.log("🔓 Encryption disabled, sending plain text");
         return { encrypted: false, data: message };
       }
 
@@ -4123,6 +4124,7 @@
         // Get or create symmetric key for this room
         let symmetricKey = roomSymmetricKeys.get(room);
         if (!symmetricKey) {
+          console.log(`🔑 Generating new symmetric key for room ${room}`);
           symmetricKey = await generateSymmetricKey();
           roomSymmetricKeys.set(room, symmetricKey);
 
@@ -4157,7 +4159,8 @@
     // Decrypt message
     async function decryptMessage(encryptedData) {
       if (!encryptionEnabled || !encryptedData.encrypted || !myKeyPair) {
-        return encryptedData.data;
+        console.log("🔓 No decryption needed or encryption disabled");
+        return encryptedData.data || encryptedData;
       }
 
       try {
@@ -4194,7 +4197,13 @@
     async function broadcastSymmetricKey(room, symmetricKey) {
       if (!socket || !socket.connected) return;
 
-      const roomUsers = Array.from(roomPublicKeys.get(room) || []);
+      const roomKeys = roomPublicKeys.get(room);
+      if (!roomKeys) {
+        console.warn("⚠️ No public keys available for room", room);
+        return;
+      }
+
+      const roomUsers = Array.from(roomKeys.entries());
 
       for (const [username, publicKey] of roomUsers) {
         if (username === currentName) continue; // Skip self
@@ -4220,6 +4229,8 @@
             sender: currentName
           });
 
+          console.log(`🔑 Sent encrypted symmetric key to ${username}`);
+
         } catch (error) {
           console.error(`❌ Failed to encrypt key for ${username}:`, error);
         }
@@ -4236,7 +4247,9 @@
         // Get sender's public key
         const senderPublicKey = roomPublicKeys.get(room)?.get(sender);
         if (!senderPublicKey) {
-          console.warn(`⚠️ No public key for sender ${sender}`);
+          console.warn(`⚠️ No public key for sender ${sender}, requesting...`);
+          // Request public key if missing
+          setTimeout(() => sharePublicKey(room), 1000);
           return;
         }
 
@@ -4280,6 +4293,8 @@
         }
         roomPublicKeys.get(room).set(currentName, myKeyPair.publicKey);
 
+        console.log(`🔑 Shared public key for room ${room}`);
+
       } catch (error) {
         console.error("❌ Failed to share public key:", error);
       }
@@ -4297,6 +4312,14 @@
         roomPublicKeys.get(room).set(username, sodium.from_base64(publicKey));
         console.log(`✅ Received public key for ${username} in room ${room}`);
 
+        // If we have a symmetric key for this room, share it with the new user
+        const symmetricKey = roomSymmetricKeys.get(room);
+        if (symmetricKey && username !== currentName) {
+          setTimeout(() => {
+            broadcastSymmetricKey(room, symmetricKey);
+          }, 500);
+        }
+
       } catch (error) {
         console.error("❌ Failed to handle public key:", error);
       }
@@ -4309,6 +4332,13 @@
       if (encryptionEnabled) {
         await initializeEncryption();
         showAlert("End-to-end encryption enabled", 'success');
+
+        // Share public key if in a room
+        if (currentRoom) {
+          setTimeout(() => {
+            sharePublicKey(currentRoom);
+          }, 1000);
+        }
       } else {
         // Clear all encryption state
         roomPublicKeys.clear();
@@ -4353,8 +4383,6 @@
       }
     }
 
-    // WRAPPER FUNCTIONS - These work with your existing code without replacing it
-
     // Enhanced send function that handles encryption
     async function sendMessageWithEncryption() {
       if (sending) return;
@@ -4371,9 +4399,7 @@
 
       try {
         // Encrypt the message if encryption is enabled
-        const messageData = encryptionEnabled ?
-          await encryptMessage(currentRoom, text) :
-          text; // Send plain text if encryption is off
+        const messageData = await encryptMessage(currentRoom, text);
 
         let sub = null;
         try {
@@ -4429,23 +4455,24 @@
         if (typeof data.text === 'object' && data.text.encrypted) {
           try {
             messageText = await decryptMessage(data.text);
-
-            // Add encryption indicator
-            if (messageText !== data.text.data) {
-              div.dataset.encrypted = 'true';
-            }
           } catch (error) {
             messageText = '[Encrypted message]';
             console.warn('Failed to decrypt message:', error);
           }
+        } else if (typeof data.text === 'string' && encryptionEnabled) {
+          // Message is plain text but encryption is enabled
+          console.log("🔓 Received plain text message when encryption is enabled");
         }
 
         const safeText = escapeHtml(messageText);
         const formattedText = linkifyWithFavicon(safeText);
 
-        div.innerHTML = `<strong>${data.sender}</strong>` +
-          (div.dataset.encrypted ? ' <small style="color: #27ae60;">🔒</small>' : '') +
-          `<br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
+        let encryptionIndicator = '';
+        if (typeof data.text === 'object' && data.text.encrypted) {
+          encryptionIndicator = ' <small style="color: #27ae60;">🔒</small>';
+        }
+
+        div.innerHTML = `<strong>${data.sender}</strong>${encryptionIndicator}<br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
 
         enableCopyOnMessage(div, messageText);
         div.querySelectorAll('a').forEach((a) => enableCopyOnLink(a));
@@ -4454,6 +4481,52 @@
       messages.appendChild(div);
       messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
     }
+
+    // Store original functions
+    const originalSendMessage = window.sendMessage;
+    const originalAddMessage = window.addMessage;
+
+    // Override send function
+    window.sendMessage = async function () {
+      if (encryptionEnabled) {
+        await sendMessageWithEncryption();
+      } else {
+        originalSendMessage();
+      }
+    };
+
+    // Override add message function  
+    window.addMessage = async function (data) {
+      if (encryptionEnabled && data.sender !== 'System') {
+        await displayMessageWithDecryption(data);
+      } else {
+        originalAddMessage(data);
+      }
+    };
+
+    // Setup encryption socket handlers
+    function setupEncryptionSocketHandlers() {
+      if (!socket) return;
+
+      socket.on('share_public_key', handlePublicKey);
+      socket.on('encrypted_key', handleEncryptedKey);
+
+      socket.on('user_joined', async (data) => {
+        if (encryptionEnabled && data.room === currentRoom && data.user !== currentName) {
+          // New user joined, share our public key with them
+          setTimeout(() => {
+            sharePublicKey(data.room);
+          }, 1000);
+        }
+      });
+    }
+
+    // Enhance the existing socket setup to include encryption handlers
+    const originalSetupSocketHandlers = setupSocketEventHandlers;
+    setupSocketEventHandlers = function () {
+      originalSetupSocketHandlers();
+      setupEncryptionSocketHandlers();
+    };
 
     // Initialize encryption when app starts
     document.addEventListener('DOMContentLoaded', async () => {
@@ -4479,69 +4552,27 @@
       updateEncryptionUI();
     });
 
-    // INTERCEPTOR APPROACH - This is the key part that works with your existing code
 
-    // Store original functions
-    const originalSendMessage = window.sendMessage;
-    const originalAddMessage = window.addMessage;
+    // Debug function to test encryption
+    window.testEncryption = async function () {
+      console.log("🧪 Testing encryption...");
+      console.log("Encryption enabled:", encryptionEnabled);
+      console.log("Key pair available:", !!myKeyPair);
+      console.log("Current room:", currentRoom);
+      console.log("Room symmetric key:", roomSymmetricKeys.get(currentRoom));
+      console.log("Room public keys:", roomPublicKeys.get(currentRoom));
 
-    // Enhanced send function that preserves your original logic
-    window.sendMessage = async function () {
-      if (encryptionEnabled) {
-        await sendMessageWithEncryption();
-      } else {
-        // Use original function if encryption is disabled
-        originalSendMessage();
-      }
-    };
+      if (encryptionEnabled && myKeyPair) {
+        const testMessage = "Test encryption message";
+        const encrypted = await encryptMessage(currentRoom, testMessage);
+        console.log("Encrypted test:", encrypted);
 
-    // Enhanced add message function that preserves your original logic  
-    window.addMessage = async function (data) {
-      if (encryptionEnabled && data.sender !== 'System') {
-        await displayMessageWithDecryption(data);
-      } else {
-        // Use original function if encryption is disabled or system message
-        originalAddMessage(data);
-      }
-    };
-
-    // Add socket event listeners for encryption
-    function setupEncryptionSocketHandlers() {
-      if (!socket) return;
-
-      socket.on('share_public_key', handlePublicKey);
-      socket.on('encrypted_key', handleEncryptedKey);
-
-      socket.on('user_joined', async (data) => {
-        if (encryptionEnabled && data.room === currentRoom && data.user !== currentName) {
-          // New user joined, share our public key with them
-          setTimeout(() => {
-            sharePublicKey(data.room);
-          }, 500);
+        if (encrypted.encrypted) {
+          const decrypted = await decryptMessage(encrypted);
+          console.log("Decrypted test:", decrypted);
+          console.log("Test passed:", decrypted === testMessage);
         }
-      });
-    }
-
-    // Enhance the existing socket setup to include encryption handlers
-    const originalSetupSocketHandlers = setupSocketEventHandlers;
-    setupSocketEventHandlers = function () {
-      originalSetupSocketHandlers.apply(this, arguments);
-      setupEncryptionSocketHandlers();
-    };
-
-    // Enhance joinRoom to share public key
-    const originalJoinRoom = window.joinRoom;
-    window.joinRoom = async function () {
-      const result = await originalJoinRoom.apply(this, arguments);
-
-      // Share public key after joining room
-      if (encryptionEnabled && currentRoom) {
-        setTimeout(() => {
-          sharePublicKey(currentRoom);
-        }, 1000);
       }
-
-      return result;
     };
   </script>
 
