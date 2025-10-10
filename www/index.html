@@ -1291,15 +1291,8 @@
       return escapeHtml(s).replace(/"/g, "&quot;");
     }
     function bumpTs(ts) {
-      if (ts && (!lastPersistedTs || ts > lastPersistedTs)) {
+      if (ts && (!lastPersistedTs || ts > lastPersistedTs))
         lastPersistedTs = ts;
-
-        // Persist the timestamp for the current room
-        if (currentRoom) {
-          const roomLastTsKey = `lastTs_${currentRoom}`;
-          Storage.set(roomLastTsKey, ts);
-        }
-      }
     }
     function sendActive(active) {
       if (socket) socket.emit("status", { active });
@@ -1925,11 +1918,6 @@
       let displayText = data.text;
       let isEncrypted = false;
 
-      // Ensure the timestamp is persisted for the current room
-      if (currentRoom && data.ts) {
-        const roomLastTsKey = `lastTs_${currentRoom}`;
-        Storage.set(roomLastTsKey, data.ts);
-      }
       // Check if this message is encrypted for us
       if (data.encrypted && data.encrypted[currentName]) {
         try {
@@ -2412,10 +2400,6 @@
     // Extract the main join logic into a separate function
     async function proceedWithJoin(room, username) {
       const roomStatus = await checkRoomStatus(room, username);
-      const roomLastTsKey = `lastTs_${room}`;
-      const storedLastTs = Storage.get(roomLastTsKey);
-      const effectiveLastTs = storedLastTs || lastPersistedTs;
-
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
           closeDestroyedRoomAlert();
@@ -2467,7 +2451,7 @@
           {
             room: room,
             sender: username,
-            lastTs: effectiveLastTs,
+            lastTs: lastPersistedTs || null,
             fcmToken: fcmToken,
           },
           (ack) => {
@@ -2475,9 +2459,6 @@
               joinedRooms.add(room);
               sendActive(!document.hidden);
 
-              if (lastPersistedTs) {
-                Storage.set(roomLastTsKey, lastPersistedTs);
-              }
               // Update UI with room lock state
               const isLocked = roomLockStates[room];
               if (isLocked !== undefined) {
@@ -2499,18 +2480,12 @@
       socket.on("connect", () => {
         if (room && username) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
-
-          // Get stored timestamp for this room
-          const roomLastTsKey = `lastTs_${room}`;
-          const storedLastTs = Storage.get(roomLastTsKey);
-          const effectiveLastTs = storedLastTs || lastPersistedTs;
-
           socket.emit(
             "join",
             {
               room: room,
               sender: username,
-              lastTs: effectiveLastTs,  // Use stored timestamp
+              lastTs: lastPersistedTs || null,
               fcmToken: fcmToken,
             },
             (ack) => {
@@ -2519,13 +2494,9 @@
                 sendActive(!document.hidden);
                 fetchUnreadCounts();
 
-                // Update stored timestamp after successful join
-                if (lastPersistedTs) {
-                  Storage.set(roomLastTsKey, lastPersistedTs);
-                }
-
                 // Check if we became admin and load pending requests
                 if (currentName === currentAdmin) {
+                  // Load any pending join requests for this room
                   socket.emit("get_pending_requests", {
                     room: room,
                     user: currentName
@@ -3019,11 +2990,6 @@
     function switchRoom(room) {
       if (!room || room === currentRoom) return;
       const previousRoom = currentRoom;
-      // Clean up timestamp for previous room if we're switching
-      if (previousRoom) {
-        const prevRoomLastTsKey = `lastTs_${previousRoom}`;
-        Storage.remove(prevRoomLastTsKey);
-      }
       const messagesEl = document.getElementById("messages");
       const usersEl = document.getElementById("user-list");
       messagesEl && (messagesEl.innerHTML = "");
@@ -4010,9 +3976,6 @@
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
 
-      // Clean up the stored timestamp for this room
-      const roomLastTsKey = `lastTs_${leftRoom}`;
-      Storage.remove(roomLastTsKey);
       // First, send the leave event to the server
       if (socket && socket.connected) {
         socket.emit("leave", {
@@ -4155,10 +4118,6 @@
             Storage.remove("chat_name");
             Storage.remove("chat_room");
 
-            // Set lastPersistedTs from storage before joining
-            const roomLastTsKey = `lastTs_${savedRoom}`;
-            lastPersistedTs = Storage.get(roomLastTsKey) || null;
-            joinRoom({ preserveMessages: true });
             // ✅ CLEAR from joinedRoomsByUser
             if (joinedRoomsByUser[savedName]) {
               joinedRoomsByUser[savedName] = joinedRoomsByUser[
