@@ -819,6 +819,83 @@ async def destroy_room(room: str, request: Request):
     return {"status": "ok"}
 
 
+# Add new event handlers
+@sio.event
+async def public_key_exchange(sid, data):
+    """Handle public key exchange between users"""
+    room = data.get("room")
+    user = data.get("user")
+    public_key = data.get("publicKey")
+
+    if not all([room, user, public_key]):
+        return
+
+    # Broadcast public key to all users in the room
+    await sio.emit(
+        "public_key_exchange",
+        {"room": room, "user": user, "publicKey": public_key},
+        room=room,
+    )
+
+    print(f"🔑 Public key exchanged for {user} in room {room}")
+
+
+@sio.event
+async def encrypted_message(sid, data):
+    """Handle encrypted messages"""
+    room = data.get("room")
+    sender = data.get("sender")
+    encrypted_data = data.get("encryptedData")
+    timestamp = data.get("timestamp")
+
+    if not all([room, sender, encrypted_data]):
+        return
+
+    # Store encrypted message in database
+    save_encrypted_message(room, sender, json.dumps(encrypted_data), timestamp)
+
+    # Broadcast encrypted message to room
+    await sio.emit(
+        "encrypted_message",
+        {
+            "room": room,
+            "sender": sender,
+            "encryptedData": encrypted_data,
+            "timestamp": timestamp,
+        },
+        room=room,
+    )
+
+    print(f"🔒 Encrypted message from {sender} in room {room}")
+
+
+def save_encrypted_message(room, sender, encrypted_data, timestamp):
+    """Save encrypted message to database"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Create table if not exists
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS encrypted_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            room TEXT NOT NULL,
+            sender TEXT NOT NULL,
+            encrypted_data TEXT NOT NULL,
+            ts TEXT NOT NULL
+        )
+    """
+    )
+
+    c.execute(
+        "INSERT INTO encrypted_messages (room, sender, encrypted_data, ts) VALUES (?, ?, ?, ?)",
+        (room, sender, encrypted_data, timestamp),
+    )
+
+    conn.commit()
+    conn.close()
+
+
 # ---------------- Socket.IO Events ----------------
 @sio.event
 async def approve_join_request(sid, data):
