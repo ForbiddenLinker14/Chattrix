@@ -1039,9 +1039,9 @@
   </div>
 
   <!-- E2EE dependencies -->
-  <script src="https://unpkg.com/libsodium-wrappers/dist/libsodium-wrappers.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/libsodium-wrappers@0.7.13/dist/sodium-wrappers.min.js"></script>
   <script src="https://unpkg.com/idb-keyval@6/dist/idb-keyval.iife.js"></script>
-  
+
   <script>
     // ======================================================
     // =============== Fresh Install / Version Reset =========
@@ -1238,35 +1238,70 @@
       currentRoom = "",
       currentName = "";
 
+    function b64enc(u8) {
+      if (!sodium) throw new Error("Sodium not initialized");
+      return sodium.to_base64(u8, sodium.base64_variants.ORIGINAL);
+    }
+    function b64dec(s) {
+      if (!sodium) throw new Error("Sodium not initialized");
+      return sodium.from_base64(s, sodium.base64_variants.ORIGINAL);
+    }
     /* ====================== E2EE (libsodium + IndexedDB) ====================== */
     let sodium = null;
     let SODIUM_READY = false;
     const ROOM_PUBKEYS = {}; // { room: { username: pubkey_b64 } }
     const STORE = window.idbKeyval; // safer storage backend
 
-    (async function initSodium() {
+    // Improved libsodium initialization with better error handling
+    async function initSodium() {
+      if (SODIUM_READY) return;
+
       try {
-        // Wait until the libsodium global exists
-        while (typeof window.libsodium === "undefined") {
-          console.warn("⚠️ Waiting for libsodium to load...");
-          await new Promise(r => setTimeout(r, 100));
+        console.log("🔐 Initializing libsodium...");
+
+        // Wait for libsodium to be available
+        if (typeof window.libsodium === "undefined") {
+          console.warn("⚠️ libsodium not loaded, waiting...");
+
+          // Wait up to 10 seconds for libsodium to load
+          for (let i = 0; i < 100; i++) {
+            if (typeof window.libsodium !== "undefined") break;
+            await new Promise(r => setTimeout(r, 100));
+          }
+
+          if (typeof window.libsodium === "undefined") {
+            throw new Error("libsodium failed to load after 10 seconds");
+          }
         }
 
         const start = performance.now();
         await window.libsodium.ready;
         window.sodium = window.libsodium;
-        window.SODIUM_READY = true;
+        SODIUM_READY = true;
         console.log(`🔐 libsodium ready in ${(performance.now() - start).toFixed(0)} ms`);
       } catch (e) {
         console.error("❌ libsodium init failed", e);
+        SODIUM_READY = false;
       }
-    })();
+    }
+
+    // Initialize sodium immediately
+    initSodium();
 
     function b64enc(u8) { return sodium.to_base64(u8, sodium.base64_variants.ORIGINAL); }
     function b64dec(s) { return sodium.from_base64(s, sodium.base64_variants.ORIGINAL); }
 
     async function ensureKeypair() {
-      if (!SODIUM_READY) await libsodium.ready;
+      // Wait for sodium to be ready
+      if (!SODIUM_READY) {
+        console.warn("🔐 Waiting for sodium to be ready...");
+        await initSodium();
+      }
+
+      if (!SODIUM_READY) {
+        throw new Error("Sodium not available - encryption disabled");
+      }
+
       const existingPk = await STORE.get("sodium_pk");
       const existingSk = await STORE.get("sodium_sk");
       if (!existingPk || !existingSk) {
