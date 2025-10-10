@@ -816,35 +816,6 @@
         transform: translateY(-20px);
       }
     }
-
-    .encrypted-indicator {
-      font-size: 12px;
-      color: #25d366;
-      margin-left: 5px;
-    }
-
-    .msg.encrypted {
-      border-left: 3px solid #25d366;
-    }
-
-    .encryption-status {
-      padding: 10px;
-      margin: 10px 0;
-      background: #1a1812;
-      border-radius: 8px;
-      text-align: center;
-      font-size: 14px;
-    }
-
-    .encryption-status.secure {
-      border: 1px solid #25d366;
-      color: #25d366;
-    }
-
-    .encryption-status.insecure {
-      border: 1px solid #e74c3c;
-      color: #e74c3c;
-    }
   </style>
 </head>
 
@@ -1314,818 +1285,6 @@
     }
 
     // ======================================================
-    // =============== End-to-End Encryption ================
-    // ======================================================
-
-    class SignalProtocol {
-      constructor() {
-        this.identityKey = null;
-        this.registrationId = null;
-        this.preKeys = [];
-        this.signedPreKey = null;
-        this.sessions = {};
-        this.pendingKeyExchange = {};
-      }
-
-      // Initialize user's identity
-      async initialize() {
-        if (!this.identityKey) {
-          // Generate identity key pair (long-term)
-          this.identityKey = await this.generateKeyPair();
-          this.registrationId = Math.floor(Math.random() * 16380) + 1;
-
-          // Generate pre-keys
-          await this.generatePreKeys();
-
-          // Generate signed pre-key
-          await this.generateSignedPreKey();
-
-          console.log("🔐 Signal protocol initialized");
-        }
-      }
-
-      // Generate EC key pair
-      async generateKeyPair() {
-        const keyPair = await window.crypto.subtle.generateKey(
-          {
-            name: "ECDH",
-            namedCurve: "P-256"
-          },
-          true,
-          ["deriveKey", "deriveBits"]
-        );
-        return keyPair;
-      }
-
-      // Export public key to send to others
-      async exportPublicKey(keyPair) {
-        const publicKey = await window.crypto.subtle.exportKey(
-          "raw",
-          keyPair.publicKey
-        );
-        return this.arrayBufferToBase64(publicKey);
-      }
-
-      // Import public key from others
-      async importPublicKey(publicKeyBase64) {
-        if (!publicKeyBase64 || typeof publicKeyBase64 !== 'string') {
-          throw new Error("Invalid public key: must be a base64 string");
-        }
-
-        if (publicKeyBase64.length < 10) {
-          throw new Error("Invalid public key: too short");
-        }
-
-        const publicKeyBuffer = this.base64ToArrayBuffer(publicKeyBase64);
-        return await window.crypto.subtle.importKey(
-          "raw",
-          publicKeyBuffer,
-          {
-            name: "ECDH",
-            namedCurve: "P-256"
-          },
-          true,
-          []
-        );
-      }
-
-      // Generate pre-keys for key exchange
-      async generatePreKeys() {
-        this.preKeys = [];
-        for (let i = 0; i < 10; i++) {
-          const preKey = await this.generateKeyPair();
-          const publicKey = await this.exportPublicKey(preKey);
-          this.preKeys.push({
-            keyId: i,
-            keyPair: preKey,
-            publicKey: publicKey
-          });
-        }
-      }
-
-      // Generate signed pre-key
-      async generateSignedPreKey() {
-        this.signedPreKey = await this.generateKeyPair();
-        this.signedPreKeyPublic = await this.exportPublicKey(this.signedPreKey);
-      }
-
-      // Derive shared secret using ECDH
-      async deriveSharedSecret(privateKey, publicKey) {
-        const derivedBits = await window.crypto.subtle.deriveBits(
-          {
-            name: "ECDH",
-            public: publicKey
-          },
-          privateKey,
-          256
-        );
-        return new Uint8Array(derivedBits);
-      }
-
-      // HKDF key derivation
-      async hkdf(salt, ikm, info, length) {
-        // First extract
-        const key = await window.crypto.subtle.importKey(
-          "raw",
-          ikm,
-          { name: "HMAC", hash: "SHA-256" },
-          false,
-          ["sign"]
-        );
-
-        const prk = await window.crypto.subtle.sign(
-          "HMAC",
-          key,
-          salt
-        );
-
-        // Then expand
-        const infoBuffer = new TextEncoder().encode(info);
-        const infoWithLength = new Uint8Array(infoBuffer.length + 1);
-        infoWithLength.set(infoBuffer);
-        infoWithLength[infoBuffer.length] = 0x01;
-
-        const hmacKey = await window.crypto.subtle.importKey(
-          "raw",
-          new Uint8Array(prk),
-          { name: "HMAC", hash: "SHA-256" },
-          false,
-          ["sign"]
-        );
-
-        const okm = await window.crypto.subtle.sign(
-          "HMAC",
-          hmacKey,
-          infoWithLength
-        );
-
-        return new Uint8Array(okm).slice(0, length);
-      }
-
-      // Start key exchange with a user
-      async startKeyExchange(recipientId, recipientPreKey) {
-        const ephemeralKey = await this.generateKeyPair();
-        const recipientPublicKey = await this.importPublicKey(recipientPreKey);
-
-        // Derive shared secret
-        const sharedSecret = await this.deriveSharedSecret(
-          ephemeralKey.privateKey,
-          recipientPublicKey
-        );
-
-        // Derive encryption keys
-        const rootKey = await this.hkdf(
-          new Uint8Array(32).fill(0), // salt
-          sharedSecret,
-          "Root Key Derivation",
-          32
-        );
-
-        const chainKey = await this.hkdf(
-          rootKey,
-          new Uint8Array(32).fill(0),
-          "Chain Key Derivation",
-          32
-        );
-
-        // Store session
-        this.sessions[recipientId] = {
-          rootKey: rootKey,
-          chainKey: chainKey,
-          ephemeralKey: ephemeralKey,
-          recipientPublicKey: recipientPublicKey,
-          messageCount: 0
-        };
-
-        const ephemeralPublicKey = await this.exportPublicKey(ephemeralKey);
-
-        return {
-          type: "key_exchange",
-          senderId: currentName,
-          ephemeralKey: ephemeralPublicKey,
-          identityKey: await this.exportPublicKey(this.identityKey),
-          preKeyId: 0 // In real implementation, you'd use actual pre-key ID
-        };
-      }
-
-      // Complete key exchange when receiving response
-      async completeKeyExchange(senderId, keyExchangeData) {
-        const ephemeralKey = await this.importPublicKey(keyExchangeData.ephemeralKey);
-        const senderIdentityKey = await this.importPublicKey(keyExchangeData.identityKey);
-
-        // Derive shared secret
-        const sharedSecret = await this.deriveSharedSecret(
-          this.preKeys[0].keyPair.privateKey,
-          ephemeralKey
-        );
-
-        // Derive encryption keys
-        const rootKey = await this.hkdf(
-          new Uint8Array(32).fill(0),
-          sharedSecret,
-          "Root Key Derivation",
-          32
-        );
-
-        const chainKey = await this.hkdf(
-          rootKey,
-          new Uint8Array(32).fill(0),
-          "Chain Key Derivation",
-          32
-        );
-
-        // Store session
-        this.sessions[senderId] = {
-          rootKey: rootKey,
-          chainKey: chainKey,
-          ephemeralKey: ephemeralKey,
-          recipientPublicKey: senderIdentityKey,
-          messageCount: 0
-        };
-
-        // Save sessions after key exchange
-        this.saveSessions();
-
-        console.log(`🔐 Session established with ${senderId}`);
-      }
-
-      // Derive message keys from chain key
-      async deriveMessageKeys(chainKey) {
-        const messageKey = await this.hkdf(
-          chainKey,
-          new TextEncoder().encode("Message Key"),
-          "Message Key Derivation",
-          32
-        );
-
-        const nextChainKey = await this.hkdf(
-          chainKey,
-          new TextEncoder().encode("Chain Key Step"),
-          "Chain Key Derivation",
-          32
-        );
-
-        return { messageKey, nextChainKey };
-      }
-
-      // Encrypt message for recipient
-      async encryptMessage(recipientId, message) {
-        const session = this.sessions[recipientId];
-        if (!session) {
-          throw new Error(`No session established with ${recipientId}`);
-        }
-
-        const { messageKey, nextChainKey } = await this.deriveMessageKeys(session.chainKey);
-
-        // Encrypt with AES-GCM
-        const iv = window.crypto.getRandomValues(new Uint8Array(12));
-        const encodedMessage = new TextEncoder().encode(message);
-
-        const cryptoKey = await window.crypto.subtle.importKey(
-          "raw",
-          messageKey,
-          { name: "AES-GCM" },
-          false,
-          ["encrypt"]
-        );
-
-        const encrypted = await window.crypto.subtle.encrypt(
-          {
-            name: "AES-GCM",
-            iv: iv
-          },
-          cryptoKey,
-          encodedMessage
-        );
-
-        // Update chain key
-        session.chainKey = nextChainKey;
-        session.messageCount += 1;
-
-        // Save sessions after encryption
-        this.saveSessions();
-
-        return {
-          ciphertext: this.arrayBufferToBase64(encrypted),
-          iv: this.arrayBufferToBase64(iv),
-          messageNumber: session.messageCount
-        };
-      }
-
-      // Decrypt message from sender
-      async decryptMessage(senderId, encryptedData) {
-        const session = this.sessions[senderId];
-        if (!session) {
-          throw new Error(`No session established with ${senderId}`);
-        }
-
-        const { messageKey, nextChainKey } = await this.deriveMessageKeys(session.chainKey);
-
-        const ciphertext = this.base64ToArrayBuffer(encryptedData.ciphertext);
-        const iv = this.base64ToArrayBuffer(encryptedData.iv);
-
-        const cryptoKey = await window.crypto.subtle.importKey(
-          "raw",
-          messageKey,
-          { name: "AES-GCM" },
-          false,
-          ["decrypt"]
-        );
-
-        try {
-          const decrypted = await window.crypto.subtle.decrypt(
-            {
-              name: "AES-GCM",
-              iv: iv
-            },
-            cryptoKey,
-            ciphertext
-          );
-
-          // Update chain key only if decryption successful
-          session.chainKey = nextChainKey;
-          session.messageCount += 1;
-
-          // Save sessions after decryption
-          this.saveSessions();
-
-          return new TextDecoder().decode(decrypted);
-        } catch (error) {
-          throw new Error("Failed to decrypt message");
-        }
-      }
-
-      // Utility functions
-      base64ToArrayBuffer(base64) {
-        try {
-          // Clean the base64 string
-          const cleanBase64 = base64.replace(/[^A-Za-z0-9+/]/g, '');
-          const binary = window.atob(cleanBase64);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.charCodeAt(i);
-          }
-          return bytes.buffer;
-        } catch (error) {
-          console.error("❌ Invalid base64 string:", base64);
-          throw new Error("Invalid base64 encoding");
-        }
-      }
-
-      // Update the arrayBufferToBase64 method
-      arrayBufferToBase64(buffer) {
-        try {
-          const bytes = new Uint8Array(buffer);
-          let binary = '';
-          for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          return window.btoa(binary);
-        } catch (error) {
-          console.error("❌ Error converting to base64:", error);
-          throw new Error("Failed to convert to base64");
-        }
-      }
-
-
-      // Get user's public key bundle for key exchange
-      getPublicKeyBundle() {
-        return {
-          identityKey: this.identityKey ? this.exportPublicKey(this.identityKey) : null,
-          preKeys: this.preKeys.map(pk => ({
-            keyId: pk.keyId,
-            publicKey: pk.publicKey
-          })),
-          signedPreKey: this.signedPreKeyPublic,
-          registrationId: this.registrationId
-        };
-      }
-
-      saveSessions() {
-        try {
-          const sessionData = {};
-
-          // Convert CryptoKey objects to exportable format
-          Object.keys(this.sessions).forEach(userId => {
-            const session = this.sessions[userId];
-            sessionData[userId] = {
-              rootKey: this.arrayBufferToBase64(session.rootKey),
-              chainKey: this.arrayBufferToBase64(session.chainKey),
-              messageCount: session.messageCount,
-              // Note: We can't directly store CryptoKey objects, so we'll need to re-establish sessions
-              // on reload by re-initiating key exchanges
-            };
-          });
-          localStorage.setItem('signal_sessions', JSON.stringify(sessionData));
-          console.log('💾 Encryption sessions saved');
-        } catch (error) {
-          console.error('❌ Failed to save sessions:', error);
-        }
-      }
-
-      async loadSessions() {
-        try {
-          const saved = localStorage.getItem('signal_sessions');
-          if (!saved) return;
-
-          const sessionData = JSON.parse(saved);
-
-          for (const [userId, data] of Object.entries(sessionData)) {
-            try {
-              this.sessions[userId] = {
-                rootKey: this.base64ToArrayBuffer(data.rootKey),
-                chainKey: this.base64ToArrayBuffer(data.chainKey),
-                messageCount: data.messageCount || 0,
-                // We'll need to re-establish the key material on reload
-              };
-            } catch (error) {
-              console.warn(`⚠️ Failed to load session for ${userId}:`, error);
-              delete this.sessions[userId];
-            }
-          }
-
-          console.log('📂 Encryption sessions loaded');
-        } catch (error) {
-          console.error('❌ Failed to load sessions:', error);
-        }
-      }
-    }
-
-    // Initialize Signal protocol
-    const signalProtocol = new SignalProtocol();
-
-    // Initialize encryption when app starts
-    async function initializeEncryption() {
-      try {
-        await signalProtocol.initialize();
-        await signalProtocol.loadSessions(); // Load saved sessions
-        console.log("🔐 End-to-end encryption initialized with persisted sessions");
-
-        // Update UI for existing messages after sessions are loaded
-        setTimeout(() => {
-          updateEncryptionStatusOnReload();
-        }, 1000);
-
-        // Log session status for debugging
-        const sessionCount = Object.keys(signalProtocol.sessions).length;
-        console.log(`📊 Loaded ${sessionCount} encryption sessions`);
-      } catch (error) {
-        console.error("❌ Failed to initialize encryption:", error);
-      }
-    }
-
-    // ======================================================
-    // =============== Auto-Reestablish Sessions ============
-    // ======================================================
-
-    // Add this function to automatically re-establish sessions on app start
-    async function reestablishEncryptionSessions() {
-      if (!currentRoom || !currentName) return;
-
-      console.log("🔄 Re-establishing encryption sessions...");
-
-      // Wait a bit for user list to populate
-      setTimeout(async () => {
-        const users = getUsersFromUserList();
-        const existingSessions = Object.keys(signalProtocol.sessions);
-
-        console.log(`📋 Found ${users.length} users, ${existingSessions.length} existing sessions`);
-
-        // For each user we have a session with, verify they're still in the room
-        for (const userId of existingSessions) {
-          if (users.includes(userId) && userId !== currentName) {
-            console.log(`✅ Session with ${userId} is still valid`);
-          } else {
-            console.log(`🗑️ Removing stale session with ${userId}`);
-            delete signalProtocol.sessions[userId];
-          }
-        }
-
-        // Save the cleaned-up sessions
-        signalProtocol.saveSessions();
-
-        // Re-initiate key exchanges for users without sessions
-        for (const user of users) {
-          if (user !== currentName && !signalProtocol.sessions[user]) {
-            console.log(`🔑 Re-initiating key exchange with ${user}`);
-            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-            try {
-              await initiateKeyExchange(user);
-            } catch (error) {
-              console.warn(`⚠️ Key exchange with ${user} failed:`, error);
-            }
-          }
-        }
-      }, 3000);
-    }
-
-    // ======================================================
-    // =============== Session Cleanup ======================
-    // ======================================================
-
-    function cleanupEncryptionSessions() {
-      if (!currentRoom || !currentName) return;
-
-      const userList = document.getElementById('user-list');
-      const currentUsers = new Set();
-
-      // Get current users in room
-      if (userList) {
-        const userItems = userList.getElementsByTagName('li');
-        for (let item of userItems) {
-          const username = item.getAttribute('data-name');
-          if (username) {
-            currentUsers.add(username);
-          }
-        }
-      }
-
-      // Remove sessions for users not in current room
-      Object.keys(signalProtocol.sessions).forEach(userId => {
-        if (!currentUsers.has(userId) && userId !== currentName) {
-          console.log(`🧹 Removing session for user not in room: ${userId}`);
-          delete signalProtocol.sessions[userId];
-        }
-      });
-
-      signalProtocol.saveSessions();
-    }
-
-    // Modified sendMessage function with encryption
-    async function sendEncryptedMessage() {
-      if (sending) return;
-
-      const inputEl = document.getElementById("input");
-      const text = inputEl.value.trim();
-      if (!text || !currentRoom) return;
-
-      sending = true;
-      document.getElementById("send").disabled = true;
-
-      try {
-        let finalPayload = {
-          room: currentRoom,
-          sender: currentName,
-          text: text, // Fallback plaintext
-          ts: new Date().toISOString()
-        };
-
-        // Get users from the user list for encryption
-        const userList = document.getElementById('user-list');
-        const encryptedMessages = {};
-
-        if (userList) {
-          const userItems = userList.getElementsByTagName('li');
-
-          for (let item of userItems) {
-            const user = item.getAttribute('data-name');
-            if (user && user !== currentName && signalProtocol.sessions[user]) {
-              try {
-                const encrypted = await signalProtocol.encryptMessage(user, text);
-                encryptedMessages[user] = encrypted;
-              } catch (error) {
-                console.warn(`Could not encrypt for ${user}:`, error);
-              }
-            }
-          }
-        }
-
-        // Add encryption info to payload if we encrypted for anyone
-        if (Object.keys(encryptedMessages).length > 0) {
-          finalPayload.encrypted = encryptedMessages;
-          finalPayload.encryptionVersion = "signal-v1";
-          // Remove plaintext for encrypted recipients (optional - for better security)
-          // finalPayload.text = ""; // Uncomment to only send encrypted
-        }
-
-        // Send the message
-        socket.emit("message", finalPayload, () => {
-          sending = false;
-          document.getElementById("send").disabled = false;
-        });
-
-        inputEl.value = "";
-
-      } catch (error) {
-        console.error("❌ Error sending encrypted message:", error);
-        sending = false;
-        document.getElementById("send").disabled = false;
-      }
-    }
-
-    // Modified message handler for decryption
-    async function handleEncryptedMessage(data) {
-      let displayText = data.text;
-      let isEncrypted = false;
-
-      // Check if this message is encrypted for us
-      if (data.encrypted && data.encrypted[currentName]) {
-        try {
-          const encryptedData = data.encrypted[currentName];
-          displayText = await signalProtocol.decryptMessage(data.sender, encryptedData);
-          isEncrypted = true;
-        } catch (error) {
-          console.error("❌ Failed to decrypt message:", error);
-          displayText = "🔒 [Encrypted message - decryption failed]";
-          isEncrypted = true;
-        }
-      }
-
-      // ✅ CRITICAL FIX: Update timestamp to prevent message replay on reconnect
-      if (data.ts) {
-        updateRoomTimestamp(currentRoom, data.ts);
-      }
-
-      // Add to UI
-      const messages = document.getElementById("messages");
-      const div = document.createElement("div");
-
-      if (data.sender === "System") {
-        div.className = "msg system";
-        div.textContent = displayText;
-      } else {
-        const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
-        div.className = "msg " + (isMe ? "me" : "other");
-
-        const safeText = escapeHtml(displayText);
-        const formattedText = linkifyWithFavicon(safeText);
-
-        let lockIcon = "";
-        if (isEncrypted) {
-          lockIcon = " 🔒";
-        }
-
-        // Make sure the lock icon is permanently added to the sender name
-        div.innerHTML = `<strong>${data.sender}${lockIcon}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
-
-        enableCopyOnMessage(div, displayText);
-        div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
-      }
-
-      messages.appendChild(div);
-      messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    }
-
-    // Add these functions to manage room timestamps
-    function updateRoomTimestamp(room, timestamp) {
-      if (!room || !timestamp) return;
-
-      // Update in-memory timestamp
-      if (!lastPersistedTs || timestamp > lastPersistedTs) {
-        lastPersistedTs = timestamp;
-      }
-
-      // Persist to localStorage for reconnects
-      const roomTimestamps = JSON.parse(localStorage.getItem('roomTimestamps') || '{}');
-      roomTimestamps[room] = timestamp;
-      localStorage.setItem('roomTimestamps', JSON.stringify(roomTimestamps));
-
-      console.log(`🕒 Updated timestamp for ${room}: ${timestamp}`);
-    }
-
-    function getRoomTimestamp(room) {
-      const roomTimestamps = JSON.parse(localStorage.getItem('roomTimestamps') || '{}');
-      return roomTimestamps[room] || null;
-    }
-
-    // Key exchange management
-    // Replace the initiateKeyExchange function
-    async function initiateKeyExchange(userId) {
-      try {
-        console.log(`🔑 Starting key exchange with ${userId}`);
-
-        // First, request the user's public key bundle from the server
-        socket.emit("request_public_keys", {
-          targetUser: userId,
-          room: currentRoom,
-          requester: currentName
-        });
-
-        console.log(`📤 Public key request sent to ${userId}`);
-      } catch (error) {
-        console.error("❌ Key exchange failed:", error);
-      }
-    }
-
-    // Handle incoming key exchange
-    async function handleKeyExchange(data) {
-      if (data.targetUser === currentName) {
-        try {
-          await signalProtocol.completeKeyExchange(data.senderId, data);
-          console.log(`🔑 Key exchange completed with ${data.senderId}`);
-
-          // Send confirmation
-          socket.emit("key_exchange_complete", {
-            targetUser: data.senderId,
-            room: currentRoom
-          });
-        } catch (error) {
-          console.error("❌ Failed to complete key exchange:", error);
-        }
-      }
-    }
-
-    // Initialize key exchanges when joining room
-    // Update the initializeRoomEncryption function with better error handling
-    async function initializeRoomEncryption() {
-      if (!currentRoom) return;
-
-      console.log("🔑 Initializing room encryption...");
-
-      // Wait a bit for user list to populate
-      setTimeout(async () => {
-        const users = getUsersFromUserList();
-        console.log(`🔑 Found ${users.length} users for key exchange`);
-
-        for (const user of users) {
-          if (user !== currentName && !signalProtocol.sessions[user]) {
-            // Stagger key exchanges to avoid race conditions
-            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-            try {
-              await initiateKeyExchange(user);
-            } catch (error) {
-              console.warn(`⚠️ Key exchange with ${user} failed:`, error);
-            }
-          }
-        }
-      }, 3000);
-    }
-
-    // Add this helper function
-    function getUsersFromUserList() {
-      const userList = document.getElementById('user-list');
-      const users = [];
-
-      if (userList) {
-        const userItems = userList.getElementsByTagName('li');
-        for (let item of userItems) {
-          const username = item.getAttribute('data-name');
-          if (username) {
-            users.push(username);
-          }
-        }
-      }
-
-      return users;
-    }
-
-    // Add this function to update lock icons for existing messages on reload
-    function updateEncryptionStatusOnReload() {
-      const messages = document.getElementById("messages");
-      const messageDivs = messages.querySelectorAll('.msg:not(.system)');
-
-      messageDivs.forEach(div => {
-        const messageText = div.textContent || '';
-        const isEncrypted = div.querySelector('strong')?.textContent?.includes('🔒');
-
-        // If this is an encrypted message but lock icon is missing, add it
-        if (!isEncrypted && signalProtocol.sessions) {
-          const senderElement = div.querySelector('strong');
-          if (senderElement) {
-            const senderName = senderElement.textContent.replace('🔒', '').trim();
-            const isMe = senderName === currentName || senderName.includes('(Me)');
-
-            // Check if we have a session with this sender (indicating encrypted message)
-            if (senderName !== currentName && signalProtocol.sessions[senderName]) {
-              senderElement.textContent = isMe ?
-                `${currentName} 🔒` :
-                `${senderName} 🔒`;
-            }
-          }
-        }
-      });
-
-      console.log("🔒 Updated encryption status for existing messages");
-    }
-
-    // Add this debug function
-    function debugEncryption() {
-      console.group("🔐 Encryption Debug Info");
-      console.log("Identity Key:", signalProtocol.identityKey ? "✓ Generated" : "✗ Missing");
-      console.log("Pre-keys:", signalProtocol.preKeys.length);
-      console.log("Active Sessions:", Object.keys(signalProtocol.sessions));
-
-      // Show session details
-      Object.keys(signalProtocol.sessions).forEach(userId => {
-        const session = signalProtocol.sessions[userId];
-        console.log(`  - ${userId}: messageCount=${session.messageCount}`);
-      });
-
-      console.log("Current Room:", currentRoom);
-      console.log("Current User:", currentName);
-
-      // Check localStorage
-      const savedSessions = localStorage.getItem('signal_sessions');
-      console.log("Saved sessions in localStorage:", savedSessions ? JSON.parse(savedSessions) : "None");
-
-      console.groupEnd();
-    }
-
-    // Call this in console to check encryption status: debugEncryption()
-
-    // Call this in console to check status
-    // debugEncryption()
-    // ======================================================
     // =============== Room Management ======================
     // ======================================================
     async function joinRoom() {
@@ -2135,10 +1294,6 @@
         alert("Enter name and room first!");
         return;
       }
-
-      // ✅ FIX: Load persisted timestamp for this room
-      lastPersistedTs = getRoomTimestamp(currentRoom);
-      console.log(`🕒 Joining room with timestamp: ${lastPersistedTs}`);
 
       // Clear any previous pending state
       Storage.remove("pending_room");
@@ -2164,22 +1319,6 @@
         }
       }
 
-      // Initialize encryption after joining
-      await initializeEncryption();
-
-      // Wait for user list to be populated before initializing key exchanges
-      const waitForUserList = setInterval(() => {
-        const userList = document.getElementById('user-list');
-        if (userList && userList.getElementsByTagName('li').length > 0) {
-          clearInterval(waitForUserList);
-          setTimeout(() => {
-            initializeRoomEncryption();
-          }, 2000);
-        }
-      }, 500);
-
-      // Timeout after 10 seconds
-      setTimeout(() => clearInterval(waitForUserList), 10000);
       // If room is not locked OR user is existing, proceed with normal join
       await proceedWithJoin(currentRoom, currentName);
     }
@@ -2430,9 +1569,6 @@
 
     // Extract the main join logic into a separate function
     async function proceedWithJoin(room, username) {
-      // ✅ FIX: Preserve the timestamp when proceeding with join
-      const savedTimestamp = getRoomTimestamp(room);
-      lastPersistedTs = savedTimestamp;
       const roomStatus = await checkRoomStatus(room, username);
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
@@ -2447,13 +1583,12 @@
 
       Storage.set("chat_name", username);
       Storage.set("chat_room", room);
-
       document.getElementById("chat-container").style.display = "flex";
       document.getElementById("input-area").style.display = "flex";
       document.getElementById("intro").style.display = "none";
       document.getElementById("messages").style.display = "block";
       document.getElementById("messages").innerHTML = "";
-      // lastPersistedTs = null; //12
+      lastPersistedTs = null;
       alreadyFetchingHistory = false;
       document.getElementById("input").disabled = false;
       document.getElementById("send").disabled = false;
@@ -2515,17 +1650,12 @@
       socket.on("connect", () => {
         if (room && username) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
-
-          // ✅ FIX: Use the persisted timestamp
-          const timestampToSend = lastPersistedTs || null;
-          console.log(`🕒 Sending timestamp to server: ${timestampToSend}`);
-
           socket.emit(
             "join",
             {
               room: room,
               sender: username,
-              lastTs: lastPersistedTs,
+              lastTs: lastPersistedTs || null,
               fcmToken: fcmToken,
             },
             (ack) => {
@@ -2584,11 +1714,6 @@
         );
       }
       renderJoinedRooms();
-
-      // After successful join, re-establish encryption sessions
-      setTimeout(() => {
-        reestablishEncryptionSessions();
-      }, 4000);
     }
 
     function setupSocketEventHandlers() {
@@ -2621,50 +1746,6 @@
         if (currentName === currentAdmin && data.room === currentRoom) {
           showJoinRequestNotification(data);
         }
-      });
-
-      // Add these NEW lines for encryption - put them with other socket.on handlers:
-      socket.on("key_exchange", handleKeyExchange);
-      socket.on("key_exchange_complete", (data) => {
-        console.log(`🔑 Key exchange confirmed with ${data.senderId}`);
-      });
-
-      // Add these new socket handlers
-      socket.on("request_public_keys", async (data) => {
-        console.log(`🔑 Received public key request from ${data.requester}`);
-
-        // Send our public key bundle
-        const keyBundle = signalProtocol.getPublicKeyBundle();
-        socket.emit("send_public_keys", {
-          requester: data.requester,
-          room: data.room,
-          sender: currentName,
-          keyBundle: keyBundle
-        });
-      });
-
-      socket.on("receive_public_keys", async (data) => {
-        console.log(`🔑 Received public keys from ${data.sender}`);
-
-        try {
-          // Use the actual public key from the bundle
-          const preKey = data.keyBundle.preKeys[0]; // Use first pre-key
-          const keyExchangeData = await signalProtocol.startKeyExchange(data.sender, preKey.publicKey);
-
-          socket.emit("key_exchange", {
-            targetUser: data.sender,
-            room: currentRoom,
-            ...keyExchangeData
-          });
-
-          console.log(`🔑 Key exchange initiated with ${data.sender}`);
-        } catch (error) {
-          console.error("❌ Key exchange failed:", error);
-        }
-      });
-
-      socket.on("key_exchange_error", (data) => {
-        console.error(`❌ Key exchange error: ${data.error} for user ${data.targetUser}`);
       });
 
       // Add this to setupSocketEventHandlers
@@ -2774,7 +1855,7 @@
         }
       });
 
-      socket.on("message", handleEncryptedMessage);
+      socket.on("message", addMessage);
       socket.on("file", addFileMessage);
 
       // Setup input handlers
@@ -3029,24 +2110,13 @@
 
     function switchRoom(room) {
       if (!room || room === currentRoom) return;
-      // ✅ FIX: Update timestamp for the previous room before switching
-      if (currentRoom) {
-        const messages = document.getElementById("messages");
-        const lastMessage = messages.lastElementChild;
-        if (lastMessage && lastMessage.dataset.ts) {
-          updateRoomTimestamp(currentRoom, lastMessage.dataset.ts);
-        }
-      }
-
       const previousRoom = currentRoom;
       const messagesEl = document.getElementById("messages");
       const usersEl = document.getElementById("user-list");
       messagesEl && (messagesEl.innerHTML = "");
       usersEl && (usersEl.innerHTML = "");
       currentRoom = room;
-
-      // ✅ FIX: Load timestamp for the new room
-      lastPersistedTs = getRoomTimestamp(room);
+      lastPersistedTs = null;
       document.getElementById("room").value = currentRoom;
       Storage.set("chat_room", currentRoom);
       Array.from(document.getElementById("joined-rooms").children).forEach(
@@ -3119,7 +2189,45 @@
     // =============== Message Handling =====================
     // ======================================================
     async function sendMessage() {
-      await sendEncryptedMessage();
+      if (sending) return;
+      const inputEl = document.getElementById("input");
+      const text = inputEl.value.trim();
+      if (!text || !currentRoom) return;
+      const nowTs = new Date().toISOString();
+      lastPersistedTs = nowTs;
+      try {
+        localStorage.setItem(
+          "chatState",
+          JSON.stringify({
+            username: currentName,
+            room: currentRoom,
+            lastTs: lastPersistedTs,
+          })
+        );
+      } catch (e) {
+        console.warn("Could not persist chatState:", e);
+      }
+      sending = true;
+      document.getElementById("send").disabled = true;
+      let sub = null;
+      try {
+        const savedSub = localStorage.getItem("pushSub");
+        sub = savedSub ? JSON.parse(savedSub) : null;
+      } catch (err) {
+        console.warn(
+          "⚠️ Subscription failed, but sending message anyway:",
+          err
+        );
+      }
+      socket.emit(
+        "message",
+        { room: currentRoom, sender: currentName, text, subscription: sub },
+        () => {
+          sending = false;
+          document.getElementById("send").disabled = false;
+        }
+      );
+      inputEl.value = "";
     }
 
     function showCopyNotice(text) {
@@ -3821,7 +2929,7 @@
           li.appendChild(adminBadge);
         }
       });
-      setTimeout(cleanupEncryptionSessions, 1000);
+
       existing.forEach((li) => {
         li.classList.add("fade-out");
         setTimeout(() => li.remove(), 300);
@@ -4018,13 +3126,6 @@
       }
     };
 
-    function cleanupRoomTimestamp(room) {
-      const roomTimestamps = JSON.parse(localStorage.getItem('roomTimestamps') || '{}');
-      delete roomTimestamps[room];
-      localStorage.setItem('roomTimestamps', JSON.stringify(roomTimestamps));
-      console.log(`🧹 Cleaned timestamp for room: ${room}`);
-    }
-
     async function leaveRoom() {
       if (!currentRoom) {
         alert("You are not in a room!");
@@ -4033,9 +3134,6 @@
 
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
-
-      // ✅ Clean up timestamp when leaving
-      cleanupRoomTimestamp(leftRoom);
 
       // First, send the leave event to the server
       if (socket && socket.connected) {
@@ -4161,7 +3259,6 @@
     // =============== Initialization =======================
     // ======================================================
     window.addEventListener("load", async () => {
-      await initializeEncryption();
       await requestNotificationPermission();
       const savedName = Storage.get("chat_name");
       const savedRoom = Storage.get("chat_room");

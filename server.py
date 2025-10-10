@@ -1188,110 +1188,12 @@ async def status(sid, data):
     print(f"📌 Status update: {user} is now {'ACTIVE' if is_active else 'INACTIVE'}")
 
 
-# Add to Socket.IO events section
-@sio.event
-async def key_exchange(sid, data):
-    """Handle key exchange initiation"""
-    target_user = data.get("targetUser")
-    room = data.get("room")
-    sender_id = data.get("senderId")
-
-    # Forward key exchange to target user
-    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
-        target_sid = ROOM_USERS[room][target_user]
-        await sio.emit(
-            "key_exchange",
-            {
-                "targetUser": target_user,
-                "senderId": sender_id,
-                "ephemeralKey": data.get("ephemeralKey"),
-                "identityKey": data.get("identityKey"),
-                "preKeyId": data.get("preKeyId"),
-                "room": room,
-            },
-            room=target_sid,
-        )
-        print(f"🔑 Key exchange forwarded from {sender_id} to {target_user}")
-
-
-@sio.event
-async def key_exchange_complete(sid, data):
-    """Handle key exchange completion"""
-    target_user = data.get("targetUser")
-    room = data.get("room")
-    sender_id = None
-
-    # Find sender username
-    for r, users in ROOM_USERS.items():
-        for username, user_sid in users.items():
-            if user_sid == sid:
-                sender_id = username
-                break
-
-    if sender_id and room in ROOM_USERS and target_user in ROOM_USERS[room]:
-        target_sid = ROOM_USERS[room][target_user]
-        await sio.emit(
-            "key_exchange_complete",
-            {"senderId": sender_id, "targetUser": target_user, "room": room},
-            room=target_sid,
-        )
-        print(f"🔑 Key exchange completed between {sender_id} and {target_user}")
-
-
-@sio.event
-async def request_public_keys(sid, data):
-    """Handle public key bundle requests"""
-    target_user = data.get("targetUser")
-    room = data.get("room")
-    requester = data.get("requester")
-
-    # Forward the request to the target user
-    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
-        target_sid = ROOM_USERS[room][target_user]
-        await sio.emit(
-            "request_public_keys",
-            {"requester": requester, "room": room},
-            room=target_sid,
-        )
-        print(f"🔑 Public key request forwarded from {requester} to {target_user}")
-    else:
-        # Notify requester that user is not available
-        await sio.emit(
-            "key_exchange_error",
-            {"error": "User not available for key exchange", "targetUser": target_user},
-            room=sid,
-        )
-
-
-@sio.event
-async def send_public_keys(sid, data):
-    """Handle sending public key bundle to requester"""
-    requester = data.get("requester")
-    room = data.get("room")
-    key_bundle = data.get("keyBundle")
-
-    # Forward the key bundle to the requester
-    if room in ROOM_USERS and requester in ROOM_USERS[room]:
-        requester_sid = ROOM_USERS[room][requester]
-        await sio.emit(
-            "receive_public_keys",
-            {"sender": data.get("sender"), "keyBundle": key_bundle, "room": room},
-            room=requester_sid,
-        )
-        print(f"🔑 Public keys sent from {data.get('sender')} to {requester}")
-
-
-# Modify the existing message event to handle encrypted messages
 @sio.event
 async def message(sid, data):
     room = data.get("room")
     sender = data.get("sender")
     text = (data.get("text") or "").strip()
     now = datetime.now(timezone.utc)
-
-    # Handle encrypted messages
-    encrypted_data = data.get("encrypted")
-    encryption_version = data.get("encryptionVersion")
 
     if not text or not room or not sender:
         return
@@ -1303,22 +1205,16 @@ async def message(sid, data):
         return
     LAST_MESSAGE[key] = (text, now)
 
-    # Store the message (server doesn't need to understand encryption)
     save_message(room, sender, text=text)
+    # broadcast the usual message to the room (already present)
+    await sio.emit(
+        "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
+    )
 
-    # Broadcast the message with encryption data intact
-    message_payload = {"sender": sender, "text": text, "ts": now.isoformat()}
-
-    # Preserve encryption data if present
-    if encrypted_data:
-        message_payload["encrypted"] = encrypted_data
-        message_payload["encryptionVersion"] = encryption_version
-
-    await sio.emit("message", message_payload, room=room)
-
-    # Update unread counts and send push notifications (existing code)
+    # Update unread counts for all users in the room except sender
     for username in ROOM_HISTORY.get(room, set()):
         if username != sender:
+            # Mark this message as unread for user
             key = (username, room)
             USER_LAST_SEEN[key] = now.isoformat()
 
@@ -1329,9 +1225,10 @@ async def message(sid, data):
         )
     except Exception as e:
         print("Failed to emit room_message_meta:", e)
-
-    # Web push and FCM (existing code)
+    # Web push
     await send_push_to_room(room, sender, text)
+
+    # Android push (FCM)
     await send_fcm_to_room(room, sender, text)
 
 
