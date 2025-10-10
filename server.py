@@ -34,8 +34,6 @@ ROOM_ADMINS = {}  # { room: admin_username }
 ROOM_LOCK_STATES = {}  # { room: boolean }
 PENDING_JOIN_REQUESTS = {}  # { room: [ {user, timestamp, sid} ] }
 USER_SOCKET_MAPPING = {}  # { username: sid } for quick lookup
-# Store pre-key bundles { user: pre_key_bundle }
-PRE_KEY_BUNDLES = {}
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -574,30 +572,6 @@ def init_db():
         """
     )
 
-    # Encrypted messages table
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS encrypted_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            encrypted_data TEXT NOT NULL,
-            timestamp TEXT NOT NULL
-        )
-    """
-    )
-
-    # Signal pre-keys table
-    c.execute(
-        """
-        CREATE TABLE IF NOT EXISTS signal_pre_keys (
-            user TEXT PRIMARY KEY,
-            pre_key_bundle TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-    """
-    )
-
     conn.commit()
     conn.close()
 
@@ -843,28 +817,6 @@ async def destroy_room(room: str, request: Request):
         f"💥 Room {room} destroyed by admin {user} (history + FCM tokens wiped from memory + DB)."
     )
     return {"status": "ok"}
-
-
-# Load pre-key bundles from database on startup
-def load_pre_key_bundles():
-    """Load pre-key bundles from database into memory"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT user, pre_key_bundle FROM signal_pre_keys")
-        rows = c.fetchall()
-        conn.close()
-
-        for user, pre_key_bundle_json in rows:
-            try:
-                PRE_KEY_BUNDLES[user] = json.loads(pre_key_bundle_json)
-            except Exception as e:
-                print(f"❌ Error loading pre-key bundle for {user}: {e}")
-
-        print(f"🔐 Loaded {len(PRE_KEY_BUNDLES)} pre-key bundles from database")
-
-    except Exception as e:
-        print(f"❌ Error loading pre-key bundles: {e}")
 
 
 # ---------------- Socket.IO Events ----------------
@@ -1236,12 +1188,109 @@ async def status(sid, data):
     print(f"📌 Status update: {user} is now {'ACTIVE' if is_active else 'INACTIVE'}")
 
 
+# Add to Socket.IO events section
+@sio.event
+async def key_exchange(sid, data):
+    """Handle key exchange initiation"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+    sender_id = data.get("senderId")
+
+    # Forward key exchange to target user
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+        await sio.emit(
+            "key_exchange",
+            {
+                "targetUser": target_user,
+                "senderId": sender_id,
+                "ephemeralKey": data.get("ephemeralKey"),
+                "identityKey": data.get("identityKey"),
+                "preKeyId": data.get("preKeyId"),
+                "room": room,
+            },
+            room=target_sid,
+        )
+        print(f"🔑 Key exchange forwarded from {sender_id} to {target_user}")
+
+
+@sio.event
+async def key_exchange_complete(sid, data):
+    """Handle key exchange completion"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+    sender_id = None
+
+    # Find sender username
+    for r, users in ROOM_USERS.items():
+        for username, user_sid in users.items():
+            if user_sid == sid:
+                sender_id = username
+                break
+
+    if sender_id and room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+        await sio.emit(
+            "key_exchange_complete",
+            {"senderId": sender_id, "targetUser": target_user, "room": room},
+            room=target_sid,
+        )
+        print(f"🔑 Key exchange completed between {sender_id} and {target_user}")
+
+
+@sio.event
+async def request_public_keys(sid, data):
+    """Handle public key bundle requests"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+    requester = data.get("requester")
+    
+    # Forward the request to the target user
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+        await sio.emit("request_public_keys", {
+            "requester": requester,
+            "room": room
+        }, room=target_sid)
+        print(f"🔑 Public key request forwarded from {requester} to {target_user}")
+    else:
+        # Notify requester that user is not available
+        await sio.emit("key_exchange_error", {
+            "error": "User not available for key exchange",
+            "targetUser": target_user
+        }, room=sid)
+
+
+
+@sio.event
+async def send_public_keys(sid, data):
+    """Handle sending public key bundle to requester"""
+    requester = data.get("requester")
+    room = data.get("room")
+    key_bundle = data.get("keyBundle")
+    
+    # Forward the key bundle to the requester
+    if room in ROOM_USERS and requester in ROOM_USERS[room]:
+        requester_sid = ROOM_USERS[room][requester]
+        await sio.emit("receive_public_keys", {
+            "sender": data.get("sender"),
+            "keyBundle": key_bundle,
+            "room": room
+        }, room=requester_sid)
+        print(f"🔑 Public keys sent from {data.get('sender')} to {requester}")
+
+
+# Modify the existing message event to handle encrypted messages
 @sio.event
 async def message(sid, data):
     room = data.get("room")
     sender = data.get("sender")
     text = (data.get("text") or "").strip()
     now = datetime.now(timezone.utc)
+
+    # Handle encrypted messages
+    encrypted_data = data.get("encrypted")
+    encryption_version = data.get("encryptionVersion")
 
     if not text or not room or not sender:
         return
@@ -1253,16 +1302,22 @@ async def message(sid, data):
         return
     LAST_MESSAGE[key] = (text, now)
 
+    # Store the message (server doesn't need to understand encryption)
     save_message(room, sender, text=text)
-    # broadcast the usual message to the room (already present)
-    await sio.emit(
-        "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
-    )
 
-    # Update unread counts for all users in the room except sender
+    # Broadcast the message with encryption data intact
+    message_payload = {"sender": sender, "text": text, "ts": now.isoformat()}
+
+    # Preserve encryption data if present
+    if encrypted_data:
+        message_payload["encrypted"] = encrypted_data
+        message_payload["encryptionVersion"] = encryption_version
+
+    await sio.emit("message", message_payload, room=room)
+
+    # Update unread counts and send push notifications (existing code)
     for username in ROOM_HISTORY.get(room, set()):
         if username != sender:
-            # Mark this message as unread for user
             key = (username, room)
             USER_LAST_SEEN[key] = now.isoformat()
 
@@ -1273,10 +1328,9 @@ async def message(sid, data):
         )
     except Exception as e:
         print("Failed to emit room_message_meta:", e)
-    # Web push
-    await send_push_to_room(room, sender, text)
 
-    # Android push (FCM)
+    # Web push and FCM (existing code)
+    await send_push_to_room(room, sender, text)
     await send_fcm_to_room(room, sender, text)
 
 
@@ -1430,305 +1484,10 @@ async def disconnect(sid):
         )
 
 
-@app.post("/upload-pre-key-bundle")
-async def upload_pre_key_bundle(request: Request):
-    """Store user's pre-key bundle for key exchange"""
-    try:
-        body = await request.json()
-        user_id = body.get("userId")
-        pre_key_bundle = body.get("preKeyBundle")
-
-        if not user_id or not pre_key_bundle:
-            return JSONResponse(
-                {"error": "userId and preKeyBundle required"}, status_code=400
-            )
-
-        PRE_KEY_BUNDLES[user_id] = pre_key_bundle
-        print(f"🔐 Pre-key bundle stored for user: {user_id}")
-        print(
-            f"📊 Bundle details - Registration ID: {pre_key_bundle.get('registrationId')}, Pre-keys: {len(pre_key_bundle.get('preKeys', []))}"
-        )
-
-        # Also store in database for persistence
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS signal_pre_keys 
-               (user TEXT PRIMARY KEY, pre_key_bundle TEXT, updated_at TEXT)"""
-        )
-        c.execute(
-            "INSERT OR REPLACE INTO signal_pre_keys (user, pre_key_bundle, updated_at) VALUES (?, ?, ?)",
-            (
-                user_id,
-                json.dumps(pre_key_bundle),
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
-
-        return {"status": "success", "message": "Pre-key bundle stored"}
-
-    except Exception as e:
-        print(f"❌ Error storing pre-key bundle: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-@app.get("/pre-key-bundle/{user_id}")
-async def get_pre_key_bundle(user_id: str):
-    """Retrieve user's pre-key bundle for establishing secure session"""
-    try:
-        print(f"📡 Fetching pre-key bundle for user: {user_id}")
-
-        # First check memory
-        if user_id in PRE_KEY_BUNDLES:
-            print(f"✅ Found pre-key bundle in memory for {user_id}")
-            return JSONResponse(PRE_KEY_BUNDLES[user_id])
-
-        # Check database
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            "CREATE TABLE IF NOT EXISTS signal_pre_keys (user TEXT PRIMARY KEY, pre_key_bundle TEXT, updated_at TEXT)"
-        )
-        c.execute(
-            "SELECT pre_key_bundle FROM signal_pre_keys WHERE user = ?", (user_id,)
-        )
-        row = c.fetchone()
-        conn.close()
-
-        if row:
-            pre_key_bundle = json.loads(row[0])
-            PRE_KEY_BUNDLES[user_id] = pre_key_bundle  # Cache in memory
-            print(f"✅ Found pre-key bundle in database for {user_id}")
-            return JSONResponse(pre_key_bundle)
-        else:
-            print(f"❌ No pre-key bundle found for {user_id}")
-            return JSONResponse({"error": "Pre-key bundle not found"}, status_code=404)
-
-    except Exception as e:
-        print(f"❌ Error retrieving pre-key bundle: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-@app.delete("/pre-key-bundle/{user_id}")
-async def delete_pre_key_bundle(user_id: str):
-    """Delete user's pre-key bundle (e.g., when user leaves)"""
-    try:
-        PRE_KEY_BUNDLES.pop(user_id, None)
-
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("DELETE FROM signal_pre_keys WHERE user = ?", (user_id,))
-        conn.commit()
-        conn.close()
-
-        print(f"🗑️ Deleted pre-key bundle for user: {user_id}")
-        return {"status": "success", "message": "Pre-key bundle deleted"}
-
-    except Exception as e:
-        print(f"❌ Error deleting pre-key bundle: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-
-# ======================================================
-# =============== Encrypted Message Handling ===========
-# ======================================================
-
-
-@sio.event
-async def encrypted_message(sid, data):
-    """Handle end-to-end encrypted messages"""
-    room = data.get("room")
-    sender = data.get("sender")
-    encrypted_messages = data.get("encryptedMessages", {})
-    timestamp = data.get("timestamp")
-
-    print(f"🔐 Received encrypted message from {sender} in room {room}")
-    print(
-        f"📊 Message encrypted for {len(encrypted_messages)} users: {list(encrypted_messages.keys())}"
-    )
-
-    if not room or not sender or not encrypted_messages:
-        print("❌ Invalid encrypted message: missing required fields")
-        return
-
-    # Verify sender is in the room
-    if room not in ROOM_USERS or sender not in ROOM_USERS[room]:
-        print(f"❌ Sender {sender} not in room {room}")
-        return
-
-    # Store encrypted message in database (without decrypting - we can't!)
-    save_encrypted_message(room, sender, encrypted_messages, timestamp)
-
-    # Broadcast the encrypted message to all users in the room
-    await sio.emit(
-        "encrypted_message",
-        {
-            "room": room,
-            "sender": sender,
-            "encryptedMessages": encrypted_messages,
-            "timestamp": timestamp,
-        },
-        room=room,
-    )
-
-    # Also send push notifications (without message content for privacy)
-    await send_encrypted_push_to_room(room, sender)
-    await send_encrypted_fcm_to_room(room, sender)
-
-    print(f"✅ Encrypted message from {sender} broadcast to room {room}")
-
-
-def save_encrypted_message(room, sender, encrypted_messages, timestamp):
-    """Save encrypted message to database"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute(
-            """CREATE TABLE IF NOT EXISTS encrypted_messages 
-               (id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT, sender TEXT, 
-                encrypted_data TEXT, timestamp TEXT)"""
-        )
-        c.execute(
-            "INSERT INTO encrypted_messages (room, sender, encrypted_data, timestamp) VALUES (?, ?, ?, ?)",
-            (room, sender, json.dumps(encrypted_messages), timestamp),
-        )
-        conn.commit()
-        conn.close()
-        print(f"💾 Encrypted message saved to database for room {room}")
-    except Exception as e:
-        print(f"❌ Error saving encrypted message: {e}")
-
-
-async def send_encrypted_push_to_room(room: str, sender: str):
-    """Send push notification for encrypted message (without content)"""
-    if room not in subscriptions:
-        return
-
-    now = datetime.now(timezone.utc)
-    payload = {
-        "title": "Chattrix - Encrypted Message",
-        "sender": sender,
-        "text": "🔒 You received an encrypted message",
-        "room": room,
-        "url": f"/?room={room}",
-        "timestamp": now.isoformat(),
-        "encrypted": True,
-    }
-
-    for user, subs in list(subscriptions[room].items()):
-        if user == sender:
-            continue
-
-        sid_in_room = ROOM_USERS.get(room, {}).get(user)
-        if sid_in_room and USER_STATUS.get(sid_in_room, {}).get("active"):
-            continue
-
-        for sub in list(subs):
-            try:
-                endpoint = normalize_endpoint(sub.get("endpoint"))
-                if not endpoint:
-                    continue
-
-                webpush(
-                    subscription_info=sub,
-                    data=json.dumps(payload),
-                    vapid_private_key=VAPID_PRIVATE_KEY,
-                    vapid_claims={"sub": "mailto:anitsaha976@gmail.com"},
-                )
-                print(f"🌍 Encrypted message push sent to {user}")
-
-            except WebPushException as e:
-                print(f"❌ Encrypted push failed for {user}: {e}")
-
-
-async def send_encrypted_fcm_to_room(room: str, sender: str):
-    """Send FCM notification for encrypted message (without content)"""
-    if room in DESTROYED_ROOMS:
-        return
-
-    now = datetime.now(timezone.utc)
-
-    for user, rooms_dict in list(FCM_TOKENS.items()):
-        if user == sender:
-            continue
-        if room not in rooms_dict:
-            continue
-
-        sid_in_room = ROOM_USERS.get(room, {}).get(user)
-        if sid_in_room and USER_STATUS.get(sid_in_room, {}).get("active"):
-            continue
-
-        for token in list(rooms_dict[room]):
-            try:
-                msg = messaging.Message(
-                    notification=messaging.Notification(
-                        title=f"Room {room} - Encrypted",
-                        body=f"{sender}: 🔒 Encrypted message",
-                    ),
-                    token=token,
-                    data={
-                        "room": room,
-                        "sender": sender,
-                        "encrypted": "true",
-                        "timestamp": now.isoformat(),
-                    },
-                    android=messaging.AndroidConfig(
-                        priority="high",
-                        notification=messaging.AndroidNotification(
-                            channel_id="chat_messages",
-                            sound="default",
-                            priority="high",
-                        ),
-                    ),
-                )
-                response = messaging.send(msg)
-                print(f"📲 Encrypted FCM sent to {user}: {response}")
-            except Exception as e:
-                print(f"❌ Encrypted FCM push failed for {user}: {e}")
-
-
-# ======================================================
-# =============== Cleanup Signal Data ==================
-# ======================================================
-
-
-def cleanup_signal_data():
-    """Clean up old signal data from database"""
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-
-        # Clean up encrypted messages older than 48 hours
-        c.execute(
-            "DELETE FROM encrypted_messages WHERE timestamp < datetime('now', '-48 hours')"
-        )
-        encrypted_deleted = c.rowcount
-
-        # Clean up pre-key bundles for users who haven't been active in 30 days
-        c.execute(
-            "DELETE FROM signal_pre_keys WHERE updated_at < datetime('now', '-30 days')"
-        )
-        prekeys_deleted = c.rowcount
-
-        conn.commit()
-        conn.close()
-
-        if encrypted_deleted > 0 or prekeys_deleted > 0:
-            print(
-                f"🧹 Cleaned up {encrypted_deleted} encrypted messages and {prekeys_deleted} pre-key bundles"
-            )
-
-    except Exception as e:
-        print(f"❌ Error cleaning up signal data: {e}")
-
-
 # ---------------- Startup ----------------
 @app.on_event("startup")
 async def startup_tasks():
     init_db()
-    load_pre_key_bundles()
 
     global FCM_TOKENS, DESTROYED_ROOMS
     FCM_TOKENS = load_fcm_tokens()
@@ -1751,10 +1510,7 @@ async def startup_tasks():
                         "message": f"{deleted_messages} old messages (48h+) were removed."
                     },
                 )
-            # Clean up signal data
-            cleanup_signal_data()
 
-            await asyncio.sleep(120)
             # Clean up old destroyed rooms (every 2 minutes)
             deleted_rooms = cleanup_old_destroyed_rooms()
             if deleted_rooms > 0:
