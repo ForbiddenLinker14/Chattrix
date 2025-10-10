@@ -41,7 +41,7 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
-USER_PUBLIC_KEYS = {}
+USER_PUBLIC_KEYS = {}  # { room: { username: public_key } }
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -725,84 +725,8 @@ async def clear_messages(room: str, request: Request):
     return JSONResponse({"status": "ok", "message": f"Room {room} cleared."})
 
 
-@sio.event
-async def share_public_key(sid, data):
-    """Store and broadcast user's public key"""
-    try:
-        room = data.get("room")
-        username = data.get("username")
-        public_key = data.get("publicKey")
-
-        if not all([room, username, public_key]):
-            return
-
-        # Store public key
-        if room not in USER_PUBLIC_KEYS:
-            USER_PUBLIC_KEYS[room] = {}
-
-        USER_PUBLIC_KEYS[room][username] = public_key
-        print(f"🔑 Stored public key for {username} in room {room}")
-
-        # Broadcast to all users in the room (except sender)
-        await sio.emit(
-            "share_public_key",
-            {"room": room, "username": username, "publicKey": public_key},
-            room=room,
-            skip_sid=sid,
-        )
-
-    except Exception as e:
-        print(f"❌ Error in share_public_key: {e}")
-
-
-@sio.event
-async def encrypted_key(sid, data):
-    """Forward encrypted symmetric key to target user"""
-    try:
-        room = data.get("room")
-        target_user = data.get("targetUser")
-        encrypted_key = data.get("encryptedKey")
-        nonce = data.get("nonce")
-        sender = data.get("sender")
-
-        if not all([room, target_user, encrypted_key, nonce, sender]):
-            return
-
-        # Find target user's socket ID
-        target_sid = None
-        for room_name, users in ROOM_USERS.items():
-            if room_name == room:
-                for user, user_sid in users.items():
-                    if user == target_user:
-                        target_sid = user_sid
-                        break
-
-        if target_sid:
-            await sio.emit(
-                "encrypted_key",
-                {
-                    "room": room,
-                    "encryptedKey": encrypted_key,
-                    "nonce": nonce,
-                    "sender": sender,
-                },
-                room=target_sid,
-            )
-            print(f"🔑 Forwarded encrypted key from {sender} to {target_user}")
-        else:
-            print(f"⚠️ Target user {target_user} not found in room {room}")
-
-    except Exception as e:
-        print(f"❌ Error in encrypted_key: {e}")
-
-
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str, request: Request):
-
-    # Clean up encryption keys
-    if room in USER_PUBLIC_KEYS:
-        del USER_PUBLIC_KEYS[room]
-        print(f"🗑️ Cleared encryption keys for destroyed room {room}")
     # Parse body for both POST and DELETE methods
     try:
         body = await request.json()
@@ -1266,88 +1190,128 @@ async def status(sid, data):
 
 
 @sio.event
-async def message(sid, data):
-    """Handle both regular and encrypted messages with your existing logic"""
+async def exchange_keys(sid, data):
+    """Handle public key exchange"""
+    room = data.get("room")
+    username = data.get("username")
+    public_key = data.get("publicKey")
+
+    if not room or not username or not public_key:
+        return
+
+    # Store user's public key
+    if room not in USER_PUBLIC_KEYS:
+        USER_PUBLIC_KEYS[room] = {}
+
+    USER_PUBLIC_KEYS[room][username] = public_key
+
+    # Send current room keys to the new user
+    await sio.emit(
+        "room_keys",
+        {"room": room, "publicKeys": USER_PUBLIC_KEYS.get(room, {})},
+        to=sid,
+    )
+
+    # Notify other users about the new key
+    await sio.emit(
+        "user_joined_keys",
+        {"room": room, "username": username, "publicKey": public_key},
+        room=room,
+        skip_sid=sid,
+    )
+
+    print(f"🔑 Keys exchanged for {username} in room {room}")
+
+
+@sio.event
+async def encrypted_message(sid, data):
+    """Handle encrypted messages"""
+    room = data.get("room")
+    sender = data.get("sender")
+    encrypted_data = data.get("encryptedData")
+
+    if not room or not sender or not encrypted_data:
+        return
+
+    # Store encrypted message in database
+    save_message(
+        room, sender, text=json.dumps({"type": "encrypted", "data": encrypted_data})
+    )
+
+    # Broadcast the encrypted message to the room
+    await sio.emit(
+        "encrypted_message",
+        {
+            "sender": sender,
+            "encryptedData": encrypted_data,
+            "ts": datetime.now(timezone.utc).isoformat(),
+        },
+        room=room,
+    )
+
+    # Also emit for unread counts and push notifications
     try:
-        room = data.get("room")
-        sender = data.get("sender")
-        text_data = data.get("text")
-        subscription = data.get("subscription")
-        now = datetime.now(timezone.utc)
-
-        if not room or not sender:
-            return
-
-        # Check if message is encrypted
-        is_encrypted = isinstance(text_data, dict) and text_data.get("encrypted", False)
-
-        # Extract text for duplicate checking and storage
-        if is_encrypted:
-            # For encrypted messages, use the encrypted data for duplicate checking
-            text_for_check = str(
-                text_data
-            )  # Convert dict to string for duplicate check
-            display_text = "[Encrypted message]"  # For logging and push notifications
-        else:
-            # For regular messages
-            text_for_check = (text_data or "").strip()
-            display_text = text_for_check
-
-        if not text_for_check:
-            return
-
-        # Optional: keep duplicate suppression (using the processed text)
-        key = (room, sender)
-        last = LAST_MESSAGE.get(key)
-        if last and last[0] == text_for_check and (now - last[1]).total_seconds() < 1.5:
-            return
-        LAST_MESSAGE[key] = (text_for_check, now)
-
-        # Save message - use your existing save_message function
-        # For encrypted messages, we save the encrypted data as-is
-        save_message(room, sender, text=text_data)
-
-        # Broadcast the message to the room (pass encrypted data as-is)
         await sio.emit(
-            "message",
+            "room_message_meta",
             {
+                "room": room,
                 "sender": sender,
-                "text": text_data,  # Pass the original data (encrypted or not)
-                "ts": now.isoformat(),
+                "text": "🔒 Encrypted message",
+                "ts": datetime.now(timezone.utc).isoformat(),
             },
-            room=room,
         )
-
-        # Update unread counts for all users in the room except sender
-        for username in ROOM_HISTORY.get(room, set()):
-            if username != sender:
-                # Mark this message as unread for user
-                key = (username, room)
-                USER_LAST_SEEN[key] = now.isoformat()
-
-        try:
-            await sio.emit(
-                "room_message_meta",
-                {
-                    "room": room,
-                    "sender": sender,
-                    "text": display_text,  # Use display text for metadata
-                    "ts": now.isoformat(),
-                },
-            )
-        except Exception as e:
-            print("Failed to emit room_message_meta:", e)
-
-        # Web push - use display text (shows '[Encrypted message]' for encrypted)
-        await send_push_to_room(room, sender, display_text)
-
-        # Android push (FCM) - use display text
-        await send_fcm_to_room(room, sender, display_text)
-
-        print(f"📨 Message in {room} from {sender}: {display_text}")
-
     except Exception as e:
-        print(f"❌ Error in message handler: {e}")
+        print("Failed to emit room_message_meta for encrypted message:", e)
+
+    # Web push for encrypted message
+    await send_push_to_room(room, sender, "🔒 Encrypted message")
+
+    # Android push (FCM) for encrypted message
+    await send_fcm_to_room(room, sender, "🔒 Encrypted message")
+
+
+@sio.event
+async def message(sid, data):
+    room = data.get("room")
+    sender = data.get("sender")
+    text = (data.get("text") or "").strip()
+    now = datetime.now(timezone.utc)
+
+    if not text or not room or not sender:
+        return
+
+    # optional: keep duplicate suppression
+    key = (room, sender)
+    last = LAST_MESSAGE.get(key)
+    if last and last[0] == text and (now - last[1]).total_seconds() < 1.5:
+        return
+    LAST_MESSAGE[key] = (text, now)
+
+    save_message(room, sender, text=text)
+    # broadcast the usual message to the room (already present)
+    await sio.emit(
+        "message", {"sender": sender, "text": text, "ts": now.isoformat()}, room=room
+    )
+
+    # Update unread counts for all users in the room except sender
+    for username in ROOM_HISTORY.get(room, set()):
+        if username != sender:
+            # Mark this message as unread for user
+            key = (username, room)
+            USER_LAST_SEEN[key] = now.isoformat()
+
+    try:
+        await sio.emit(
+            "room_message_meta",
+            {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
+        )
+    except Exception as e:
+        print("Failed to emit room_message_meta:", e)
+    # Web push
+    await send_push_to_room(room, sender, text)
+
+    # Android push (FCM)
+    await send_fcm_to_room(room, sender, text)
 
 
 @sio.event
@@ -1399,14 +1363,14 @@ async def leave(sid, data):
     username = data.get("sender")
     reason = data.get("reason", "leave")  # "leave" | "switch"
 
-    # Clean up public keys
+    # Remove user's public key
     if room in USER_PUBLIC_KEYS and username in USER_PUBLIC_KEYS[room]:
         del USER_PUBLIC_KEYS[room][username]
-        print(f"🗑️ Removed public key for {username} from room {room}")
 
-        # Remove room if empty
-        if not USER_PUBLIC_KEYS[room]:
-            del USER_PUBLIC_KEYS[room]
+        # Notify other users
+        await sio.emit(
+            "user_left_keys", {"room": room, "username": username}, room=room
+        )
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         # Check if leaving user is the admin - ONLY for intentional leave (not switch)
