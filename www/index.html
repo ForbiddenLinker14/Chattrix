@@ -9,8 +9,6 @@
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
     crossorigin="anonymous"></script>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.11/sodium.min.js"></script>
-
   <link href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
   <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
 
@@ -818,6 +816,36 @@
         transform: translateY(-20px);
       }
     }
+
+    /* Encryption status indicator */
+    .encryption-indicator {
+      display: inline-block;
+      margin-left: 5px;
+      font-size: 12px;
+    }
+
+    .encryption-on {
+      color: #27ae60;
+    }
+
+    .encryption-off {
+      color: #e74c3c;
+    }
+
+    /* Encryption button styles */
+    #encryption-toggle {
+      transition: all 0.3s ease;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #encryption-toggle:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 
@@ -1295,16 +1323,6 @@
       if (!currentName || !currentRoom) {
         alert("Enter name and room first!");
         return;
-      }
-
-      try {
-        // Initialize encryption for this room (with error handling)
-        await waitForSodium();
-        await exchangePublicKeys(currentRoom, currentName);
-
-      } catch (error) {
-        console.warn("⚠️ Encryption initialization failed, continuing without E2EE:", error);
-        // Continue without encryption - don't block the user from joining
       }
 
       // Clear any previous pending state
@@ -1871,11 +1889,11 @@
       socket.on("file", addFileMessage);
 
       // Setup input handlers
-      document.getElementById("send").onclick = sendEncryptedMessage;
+      document.getElementById("send").onclick = sendMessage;
       document.getElementById("input").onkeydown = (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          sendEncryptedMessage();
+          sendMessage();
         }
       };
       document.getElementById("attach").onclick = (e) => {
@@ -2200,38 +2218,46 @@
     // ======================================================
     // =============== Message Handling =====================
     // ======================================================
-    async function sendEncryptedMessage() {
+    async function sendMessage() {
       if (sending) return;
-
       const inputEl = document.getElementById("input");
       const text = inputEl.value.trim();
-
-      if (!text || !currentRoom || !currentName) return;
-
+      if (!text || !currentRoom) return;
+      const nowTs = new Date().toISOString();
+      lastPersistedTs = nowTs;
       try {
-        sending = true;
-        document.getElementById("send").disabled = true;
-
-        // Encrypt the message
-        const encryptedData = await encryptMessageForRoom(text, currentRoom);
-
-        // Send encrypted message
-        socket.emit("encrypted_message", {
-          room: currentRoom,
-          sender: currentName,
-          encryptedData: encryptedData,
-          timestamp: new Date().toISOString()
-        });
-
-        inputEl.value = "";
-
-      } catch (error) {
-        console.error("❌ Encryption failed:", error);
-        showAlert("Failed to encrypt message", "error");
-      } finally {
-        sending = false;
-        document.getElementById("send").disabled = false;
+        localStorage.setItem(
+          "chatState",
+          JSON.stringify({
+            username: currentName,
+            room: currentRoom,
+            lastTs: lastPersistedTs,
+          })
+        );
+      } catch (e) {
+        console.warn("Could not persist chatState:", e);
       }
+      sending = true;
+      document.getElementById("send").disabled = true;
+      let sub = null;
+      try {
+        const savedSub = localStorage.getItem("pushSub");
+        sub = savedSub ? JSON.parse(savedSub) : null;
+      } catch (err) {
+        console.warn(
+          "⚠️ Subscription failed, but sending message anyway:",
+          err
+        );
+      }
+      socket.emit(
+        "message",
+        { room: currentRoom, sender: currentName, text, subscription: sub },
+        () => {
+          sending = false;
+          document.getElementById("send").disabled = false;
+        }
+      );
+      inputEl.value = "";
     }
 
     function showCopyNotice(text) {
@@ -3994,232 +4020,528 @@
     });
 
 
-    // =============================
-    // End to End Encrypted
-    // =============================
-    async function waitForSodium() {
-      if (window.sodium && sodium.ready) {
-        await sodium.ready;
-        return;
-      }
+    // ======================================================
+    // =============== libsodium E2E Encryption =============
+    // ======================================================
 
-      // Wait until sodium is loaded globally
-      await new Promise((resolve) => {
-        const check = setInterval(() => {
-          if (window.sodium) {
-            clearInterval(check);
-            sodium.ready.then(resolve);
-          }
-        }, 50);
+    // Load libsodium.js
+    const sodiumScript = document.createElement('script');
+    sodiumScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.11/sodium.min.js';
+    document.head.appendChild(sodiumScript);
+
+    // Encryption state
+    let encryptionEnabled = false;
+    let myKeyPair = null;
+    let roomPublicKeys = new Map(); // room -> Map(username -> publicKey)
+    let roomSymmetricKeys = new Map(); // room -> symmetric key
+
+    // Wait for sodium to load
+    async function initializeSodium() {
+      return new Promise((resolve) => {
+        if (window.sodium) {
+          resolve();
+          return;
+        }
+
+        sodiumScript.onload = async () => {
+          await window.sodium.ready;
+          console.log("✅ libsodium loaded successfully");
+          resolve();
+        };
+
+        sodiumScript.onerror = () => {
+          console.error("❌ Failed to load libsodium");
+          resolve(); // Continue without encryption
+        };
       });
     }
 
+    // Generate key pair for user
+    async function generateKeyPair() {
+      try {
+        await window.sodium.ready;
 
-    // Global variables for key management
-    let userKeyPairs = new Map(); // room -> {publicKey, privateKey}
-    let roomPublicKeys = new Map(); // room -> {username: publicKey}
+        const keyPair = sodium.crypto_box_keypair();
 
-    // Initialize libsodium and generate keys
-    async function initializeEncryption(room, username) {
-      await sodium.ready;
+        // Store in localStorage for persistence
+        const storageObj = {
+          publicKey: sodium.to_base64(keyPair.publicKey),
+          privateKey: sodium.to_base64(keyPair.privateKey)
+        };
 
-      // Generate key pair for this user in this room
-      const keyPair = sodium.crypto_box_keypair();
-      userKeyPairs.set(room, {
-        publicKey: keyPair.publicKey,
-        privateKey: keyPair.privateKey
-      });
+        localStorage.setItem('user_keypair', JSON.stringify(storageObj));
 
-      // Store keys in localStorage for persistence
-      localStorage.setItem(`e2ee_keys_${room}_${username}`, JSON.stringify({
-        publicKey: sodium.to_base64(keyPair.publicKey),
-        privateKey: sodium.to_base64(keyPair.privateKey)
-      }));
-
-      return keyPair.publicKey;
+        console.log("✅ Generated new encryption key pair");
+        return keyPair;
+      } catch (error) {
+        console.error("❌ Failed to generate key pair:", error);
+        return null;
+      }
     }
 
-    // Load existing keys
-    async function loadEncryptionKeys(room, username) {
-      await sodium.ready;
+    // Load existing key pair or generate new one
+    async function loadOrCreateKeyPair() {
+      try {
+        // Try to load from localStorage
+        const stored = localStorage.getItem('user_keypair');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          await window.sodium.ready;
 
-      const stored = localStorage.getItem(`e2ee_keys_${room}_${username}`);
-      if (stored) {
-        const keys = JSON.parse(stored);
-        userKeyPairs.set(room, {
-          publicKey: sodium.from_base64(keys.publicKey),
-          privateKey: sodium.from_base64(keys.privateKey)
-        });
-        return true;
+          myKeyPair = {
+            publicKey: sodium.from_base64(parsed.publicKey),
+            privateKey: sodium.from_base64(parsed.privateKey)
+          };
+
+          console.log("✅ Loaded existing encryption key pair");
+          return myKeyPair;
+        }
+
+        // Generate new key pair
+        return await generateKeyPair();
+      } catch (error) {
+        console.error("❌ Failed to load/create key pair:", error);
+        return await generateKeyPair(); // Fallback to new generation
       }
-      return false;
     }
 
-    // Exchange public keys when joining room
-    async function exchangePublicKeys(room, username) {
-      await waitForSodium();
-      await sodium.ready;
-      let publicKey;
-
-      // Load or generate keys
-      const hasKeys = await loadEncryptionKeys(room, username);
-      if (!hasKeys) {
-        publicKey = await initializeEncryption(room, username);
-      } else {
-        publicKey = userKeyPairs.get(room).publicKey;
-      }
-
-      // Send public key to server
-      socket.emit('public_key_exchange', {
-        room: room,
-        user: username,
-        publicKey: sodium.to_base64(publicKey)
-      });
+    // Generate symmetric key for a room
+    async function generateSymmetricKey() {
+      await window.sodium.ready;
+      return sodium.randombytes_buf(sodium.crypto_secretbox_KEYBYTES);
     }
 
-    // Receive other users' public keys
-    socket.on('public_key_exchange', async (data) => {
-      await sodium.ready;
-
-      const { room, user, publicKey } = data;
-
-      if (!roomPublicKeys.has(room)) {
-        roomPublicKeys.set(room, new Map());
+    // Encrypt message using hybrid encryption
+    async function encryptMessage(room, message) {
+      if (!encryptionEnabled || !myKeyPair) {
+        return { encrypted: false, data: message };
       }
-
-      roomPublicKeys.get(room).set(user, sodium.from_base64(publicKey));
-      console.log(`🔑 Received public key for ${user} in room ${room}`);
-    });
-
-    async function encryptMessageForRoom(message, room) {
-      await sodium.ready;
-
-      const roomKeys = roomPublicKeys.get(room);
-      if (!roomKeys || roomKeys.size === 0) {
-        throw new Error("No public keys available for this room");
-      }
-
-      // Step 1: Generate random symmetric key for this message
-      const symmetricKey = sodium.crypto_secretbox_keygen();
-      const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
-
-      // Step 2: Encrypt message with symmetric key
-      const messageBytes = sodium.from_string(message);
-      const encryptedMessage = sodium.crypto_secretbox_easy(
-        messageBytes,
-        nonce,
-        symmetricKey
-      );
-
-      // Step 3: Encrypt symmetric key for each recipient
-      const encryptedKeys = {};
-
-      for (const [username, publicKey] of roomKeys) {
-        const encryptedKey = sodium.crypto_box_seal(symmetricKey, publicKey);
-        encryptedKeys[username] = sodium.to_base64(encryptedKey);
-      }
-
-      // Also encrypt for ourselves
-      const myPublicKey = userKeyPairs.get(room).publicKey;
-      const myEncryptedKey = sodium.crypto_box_seal(symmetricKey, myPublicKey);
-      encryptedKeys[currentName] = sodium.to_base64(myEncryptedKey);
-
-      return {
-        encryptedMessage: sodium.to_base64(encryptedMessage),
-        nonce: sodium.to_base64(nonce),
-        encryptedKeys: encryptedKeys
-      };
-    }
-
-    async function decryptMessageForUser(encryptedData, room, username) {
-      await sodium.ready;
-
-      const { encryptedMessage, nonce, encryptedKeys } = encryptedData;
-      const userKeys = userKeyPairs.get(room);
-
-      if (!userKeys || !encryptedKeys[username]) {
-        throw new Error("No encryption key available for user");
-      }
-
-      // Step 1: Decrypt the symmetric key
-      const encryptedKey = sodium.from_base64(encryptedKeys[username]);
-      const symmetricKey = sodium.crypto_box_seal_open(
-        encryptedKey,
-        userKeys.publicKey,
-        userKeys.privateKey
-      );
-
-      if (!symmetricKey) {
-        throw new Error("Failed to decrypt symmetric key");
-      }
-
-      // Step 2: Decrypt the message with symmetric key
-      const messageBytes = sodium.from_base64(encryptedMessage);
-      const decryptedBytes = sodium.crypto_secretbox_open_easy(
-        messageBytes,
-        sodium.from_base64(nonce),
-        symmetricKey
-      );
-
-      if (!decryptedBytes) {
-        throw new Error("Failed to decrypt message");
-      }
-
-      return sodium.to_string(decryptedBytes);
-    }
-
-    // Handle encrypted messages
-    socket.on("encrypted_message", async (data) => {
-      const { room, sender, encryptedData, timestamp } = data;
-
-      if (room !== currentRoom) return;
 
       try {
-        const decryptedText = await decryptMessageForUser(
-          encryptedData,
-          room,
-          currentName
+        await window.sodium.ready;
+
+        // Get or create symmetric key for this room
+        let symmetricKey = roomSymmetricKeys.get(room);
+        if (!symmetricKey) {
+          symmetricKey = await generateSymmetricKey();
+          roomSymmetricKeys.set(room, symmetricKey);
+
+          // Broadcast the symmetric key encrypted with each user's public key
+          await broadcastSymmetricKey(room, symmetricKey);
+        }
+
+        // Encrypt the message with symmetric key
+        const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+        const encryptedMessage = sodium.crypto_secretbox_easy(
+          sodium.from_string(message),
+          nonce,
+          symmetricKey
         );
 
-        // Add decrypted message to UI
-        addMessage({
-          sender: sender,
-          text: decryptedText,
-          ts: timestamp
-        });
+        const result = {
+          encrypted: true,
+          algorithm: 'xsalsa20-poly1305',
+          data: sodium.to_base64(encryptedMessage),
+          nonce: sodium.to_base64(nonce)
+        };
+
+        console.log("✅ Message encrypted successfully");
+        return result;
+
+      } catch (error) {
+        console.error("❌ Encryption failed:", error);
+        return { encrypted: false, data: message };
+      }
+    }
+
+    // Decrypt message
+    async function decryptMessage(encryptedData) {
+      if (!encryptionEnabled || !encryptedData.encrypted || !myKeyPair) {
+        return encryptedData.data;
+      }
+
+      try {
+        await window.sodium.ready;
+
+        const room = currentRoom;
+        const symmetricKey = roomSymmetricKeys.get(room);
+
+        if (!symmetricKey) {
+          console.warn("⚠️ No symmetric key for room, cannot decrypt");
+          return "[Encrypted message - waiting for key]";
+        }
+
+        const encryptedMessage = sodium.from_base64(encryptedData.data);
+        const nonce = sodium.from_base64(encryptedData.nonce);
+
+        const decrypted = sodium.crypto_secretbox_open_easy(
+          encryptedMessage,
+          nonce,
+          symmetricKey
+        );
+
+        const message = sodium.to_string(decrypted);
+        console.log("✅ Message decrypted successfully");
+        return message;
 
       } catch (error) {
         console.error("❌ Decryption failed:", error);
-
-        // Show encrypted message indicator
-        addMessage({
-          sender: "System",
-          text: `🔒 Encrypted message from ${sender} (decryption failed)`,
-          ts: timestamp
-        });
+        return "[Failed to decrypt message]";
       }
-    });
+    }
 
+    // Broadcast symmetric key to all room participants
+    async function broadcastSymmetricKey(room, symmetricKey) {
+      if (!socket || !socket.connected) return;
 
-    // Debug function to verify encryption
-    window.verifyEncryption = async function () {
-      console.log("🔐 Encryption Verification");
-      console.log("User KeyPairs:", userKeyPairs);
-      console.log("Room Public Keys:", roomPublicKeys);
+      const roomUsers = Array.from(roomPublicKeys.get(room) || []);
 
-      const testMessage = "ENCRYPTION_TEST_123";
-      console.log("Original:", testMessage);
+      for (const [username, publicKey] of roomUsers) {
+        if (username === currentName) continue; // Skip self
+
+        try {
+          await window.sodium.ready;
+
+          // Encrypt symmetric key with user's public key
+          const nonce = sodium.randombytes_buf(sodium.crypto_box_NONCEBYTES);
+          const encryptedKey = sodium.crypto_box_easy(
+            symmetricKey,
+            nonce,
+            publicKey,
+            myKeyPair.privateKey
+          );
+
+          // Send encrypted symmetric key
+          socket.emit('encrypted_key', {
+            room: room,
+            targetUser: username,
+            encryptedKey: sodium.to_base64(encryptedKey),
+            nonce: sodium.to_base64(nonce),
+            sender: currentName
+          });
+
+        } catch (error) {
+          console.error(`❌ Failed to encrypt key for ${username}:`, error);
+        }
+      }
+    }
+
+    // Handle receiving encrypted symmetric key
+    async function handleEncryptedKey(data) {
+      try {
+        await window.sodium.ready;
+
+        const { room, encryptedKey, nonce, sender } = data;
+
+        // Get sender's public key
+        const senderPublicKey = roomPublicKeys.get(room)?.get(sender);
+        if (!senderPublicKey) {
+          console.warn(`⚠️ No public key for sender ${sender}`);
+          return;
+        }
+
+        // Decrypt the symmetric key
+        const decryptedKey = sodium.crypto_box_open_easy(
+          sodium.from_base64(encryptedKey),
+          sodium.from_base64(nonce),
+          senderPublicKey,
+          myKeyPair.privateKey
+        );
+
+        // Store the symmetric key for the room
+        roomSymmetricKeys.set(room, decryptedKey);
+
+        console.log(`✅ Received and decrypted symmetric key from ${sender} for room ${room}`);
+
+        // Show notification to user
+        showAlert(`Encryption enabled for room ${room}`, 'success');
+
+      } catch (error) {
+        console.error("❌ Failed to handle encrypted key:", error);
+      }
+    }
+
+    // Share public key when joining room
+    async function sharePublicKey(room) {
+      if (!encryptionEnabled || !myKeyPair) return;
 
       try {
-        const encrypted = await encryptMessageForRoom(testMessage, currentRoom);
-        console.log("Encrypted:", encrypted);
+        await window.sodium.ready;
 
-        const decrypted = await decryptMessageForUser(encrypted, currentRoom, currentName);
-        console.log("Decrypted:", decrypted);
-        console.log("✅ Encryption working:", testMessage === decrypted);
+        socket.emit('share_public_key', {
+          room: room,
+          username: currentName,
+          publicKey: sodium.to_base64(myKeyPair.publicKey)
+        });
+
+        // Initialize room in public keys map
+        if (!roomPublicKeys.has(room)) {
+          roomPublicKeys.set(room, new Map());
+        }
+        roomPublicKeys.get(room).set(currentName, myKeyPair.publicKey);
+
       } catch (error) {
-        console.error("❌ Encryption test failed:", error);
+        console.error("❌ Failed to share public key:", error);
       }
+    }
+
+    // Handle receiving public keys from other users
+    function handlePublicKey(data) {
+      const { room, username, publicKey } = data;
+
+      try {
+        if (!roomPublicKeys.has(room)) {
+          roomPublicKeys.set(room, new Map());
+        }
+
+        roomPublicKeys.get(room).set(username, sodium.from_base64(publicKey));
+        console.log(`✅ Received public key for ${username} in room ${room}`);
+
+      } catch (error) {
+        console.error("❌ Failed to handle public key:", error);
+      }
+    }
+
+    // Toggle encryption on/off
+    window.toggleEncryption = async function () {
+      encryptionEnabled = !encryptionEnabled;
+
+      if (encryptionEnabled) {
+        await initializeEncryption();
+        showAlert("End-to-end encryption enabled", 'success');
+      } else {
+        // Clear all encryption state
+        roomPublicKeys.clear();
+        roomSymmetricKeys.clear();
+        showAlert("Encryption disabled", 'info');
+      }
+
+      updateEncryptionUI();
+    };
+
+    // Initialize encryption system
+    async function initializeEncryption() {
+      try {
+        await initializeSodium();
+        await loadOrCreateKeyPair();
+
+        if (!myKeyPair) {
+          console.warn("⚠️ Encryption initialization failed");
+          encryptionEnabled = false;
+          return;
+        }
+
+        console.log("✅ Encryption system initialized successfully");
+
+      } catch (error) {
+        console.error("❌ Encryption initialization failed:", error);
+        encryptionEnabled = false;
+      }
+    }
+
+    // Update UI to show encryption status
+    function updateEncryptionUI() {
+      const encryptionBtn = document.getElementById('encryption-toggle');
+      if (!encryptionBtn) return;
+
+      if (encryptionEnabled) {
+        encryptionBtn.innerHTML = '🔒 Encryption: ON';
+        encryptionBtn.style.background = '#27ae60';
+      } else {
+        encryptionBtn.innerHTML = '🔓 Encryption: OFF';
+        encryptionBtn.style.background = '#e74c3c';
+      }
+    }
+
+    // WRAPPER FUNCTIONS - These work with your existing code without replacing it
+
+    // Enhanced send function that handles encryption
+    async function sendMessageWithEncryption() {
+      if (sending) return;
+
+      const inputEl = document.getElementById('input');
+      const text = inputEl.value.trim();
+      if (!text || !currentRoom) return;
+
+      const nowTs = new Date().toISOString();
+      lastPersistedTs = nowTs;
+
+      sending = true;
+      document.getElementById('send').disabled = true;
+
+      try {
+        // Encrypt the message if encryption is enabled
+        const messageData = encryptionEnabled ?
+          await encryptMessage(currentRoom, text) :
+          text; // Send plain text if encryption is off
+
+        let sub = null;
+        try {
+          const savedSub = localStorage.getItem('pushSub');
+          sub = savedSub ? JSON.parse(savedSub) : null;
+        } catch (err) {
+          console.warn('⚠️ Subscription failed, but sending message anyway:', err);
+        }
+
+        socket.emit(
+          'message',
+          {
+            room: currentRoom,
+            sender: currentName,
+            text: messageData,
+            subscription: sub
+          },
+          () => {
+            sending = false;
+            document.getElementById('send').disabled = false;
+          }
+        );
+
+        inputEl.value = '';
+
+      } catch (error) {
+        console.error('❌ Failed to send encrypted message:', error);
+        sending = false;
+        document.getElementById('send').disabled = false;
+      }
+    }
+
+    // Enhanced message display that handles decryption
+    async function displayMessageWithDecryption(data) {
+      const messages = document.getElementById('messages');
+      if (data.ts) roomTimestamps[currentRoom] = data.ts;
+
+      const div = document.createElement('div');
+
+      if (data.sender === 'System') {
+        div.className = 'msg system';
+        div.textContent = data.text;
+        enableCopyOnMessage(div, data.text);
+      } else {
+        bumpTs(data.ts);
+        const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
+        div.className = 'msg ' + (isMe ? 'me' : 'other');
+        div.dataset.ts = data.ts;
+
+        let messageText = data.text;
+
+        // Check if message is encrypted and try to decrypt
+        if (typeof data.text === 'object' && data.text.encrypted) {
+          try {
+            messageText = await decryptMessage(data.text);
+
+            // Add encryption indicator
+            if (messageText !== data.text.data) {
+              div.dataset.encrypted = 'true';
+            }
+          } catch (error) {
+            messageText = '[Encrypted message]';
+            console.warn('Failed to decrypt message:', error);
+          }
+        }
+
+        const safeText = escapeHtml(messageText);
+        const formattedText = linkifyWithFavicon(safeText);
+
+        div.innerHTML = `<strong>${data.sender}</strong>` +
+          (div.dataset.encrypted ? ' <small style="color: #27ae60;">🔒</small>' : '') +
+          `<br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
+
+        enableCopyOnMessage(div, messageText);
+        div.querySelectorAll('a').forEach((a) => enableCopyOnLink(a));
+      }
+
+      messages.appendChild(div);
+      messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+    }
+
+    // Initialize encryption when app starts
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Add encryption toggle button to sidebar
+      const sidebar = document.getElementById('sidebar');
+      const encryptionButton = document.createElement('button');
+      encryptionButton.id = 'encryption-toggle';
+      encryptionButton.innerHTML = '🔓 Encryption: OFF';
+      encryptionButton.style.width = '100%';
+      encryptionButton.style.background = '#e74c3c';
+      encryptionButton.style.color = 'white';
+      encryptionButton.style.marginTop = '10px';
+      encryptionButton.onclick = () => toggleEncryption();
+
+      // Insert after the destroy room button
+      const destroyBtn = document.querySelector('button[onclick="destroyRoom()"]');
+      if (destroyBtn) {
+        destroyBtn.parentNode.insertBefore(encryptionButton, destroyBtn.nextSibling);
+      }
+
+      // Initialize encryption system (but don't enable by default)
+      await initializeEncryption();
+      updateEncryptionUI();
+    });
+
+    // INTERCEPTOR APPROACH - This is the key part that works with your existing code
+
+    // Store original functions
+    const originalSendMessage = window.sendMessage;
+    const originalAddMessage = window.addMessage;
+
+    // Enhanced send function that preserves your original logic
+    window.sendMessage = async function () {
+      if (encryptionEnabled) {
+        await sendMessageWithEncryption();
+      } else {
+        // Use original function if encryption is disabled
+        originalSendMessage();
+      }
+    };
+
+    // Enhanced add message function that preserves your original logic  
+    window.addMessage = async function (data) {
+      if (encryptionEnabled && data.sender !== 'System') {
+        await displayMessageWithDecryption(data);
+      } else {
+        // Use original function if encryption is disabled or system message
+        originalAddMessage(data);
+      }
+    };
+
+    // Add socket event listeners for encryption
+    function setupEncryptionSocketHandlers() {
+      if (!socket) return;
+
+      socket.on('share_public_key', handlePublicKey);
+      socket.on('encrypted_key', handleEncryptedKey);
+
+      socket.on('user_joined', async (data) => {
+        if (encryptionEnabled && data.room === currentRoom && data.user !== currentName) {
+          // New user joined, share our public key with them
+          setTimeout(() => {
+            sharePublicKey(data.room);
+          }, 500);
+        }
+      });
+    }
+
+    // Enhance the existing socket setup to include encryption handlers
+    const originalSetupSocketHandlers = setupSocketEventHandlers;
+    setupSocketEventHandlers = function () {
+      originalSetupSocketHandlers.apply(this, arguments);
+      setupEncryptionSocketHandlers();
+    };
+
+    // Enhance joinRoom to share public key
+    const originalJoinRoom = window.joinRoom;
+    window.joinRoom = async function () {
+      const result = await originalJoinRoom.apply(this, arguments);
+
+      // Share public key after joining room
+      if (encryptionEnabled && currentRoom) {
+        setTimeout(() => {
+          sharePublicKey(currentRoom);
+        }, 1000);
+      }
+
+      return result;
     };
   </script>
 

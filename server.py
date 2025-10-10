@@ -34,6 +34,7 @@ ROOM_ADMINS = {}  # { room: admin_username }
 ROOM_LOCK_STATES = {}  # { room: boolean }
 PENDING_JOIN_REQUESTS = {}  # { room: [ {user, timestamp, sid} ] }
 USER_SOCKET_MAPPING = {}  # { username: sid } for quick lookup
+USER_PUBLIC_KEYS = {}
 
 # Push de-duplication: per-endpoint recent payload IDs sent
 PUSH_RECENT = {}  # endpoint -> deque[(push_id, ts)]
@@ -726,6 +727,11 @@ async def clear_messages(room: str, request: Request):
 
 @app.delete("/destroy/{room}")
 async def destroy_room(room: str, request: Request):
+
+    # Clean up encryption keys
+    if room in USER_PUBLIC_KEYS:
+        del USER_PUBLIC_KEYS[room]
+        print(f"🗑️ Cleared encryption keys for destroyed room {room}")
     # Parse body for both POST and DELETE methods
     try:
         body = await request.json()
@@ -819,73 +825,63 @@ async def destroy_room(room: str, request: Request):
     return {"status": "ok"}
 
 
-# Add new event handlers
 @sio.event
-async def public_key_exchange(sid, data):
-    """Handle public key exchange between users"""
-    room = data.get('room')
-    user = data.get('user')
-    public_key = data.get('publicKey')
-    
-    if not all([room, user, public_key]):
-        return
-    
-    # Broadcast public key to all users in the room
-    await sio.emit('public_key_exchange', {
-        'room': room,
-        'user': user,
-        'publicKey': public_key
-    }, room=room)
-    
-    print(f"🔑 Public key exchanged for {user} in room {room}")
+async def share_public_key(sid, data):
+    """Store and broadcast user's public key"""
+    room = data.get("room")
+    username = data.get("username")
+    public_key = data.get("publicKey")
 
-@sio.event
-async def encrypted_message(sid, data):
-    """Handle encrypted messages"""
-    room = data.get('room')
-    sender = data.get('sender')
-    encrypted_data = data.get('encryptedData')
-    timestamp = data.get('timestamp')
-    
-    if not all([room, sender, encrypted_data]):
+    if not all([room, username, public_key]):
         return
-    
-    # Store encrypted message in database
-    save_encrypted_message(room, sender, json.dumps(encrypted_data), timestamp)
-    
-    # Broadcast encrypted message to room
-    await sio.emit('encrypted_message', {
-        'room': room,
-        'sender': sender,
-        'encryptedData': encrypted_data,
-        'timestamp': timestamp
-    }, room=room)
-    
-    print(f"🔒 Encrypted message from {sender} in room {room}")
 
-async def save_encrypted_message(room, sender, encrypted_data, timestamp):
-    """Save encrypted message to database"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    # Create table if not exists
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS encrypted_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room TEXT NOT NULL,
-            sender TEXT NOT NULL,
-            encrypted_data TEXT NOT NULL,
-            ts TEXT NOT NULL
-        )
-    ''')
-    
-    c.execute(
-        "INSERT INTO encrypted_messages (room, sender, encrypted_data, ts) VALUES (?, ?, ?, ?)",
-        (room, sender, encrypted_data, timestamp)
+    # Store public key
+    if room not in USER_PUBLIC_KEYS:
+        USER_PUBLIC_KEYS[room] = {}
+
+    USER_PUBLIC_KEYS[room][username] = public_key
+    print(f"🔑 Stored public key for {username} in room {room}")
+
+    # Broadcast to all users in the room (except sender)
+    await sio.emit(
+        "share_public_key",
+        {"room": room, "username": username, "publicKey": public_key},
+        room=room,
+        skip_sid=sid,
     )
-    
-    conn.commit()
-    conn.close()
+
+
+@sio.event
+async def encrypted_key(sid, data):
+    """Forward encrypted symmetric key to target user"""
+    room = data.get("room")
+    target_user = data.get("targetUser")
+    encrypted_key = data.get("encryptedKey")
+    nonce = data.get("nonce")
+    sender = data.get("sender")
+
+    if not all([room, target_user, encrypted_key, nonce, sender]):
+        return
+
+    # Find target user's socket ID
+    target_sid = None
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+
+    if target_sid:
+        await sio.emit(
+            "encrypted_key",
+            {
+                "room": room,
+                "encryptedKey": encrypted_key,
+                "nonce": nonce,
+                "sender": sender,
+            },
+            room=target_sid,
+        )
+        print(f"🔑 Forwarded encrypted key from {sender} to {target_user}")
+    else:
+        print(f"⚠️ Target user {target_user} not found in room {room}")
 
 
 # ---------------- Socket.IO Events ----------------
@@ -1349,6 +1345,15 @@ async def leave(sid, data):
     room = data.get("room")
     username = data.get("sender")
     reason = data.get("reason", "leave")  # "leave" | "switch"
+
+    # Clean up public keys
+    if room in USER_PUBLIC_KEYS and username in USER_PUBLIC_KEYS[room]:
+        del USER_PUBLIC_KEYS[room][username]
+        print(f"🗑️ Removed public key for {username} from room {room}")
+
+        # Remove room if empty
+        if not USER_PUBLIC_KEYS[room]:
+            del USER_PUBLIC_KEYS[room]
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         # Check if leaving user is the admin - ONLY for intentional leave (not switch)
