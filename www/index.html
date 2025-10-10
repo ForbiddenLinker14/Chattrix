@@ -10,7 +10,7 @@
     crossorigin="anonymous"></script>
 
   <!-- Load libsodium with proper async handling -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.11/sodium.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.11/sodium.min.js" async></script>
 
   <link href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
   <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
@@ -1310,12 +1310,16 @@
       }
 
       try {
-        // Initialize encryption and user keys with error handling
         console.log("🔄 Initializing encryption...");
         userKeys = await Encryption.initializeUserKeys(currentName);
-        console.log("✅ Encryption initialized for", currentName);
+
+        if (userKeys.publicKey === 'no-encryption') {
+          console.warn("⚠️ Encryption unavailable, continuing without encryption");
+        } else {
+          console.log("✅ Encryption initialized for", currentName);
+        }
       } catch (error) {
-        console.error("❌ Encryption initialization failed, continuing without encryption:", error);
+        console.error("❌ Encryption initialization failed:", error);
         userKeys = {
           publicKey: 'no-encryption',
           privateKey: 'no-encryption'
@@ -4207,36 +4211,41 @@
           try {
             console.log("🔄 Initializing libsodium...");
 
-            // Wait for sodium to be available
-            if (typeof window.sodium === 'undefined') {
-              console.log("⏳ Waiting for libsodium to load...");
-
-              // Create a fallback timeout
-              const timeout = setTimeout(() => {
-                console.warn("⚠️ libsodium loading taking too long, continuing without encryption");
-                this.isInitialized = false;
-                resolve(false);
-              }, 5000);
-
-              // Wait for sodium to be defined
-              await new Promise((resolveWait) => {
-                const checkSodium = () => {
-                  if (typeof window.sodium !== 'undefined') {
-                    clearTimeout(timeout);
-                    resolveWait();
-                  } else {
-                    setTimeout(checkSodium, 100);
-                  }
-                };
-                checkSodium();
-              });
+            // Check if sodium is already available
+            if (typeof window.sodium !== 'undefined' && window.sodium.ready) {
+              await window.sodium.ready;
+              console.log("✅ libsodium initialized successfully");
+              this.isInitialized = true;
+              resolve(true);
+              return;
             }
 
-            // Now wait for sodium to be ready
-            await sodium.ready;
-            console.log("✅ libsodium initialized successfully");
-            this.isInitialized = true;
-            resolve(true);
+            // If not available, wait for it with timeout
+            console.log("⏳ Waiting for libsodium to load...");
+            let attempts = 0;
+            const maxAttempts = 50; // 5 seconds max
+
+            const waitForSodium = () => {
+              if (typeof window.sodium !== 'undefined' && window.sodium.ready) {
+                window.sodium.ready.then(() => {
+                  console.log("✅ libsodium initialized successfully");
+                  this.isInitialized = true;
+                  resolve(true);
+                }).catch(error => {
+                  console.error("❌ libsodium ready failed:", error);
+                  resolve(false);
+                });
+              } else if (attempts < maxAttempts) {
+                attempts++;
+                setTimeout(waitForSodium, 100);
+              } else {
+                console.warn("⚠️ libsodium loading timeout, continuing without encryption");
+                resolve(false);
+              }
+            };
+
+            waitForSodium();
+
           } catch (error) {
             console.error("❌ libsodium initialization failed:", error);
             this.isInitialized = false;
@@ -4251,14 +4260,36 @@
       async generateKeyPair() {
         const isReady = await this.initialize();
         if (!isReady) {
-          throw new Error('Encryption not available');
+          console.warn('⚠️ Encryption not available, using dummy keys');
+          return {
+            publicKey: 'no-encryption',
+            privateKey: 'no-encryption'
+          };
         }
 
-        const keyPair = sodium.crypto_box_keypair();
-        return {
-          publicKey: sodium.to_base64(keyPair.publicKey),
-          privateKey: sodium.to_base64(keyPair.privateKey)
-        };
+        try {
+          // Check if crypto_box_keypair exists
+          if (typeof sodium.crypto_box_keypair === 'function') {
+            const keyPair = sodium.crypto_box_keypair();
+            return {
+              publicKey: sodium.to_base64(keyPair.publicKey),
+              privateKey: sodium.to_base64(keyPair.privateKey)
+            };
+          } else {
+            // Fallback if function doesn't exist
+            console.warn('⚠️ crypto_box_keypair not available, using dummy keys');
+            return {
+              publicKey: 'no-encryption',
+              privateKey: 'no-encryption'
+            };
+          }
+        } catch (error) {
+          console.error('❌ Key generation failed:', error);
+          return {
+            publicKey: 'no-encryption',
+            privateKey: 'no-encryption'
+          };
+        }
       },
 
       // Encrypt message for multiple recipients
@@ -4432,9 +4463,10 @@
     // ======================================================
     // =============== Early libsodium Initialization =======
     // ======================================================
+    // Early libsodium loading
     console.log("🔄 Pre-loading libsodium...");
 
-    // Start loading libsodium immediately
+    // Set up sodium ready handler
     window.sodium = {
       onload: function (sodium) {
         console.log("✅ libsodium pre-loaded successfully");
@@ -4442,17 +4474,12 @@
       }
     };
 
-    // Early initialization attempt
-    (async function preloadSodium() {
-      try {
-        if (typeof window.sodium !== 'undefined' && window.sodium.ready) {
-          await window.sodium.ready;
-          console.log("✅ libsodium ready during preload");
-        }
-      } catch (error) {
-        console.log("ℹ️ libsodium not ready during preload, will initialize later");
+    // Fallback: if sodium doesn't load within 3 seconds, continue without it
+    setTimeout(() => {
+      if (typeof window.sodium === 'object' && window.sodium.onload) {
+        console.warn("⚠️ libsodium loading taking too long, will initialize when needed");
       }
-    })();
+    }, 3000);
   </script>
 
   <script>
