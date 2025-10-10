@@ -9,8 +9,8 @@
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
     crossorigin="anonymous"></script>
 
-  <!-- Load libsodium with proper async handling -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.11/sodium.min.js" async></script>
+  <!-- Load libsodium synchronously to ensure it's available -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/libsodium-wrappers/0.7.11/sodium.min.js"></script>
 
   <link href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
   <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
@@ -1056,6 +1056,15 @@
     // ======================================================
     // =============== Fresh Install / Version Reset =========
     // ======================================================
+
+    // Global libsodium availability check
+    console.log("🔍 Checking libsodium availability...");
+    if (typeof window.sodium === 'undefined') {
+      console.warn("⚠️ libsodium not loaded - encryption will be disabled");
+    } else {
+      console.log("✅ libsodium found");
+    }
+
     const APP_VERSION = "8.5"; // current app version
 
     // Function to clear all storage
@@ -4196,67 +4205,27 @@
     // ======================================================
     const Encryption = {
       isInitialized: false,
-      initializationPromise: null,
 
       async initialize() {
-        // If already initialized, return
         if (this.isInitialized) return true;
 
-        // If initialization is in progress, wait for it
-        if (this.initializationPromise) {
-          return await this.initializationPromise;
-        }
-
-        this.initializationPromise = new Promise(async (resolve, reject) => {
-          try {
-            console.log("🔄 Initializing libsodium...");
-
-            // Check if sodium is already available
-            if (typeof window.sodium !== 'undefined' && window.sodium.ready) {
-              await window.sodium.ready;
-              console.log("✅ libsodium initialized successfully");
-              this.isInitialized = true;
-              resolve(true);
-              return;
-            }
-
-            // If not available, wait for it with timeout
-            console.log("⏳ Waiting for libsodium to load...");
-            let attempts = 0;
-            const maxAttempts = 50; // 5 seconds max
-
-            const waitForSodium = () => {
-              if (typeof window.sodium !== 'undefined' && window.sodium.ready) {
-                window.sodium.ready.then(() => {
-                  console.log("✅ libsodium initialized successfully");
-                  this.isInitialized = true;
-                  resolve(true);
-                }).catch(error => {
-                  console.error("❌ libsodium ready failed:", error);
-                  resolve(false);
-                });
-              } else if (attempts < maxAttempts) {
-                attempts++;
-                setTimeout(waitForSodium, 100);
-              } else {
-                console.warn("⚠️ libsodium loading timeout, continuing without encryption");
-                resolve(false);
-              }
-            };
-
-            waitForSodium();
-
-          } catch (error) {
-            console.error("❌ libsodium initialization failed:", error);
-            this.isInitialized = false;
-            resolve(false);
+        try {
+          // Wait for sodium to be ready
+          if (typeof window.sodium !== 'undefined') {
+            await window.sodium.ready;
+            console.log("✅ libsodium initialized successfully");
+            this.isInitialized = true;
+            return true;
+          } else {
+            console.warn("⚠️ libsodium not available");
+            return false;
           }
-        });
-
-        return await this.initializationPromise;
+        } catch (error) {
+          console.warn("⚠️ libsodium initialization failed:", error);
+          return false;
+        }
       },
 
-      // Generate key pair for a user
       async generateKeyPair() {
         const isReady = await this.initialize();
         if (!isReady) {
@@ -4268,20 +4237,15 @@
         }
 
         try {
-          // Check if crypto_box_keypair exists
-          if (typeof sodium.crypto_box_keypair === 'function') {
-            const keyPair = sodium.crypto_box_keypair();
+          // Check if sodium functions are available
+          if (window.sodium && typeof window.sodium.crypto_box_keypair === 'function') {
+            const keyPair = window.sodium.crypto_box_keypair();
             return {
-              publicKey: sodium.to_base64(keyPair.publicKey),
-              privateKey: sodium.to_base64(keyPair.privateKey)
+              publicKey: window.sodium.to_base64(keyPair.publicKey),
+              privateKey: window.sodium.to_base64(keyPair.privateKey)
             };
           } else {
-            // Fallback if function doesn't exist
-            console.warn('⚠️ crypto_box_keypair not available, using dummy keys');
-            return {
-              publicKey: 'no-encryption',
-              privateKey: 'no-encryption'
-            };
+            throw new Error('Encryption functions not available');
           }
         } catch (error) {
           console.error('❌ Key generation failed:', error);
@@ -4292,11 +4256,10 @@
         }
       },
 
-      // Encrypt message for multiple recipients
       async encryptMessage(message, recipientPublicKeys) {
         const isReady = await this.initialize();
         if (!isReady) {
-          console.warn('⚠️ Encryption not available, returning plain text structure');
+          console.warn('⚠️ Encryption not available, sending plain text');
           return {
             type: 'plain',
             message: message,
@@ -4305,45 +4268,37 @@
         }
 
         try {
-          // Generate ephemeral key pair for this message
-          const ephemeralKeyPair = sodium.crypto_box_keypair();
+          // Simple encryption implementation
+          const ephemeralKeyPair = window.sodium.crypto_box_keypair();
+          const symmetricKey = window.sodium.crypto_secretbox_keygen();
+          const nonce = window.sodium.randombytes_buf(window.sodium.crypto_secretbox_NONCEBYTES);
 
-          // Generate a random symmetric key
-          const symmetricKey = sodium.crypto_secretbox_keygen();
-
-          // Encrypt the message with symmetric key
-          const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
-          const encryptedMessage = sodium.crypto_secretbox_easy(
-            sodium.from_string(message),
+          const encryptedMessage = window.sodium.crypto_secretbox_easy(
+            window.sodium.from_string(message),
             nonce,
             symmetricKey
           );
 
-          // Encrypt symmetric key for each recipient
           const encryptedKeys = {};
           for (const [username, publicKeyBase64] of Object.entries(recipientPublicKeys)) {
-            const recipientPublicKey = sodium.from_base64(publicKeyBase64);
-
-            // Use crypto_box_seal for anonymous public-key encryption
-            const encryptedSymmetricKey = sodium.crypto_box_seal(
+            const recipientPublicKey = window.sodium.from_base64(publicKeyBase64);
+            const encryptedSymmetricKey = window.sodium.crypto_box_seal(
               symmetricKey,
               recipientPublicKey
             );
-
-            encryptedKeys[username] = sodium.to_base64(encryptedSymmetricKey);
+            encryptedKeys[username] = window.sodium.to_base64(encryptedSymmetricKey);
           }
 
           return {
             type: 'encrypted',
-            ephemeralPublicKey: sodium.to_base64(ephemeralKeyPair.publicKey),
-            encryptedMessage: sodium.to_base64(encryptedMessage),
-            nonce: sodium.to_base64(nonce),
+            ephemeralPublicKey: window.sodium.to_base64(ephemeralKeyPair.publicKey),
+            encryptedMessage: window.sodium.to_base64(encryptedMessage),
+            nonce: window.sodium.to_base64(nonce),
             encryptedKeys: encryptedKeys,
             timestamp: Date.now()
           };
         } catch (error) {
           console.error('❌ Encryption failed:', error);
-          // Fallback to plain text
           return {
             type: 'plain',
             message: message,
@@ -4352,66 +4307,50 @@
         }
       },
 
-      // Decrypt message
       async decryptMessage(encryptedData, myPrivateKeyBase64) {
         const isReady = await this.initialize();
         if (!isReady) {
-          console.warn('⚠️ Encryption not available, cannot decrypt');
           return `🔒 [Encrypted message - decryption unavailable]`;
         }
 
-        // Handle plain text fallback
         if (encryptedData.type === 'plain') {
           return encryptedData.message;
         }
 
         try {
-          const myPrivateKey = sodium.from_base64(myPrivateKeyBase64);
+          const myPrivateKey = window.sodium.from_base64(myPrivateKeyBase64);
 
-          // Check if we have the encrypted key for current user
           if (!encryptedData.encryptedKeys || !encryptedData.encryptedKeys[currentName]) {
             return `🔒 [Encrypted message - no key available]`;
           }
 
-          // Decrypt the symmetric key
-          const encryptedSymmetricKey = sodium.from_base64(encryptedData.encryptedKeys[currentName]);
-          const symmetricKey = sodium.crypto_box_seal_open(
+          const encryptedSymmetricKey = window.sodium.from_base64(encryptedData.encryptedKeys[currentName]);
+          const symmetricKey = window.sodium.crypto_box_seal_open(
             encryptedSymmetricKey,
-            sodium.from_base64(encryptedData.ephemeralPublicKey),
+            window.sodium.from_base64(encryptedData.ephemeralPublicKey),
             myPrivateKey
           );
 
-          if (!symmetricKey) {
-            throw new Error('Failed to decrypt symmetric key');
-          }
+          const encryptedMessage = window.sodium.from_base64(encryptedData.encryptedMessage);
+          const nonce = window.sodium.from_base64(encryptedData.nonce);
 
-          // Decrypt the message
-          const encryptedMessage = sodium.from_base64(encryptedData.encryptedMessage);
-          const nonce = sodium.from_base64(encryptedData.nonce);
-
-          const decryptedMessage = sodium.crypto_secretbox_open_easy(
+          const decryptedMessage = window.sodium.crypto_secretbox_open_easy(
             encryptedMessage,
             nonce,
             symmetricKey
           );
 
-          if (!decryptedMessage) {
-            throw new Error('Failed to decrypt message');
-          }
-
-          return sodium.to_string(decryptedMessage);
+          return window.sodium.to_string(decryptedMessage);
         } catch (error) {
           console.error('❌ Decryption failed:', error);
           return `🔒 [Encrypted message - decryption failed]`;
         }
       },
 
-      // Get storage key for user keys
       getStorageKey(username) {
         return `chat_keys_${username}`;
       },
 
-      // Load keys from storage
       loadKeys(username) {
         try {
           const stored = localStorage.getItem(this.getStorageKey(username));
@@ -4422,7 +4361,6 @@
         }
       },
 
-      // Save keys to storage
       saveKeys(username, keys) {
         try {
           localStorage.setItem(this.getStorageKey(username), JSON.stringify(keys));
@@ -4431,17 +4369,7 @@
         }
       },
 
-      // Initialize user keys (generate if not exists)
       async initializeUserKeys(username) {
-        const isReady = await this.initialize();
-        if (!isReady) {
-          console.warn('⚠️ Encryption not available, using dummy keys');
-          return {
-            publicKey: 'dummy-public-key',
-            privateKey: 'dummy-private-key'
-          };
-        }
-
         let keys = this.loadKeys(username);
 
         if (!keys) {
@@ -4463,6 +4391,7 @@
     // ======================================================
     // =============== Early libsodium Initialization =======
     // ======================================================
+    // Early libsodium loading
     // Early libsodium loading
     console.log("🔄 Pre-loading libsodium...");
 
