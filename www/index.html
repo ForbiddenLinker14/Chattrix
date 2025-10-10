@@ -1515,7 +1515,7 @@
 
         // Derive shared secret
         const sharedSecret = await this.deriveSharedSecret(
-          this.preKeys[0].keyPair.privateKey, // Use our pre-key private key
+          this.preKeys[0].keyPair.privateKey,
           ephemeralKey
         );
 
@@ -1542,6 +1542,9 @@
           recipientPublicKey: senderIdentityKey,
           messageCount: 0
         };
+
+        // Save sessions after key exchange
+        this.saveSessions();
 
         console.log(`🔐 Session established with ${senderId}`);
       }
@@ -1599,6 +1602,9 @@
         session.chainKey = nextChainKey;
         session.messageCount += 1;
 
+        // Save sessions after encryption
+        this.saveSessions();
+
         return {
           ciphertext: this.arrayBufferToBase64(encrypted),
           iv: this.arrayBufferToBase64(iv),
@@ -1612,9 +1618,6 @@
         if (!session) {
           throw new Error(`No session established with ${senderId}`);
         }
-
-        // For simplicity, we're not handling out-of-order messages
-        // In production, you'd need to handle message numbering properly
 
         const { messageKey, nextChainKey } = await this.deriveMessageKeys(session.chainKey);
 
@@ -1642,6 +1645,9 @@
           // Update chain key only if decryption successful
           session.chainKey = nextChainKey;
           session.messageCount += 1;
+
+          // Save sessions after decryption
+          this.saveSessions();
 
           return new TextDecoder().decode(decrypted);
         } catch (error) {
@@ -1694,6 +1700,55 @@
           registrationId: this.registrationId
         };
       }
+
+      saveSessions() {
+        try {
+          const sessionData = {};
+
+          // Convert CryptoKey objects to exportable format
+          Object.keys(this.sessions).forEach(userId => {
+            const session = this.sessions[userId];
+            sessionData[userId] = {
+              rootKey: this.arrayBufferToBase64(session.rootKey),
+              chainKey: this.arrayBufferToBase64(session.chainKey),
+              messageCount: session.messageCount,
+              // Note: We can't directly store CryptoKey objects, so we'll need to re-establish sessions
+              // on reload by re-initiating key exchanges
+            };
+          });
+          localStorage.setItem('signal_sessions', JSON.stringify(sessionData));
+          console.log('💾 Encryption sessions saved');
+        } catch (error) {
+          console.error('❌ Failed to save sessions:', error);
+        }
+      }
+
+      async loadSessions() {
+        try {
+          const saved = localStorage.getItem('signal_sessions');
+          if (!saved) return;
+
+          const sessionData = JSON.parse(saved);
+
+          for (const [userId, data] of Object.entries(sessionData)) {
+            try {
+              this.sessions[userId] = {
+                rootKey: this.base64ToArrayBuffer(data.rootKey),
+                chainKey: this.base64ToArrayBuffer(data.chainKey),
+                messageCount: data.messageCount || 0,
+                // We'll need to re-establish the key material on reload
+              };
+            } catch (error) {
+              console.warn(`⚠️ Failed to load session for ${userId}:`, error);
+              delete this.sessions[userId];
+            }
+          }
+
+          console.log('📂 Encryption sessions loaded');
+        } catch (error) {
+          console.error('❌ Failed to load sessions:', error);
+        }
+      }
     }
 
     // Initialize Signal protocol
@@ -1703,10 +1758,92 @@
     async function initializeEncryption() {
       try {
         await signalProtocol.initialize();
-        console.log("🔐 End-to-end encryption initialized");
+        await signalProtocol.loadSessions(); // Load saved sessions
+        console.log("🔐 End-to-end encryption initialized with persisted sessions");
+
+        // Log session status for debugging
+        const sessionCount = Object.keys(signalProtocol.sessions).length;
+        console.log(`📊 Loaded ${sessionCount} encryption sessions`);
       } catch (error) {
         console.error("❌ Failed to initialize encryption:", error);
       }
+    }
+
+    // ======================================================
+    // =============== Auto-Reestablish Sessions ============
+    // ======================================================
+
+    // Add this function to automatically re-establish sessions on app start
+    async function reestablishEncryptionSessions() {
+      if (!currentRoom || !currentName) return;
+
+      console.log("🔄 Re-establishing encryption sessions...");
+
+      // Wait a bit for user list to populate
+      setTimeout(async () => {
+        const users = getUsersFromUserList();
+        const existingSessions = Object.keys(signalProtocol.sessions);
+
+        console.log(`📋 Found ${users.length} users, ${existingSessions.length} existing sessions`);
+
+        // For each user we have a session with, verify they're still in the room
+        for (const userId of existingSessions) {
+          if (users.includes(userId) && userId !== currentName) {
+            console.log(`✅ Session with ${userId} is still valid`);
+          } else {
+            console.log(`🗑️ Removing stale session with ${userId}`);
+            delete signalProtocol.sessions[userId];
+          }
+        }
+
+        // Save the cleaned-up sessions
+        signalProtocol.saveSessions();
+
+        // Re-initiate key exchanges for users without sessions
+        for (const user of users) {
+          if (user !== currentName && !signalProtocol.sessions[user]) {
+            console.log(`🔑 Re-initiating key exchange with ${user}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+            try {
+              await initiateKeyExchange(user);
+            } catch (error) {
+              console.warn(`⚠️ Key exchange with ${user} failed:`, error);
+            }
+          }
+        }
+      }, 3000);
+    }
+
+    // ======================================================
+    // =============== Session Cleanup ======================
+    // ======================================================
+
+    function cleanupEncryptionSessions() {
+      if (!currentRoom || !currentName) return;
+
+      const userList = document.getElementById('user-list');
+      const currentUsers = new Set();
+
+      // Get current users in room
+      if (userList) {
+        const userItems = userList.getElementsByTagName('li');
+        for (let item of userItems) {
+          const username = item.getAttribute('data-name');
+          if (username) {
+            currentUsers.add(username);
+          }
+        }
+      }
+
+      // Remove sessions for users not in current room
+      Object.keys(signalProtocol.sessions).forEach(userId => {
+        if (!currentUsers.has(userId) && userId !== currentName) {
+          console.log(`🧹 Removing session for user not in room: ${userId}`);
+          delete signalProtocol.sessions[userId];
+        }
+      });
+
+      signalProtocol.saveSessions();
     }
 
     // Modified sendMessage function with encryption
@@ -1905,10 +2042,24 @@
       console.log("Identity Key:", signalProtocol.identityKey ? "✓ Generated" : "✗ Missing");
       console.log("Pre-keys:", signalProtocol.preKeys.length);
       console.log("Active Sessions:", Object.keys(signalProtocol.sessions));
+
+      // Show session details
+      Object.keys(signalProtocol.sessions).forEach(userId => {
+        const session = signalProtocol.sessions[userId];
+        console.log(`  - ${userId}: messageCount=${session.messageCount}`);
+      });
+
       console.log("Current Room:", currentRoom);
       console.log("Current User:", currentName);
+
+      // Check localStorage
+      const savedSessions = localStorage.getItem('signal_sessions');
+      console.log("Saved sessions in localStorage:", savedSessions ? JSON.parse(savedSessions) : "None");
+
       console.groupEnd();
     }
+
+    // Call this in console to check encryption status: debugEncryption()
 
     // Call this in console to check status
     // debugEncryption()
@@ -2358,6 +2509,11 @@
         );
       }
       renderJoinedRooms();
+
+      // After successful join, re-establish encryption sessions
+      setTimeout(() => {
+        reestablishEncryptionSessions();
+      }, 4000);
     }
 
     function setupSocketEventHandlers() {
@@ -3579,7 +3735,7 @@
           li.appendChild(adminBadge);
         }
       });
-
+      setTimeout(cleanupEncryptionSessions, 1000);
       existing.forEach((li) => {
         li.classList.add("fade-out");
         setTimeout(() => li.remove(), 300);
