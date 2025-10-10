@@ -1188,6 +1188,129 @@ async def status(sid, data):
     print(f"📌 Status update: {user} is now {'ACTIVE' if is_active else 'INACTIVE'}")
 
 
+# Add these new socket events to server.py
+
+
+@sio.event
+async def request_public_keys(sid, data):
+    """Handle public key requests for key exchange"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+    requester = data.get("requester")
+
+    if not target_user or not room or not requester:
+        return {"success": False, "error": "Missing data"}
+
+    print(f"🔑 Public key request from {requester} to {target_user} in {room}")
+
+    # Find target user's socket
+    target_sid = None
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+
+    if target_sid:
+        await sio.emit(
+            "request_public_keys",
+            {"requester": requester, "room": room, "targetUser": target_user},
+            room=target_sid,
+        )
+        return {"success": True}
+    else:
+        return {"success": False, "error": "Target user not found"}
+
+
+@sio.event
+async def send_public_keys(sid, data):
+    """Send public keys to requesting user"""
+    requester = data.get("requester")
+    room = data.get("room")
+    sender = data.get("sender")
+    key_bundle = data.get("keyBundle")
+
+    if not requester or not room or not sender:
+        return {"success": False, "error": "Missing data"}
+
+    print(f"🔑 Sending public keys from {sender} to {requester}")
+
+    # Find requester's socket
+    requester_sid = None
+    if room in ROOM_USERS and requester in ROOM_USERS[room]:
+        requester_sid = ROOM_USERS[room][requester]
+
+    if requester_sid:
+        await sio.emit(
+            "receive_public_keys",
+            {"sender": sender, "room": room, "keyBundle": key_bundle},
+            room=requester_sid,
+        )
+        return {"success": True}
+    else:
+        return {"success": False, "error": "Requester not found"}
+
+
+@sio.event
+async def key_exchange(sid, data):
+    """Handle key exchange messages"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+    sender_id = data.get("senderId")
+    ephemeral_key = data.get("ephemeralKey")
+    identity_key = data.get("identityKey")
+
+    if not target_user or not room or not sender_id:
+        return {"success": False, "error": "Missing data"}
+
+    print(f"🔑 Key exchange from {sender_id} to {target_user}")
+
+    # Find target user's socket
+    target_sid = None
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+
+    if target_sid:
+        await sio.emit(
+            "key_exchange",
+            {
+                "targetUser": target_user,
+                "room": room,
+                "senderId": sender_id,
+                "ephemeralKey": ephemeral_key,
+                "identityKey": identity_key,
+                "preKeyId": data.get("preKeyId", 0),
+                "type": "key_exchange",
+            },
+            room=target_sid,
+        )
+        return {"success": True}
+    else:
+        return {"success": False, "error": "Target user not found"}
+
+
+@sio.event
+async def key_exchange_complete(sid, data):
+    """Handle key exchange completion"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+
+    if not target_user or not room:
+        return {"success": False, "error": "Missing data"}
+
+    print(f"🔑 Key exchange completed with {target_user}")
+
+    # This is mainly for logging - the actual session is established client-side
+    return {"success": True}
+
+
+@sio.event
+async def key_exchange_error(sid, data):
+    """Handle key exchange errors"""
+    target_user = data.get("targetUser")
+    error = data.get("error")
+
+    print(f"❌ Key exchange error with {target_user}: {error}")
+    return {"success": True}
+
+
 @sio.event
 async def message(sid, data):
     room = data.get("room")
