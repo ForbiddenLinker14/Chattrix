@@ -1368,6 +1368,14 @@
 
       // Import public key from others
       async importPublicKey(publicKeyBase64) {
+        if (!publicKeyBase64 || typeof publicKeyBase64 !== 'string') {
+          throw new Error("Invalid public key: must be a base64 string");
+        }
+
+        if (publicKeyBase64.length < 10) {
+          throw new Error("Invalid public key: too short");
+        }
+
         const publicKeyBuffer = this.base64ToArrayBuffer(publicKeyBase64);
         return await window.crypto.subtle.importKey(
           "raw",
@@ -1642,23 +1650,37 @@
       }
 
       // Utility functions
-      arrayBufferToBase64(buffer) {
-        const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
+      base64ToArrayBuffer(base64) {
+        try {
+          // Clean the base64 string
+          const cleanBase64 = base64.replace(/[^A-Za-z0-9+/]/g, '');
+          const binary = window.atob(cleanBase64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          return bytes.buffer;
+        } catch (error) {
+          console.error("❌ Invalid base64 string:", base64);
+          throw new Error("Invalid base64 encoding");
         }
-        return window.btoa(binary);
       }
 
-      base64ToArrayBuffer(base64) {
-        const binary = window.atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) {
-          bytes[i] = binary.charCodeAt(i);
+      // Update the arrayBufferToBase64 method
+      arrayBufferToBase64(buffer) {
+        try {
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          return window.btoa(binary);
+        } catch (error) {
+          console.error("❌ Error converting to base64:", error);
+          throw new Error("Failed to convert to base64");
         }
-        return bytes.buffer;
       }
+
 
       // Get user's public key bundle for key exchange
       getPublicKeyBundle() {
@@ -1797,19 +1819,19 @@
     }
 
     // Key exchange management
+    // Replace the initiateKeyExchange function
     async function initiateKeyExchange(userId) {
       try {
-        // In real implementation, you'd fetch the user's public key bundle from server
-        // For demo, we'll use a placeholder
-        const keyExchangeData = await signalProtocol.startKeyExchange(userId, "pre-key-placeholder");
+        console.log(`🔑 Starting key exchange with ${userId}`);
 
-        socket.emit("key_exchange", {
+        // First, request the user's public key bundle from the server
+        socket.emit("request_public_keys", {
           targetUser: userId,
           room: currentRoom,
-          ...keyExchangeData
+          requester: currentName
         });
 
-        console.log(`🔑 Key exchange initiated with ${userId}`);
+        console.log(`📤 Public key request sent to ${userId}`);
       } catch (error) {
         console.error("❌ Key exchange failed:", error);
       }
@@ -1834,34 +1856,29 @@
     }
 
     // Initialize key exchanges when joining room
+    // Update the initializeRoomEncryption function with better error handling
     async function initializeRoomEncryption() {
       if (!currentRoom) return;
 
-      // Get users from the user list instead of ROOM_HISTORY
-      const userList = document.getElementById('user-list');
-      if (!userList) {
-        setTimeout(initializeRoomEncryption, 1000);
-        return;
-      }
+      console.log("🔑 Initializing room encryption...");
 
-      const userItems = userList.getElementsByTagName('li');
-      const users = [];
+      // Wait a bit for user list to populate
+      setTimeout(async () => {
+        const users = getUsersFromUserList();
+        console.log(`🔑 Found ${users.length} users for key exchange`);
 
-      for (let item of userItems) {
-        const username = item.getAttribute('data-name');
-        if (username && username !== currentName) {
-          users.push(username);
+        for (const user of users) {
+          if (user !== currentName && !signalProtocol.sessions[user]) {
+            // Stagger key exchanges to avoid race conditions
+            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+            try {
+              await initiateKeyExchange(user);
+            } catch (error) {
+              console.warn(`⚠️ Key exchange with ${user} failed:`, error);
+            }
+          }
         }
-      }
-
-      for (const user of users) {
-        if (user !== currentName && !signalProtocol.sessions[user]) {
-          // Wait a bit before initiating key exchange to avoid race conditions
-          setTimeout(() => {
-            initiateKeyExchange(user);
-          }, 1000 + Math.random() * 2000);
-        }
-      }
+      }, 3000);
     }
 
     // Add this helper function
@@ -1881,6 +1898,20 @@
 
       return users;
     }
+
+    // Add this debug function
+    function debugEncryption() {
+      console.group("🔐 Encryption Debug Info");
+      console.log("Identity Key:", signalProtocol.identityKey ? "✓ Generated" : "✗ Missing");
+      console.log("Pre-keys:", signalProtocol.preKeys.length);
+      console.log("Active Sessions:", Object.keys(signalProtocol.sessions));
+      console.log("Current Room:", currentRoom);
+      console.log("Current User:", currentName);
+      console.groupEnd();
+    }
+
+    // Call this in console to check status
+    // debugEncryption()
     // ======================================================
     // =============== Room Management ======================
     // ======================================================
@@ -2365,6 +2396,44 @@
       socket.on("key_exchange", handleKeyExchange);
       socket.on("key_exchange_complete", (data) => {
         console.log(`🔑 Key exchange confirmed with ${data.senderId}`);
+      });
+
+      // Add these new socket handlers
+      socket.on("request_public_keys", async (data) => {
+        console.log(`🔑 Received public key request from ${data.requester}`);
+
+        // Send our public key bundle
+        const keyBundle = signalProtocol.getPublicKeyBundle();
+        socket.emit("send_public_keys", {
+          requester: data.requester,
+          room: data.room,
+          sender: currentName,
+          keyBundle: keyBundle
+        });
+      });
+
+      socket.on("receive_public_keys", async (data) => {
+        console.log(`🔑 Received public keys from ${data.sender}`);
+
+        try {
+          // Use the actual public key from the bundle
+          const preKey = data.keyBundle.preKeys[0]; // Use first pre-key
+          const keyExchangeData = await signalProtocol.startKeyExchange(data.sender, preKey.publicKey);
+
+          socket.emit("key_exchange", {
+            targetUser: data.sender,
+            room: currentRoom,
+            ...keyExchangeData
+          });
+
+          console.log(`🔑 Key exchange initiated with ${data.sender}`);
+        } catch (error) {
+          console.error("❌ Key exchange failed:", error);
+        }
+      });
+
+      socket.on("key_exchange_error", (data) => {
+        console.error(`❌ Key exchange error: ${data.error} for user ${data.targetUser}`);
       });
 
       // Add this to setupSocketEventHandlers

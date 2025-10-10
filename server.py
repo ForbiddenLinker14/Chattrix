@@ -1238,6 +1238,48 @@ async def key_exchange_complete(sid, data):
         print(f"🔑 Key exchange completed between {sender_id} and {target_user}")
 
 
+@sio.event
+async def request_public_keys(sid, data):
+    """Handle public key bundle requests"""
+    target_user = data.get("targetUser")
+    room = data.get("room")
+    requester = data.get("requester")
+    
+    # Forward the request to the target user
+    if room in ROOM_USERS and target_user in ROOM_USERS[room]:
+        target_sid = ROOM_USERS[room][target_user]
+        await sio.emit("request_public_keys", {
+            "requester": requester,
+            "room": room
+        }, room=target_sid)
+        print(f"🔑 Public key request forwarded from {requester} to {target_user}")
+    else:
+        # Notify requester that user is not available
+        await sio.emit("key_exchange_error", {
+            "error": "User not available for key exchange",
+            "targetUser": target_user
+        }, room=sid)
+
+
+
+@sio.event
+async def send_public_keys(sid, data):
+    """Handle sending public key bundle to requester"""
+    requester = data.get("requester")
+    room = data.get("room")
+    key_bundle = data.get("keyBundle")
+    
+    # Forward the key bundle to the requester
+    if room in ROOM_USERS and requester in ROOM_USERS[room]:
+        requester_sid = ROOM_USERS[room][requester]
+        await sio.emit("receive_public_keys", {
+            "sender": data.get("sender"),
+            "keyBundle": key_bundle,
+            "room": room
+        }, room=requester_sid)
+        print(f"🔑 Public keys sent from {data.get('sender')} to {requester}")
+
+
 # Modify the existing message event to handle encrypted messages
 @sio.event
 async def message(sid, data):
