@@ -1761,6 +1761,11 @@
         await signalProtocol.loadSessions(); // Load saved sessions
         console.log("🔐 End-to-end encryption initialized with persisted sessions");
 
+        // Update UI for existing messages after sessions are loaded
+        setTimeout(() => {
+          updateEncryptionStatusOnReload();
+        }, 1000);
+
         // Log session status for debugging
         const sessionCount = Object.keys(signalProtocol.sessions).length;
         console.log(`📊 Loaded ${sessionCount} encryption sessions`);
@@ -1942,9 +1947,10 @@
 
         let lockIcon = "";
         if (isEncrypted) {
-          lockIcon = isMe ? " 🔒" : " 🔒";
+          lockIcon = " 🔒";
         }
 
+        // Make sure the lock icon is permanently added to the sender name
         div.innerHTML = `<strong>${data.sender}${lockIcon}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
 
         enableCopyOnMessage(div, displayText);
@@ -2034,6 +2040,35 @@
       }
 
       return users;
+    }
+
+    // Add this function to update lock icons for existing messages on reload
+    function updateEncryptionStatusOnReload() {
+      const messages = document.getElementById("messages");
+      const messageDivs = messages.querySelectorAll('.msg:not(.system)');
+
+      messageDivs.forEach(div => {
+        const messageText = div.textContent || '';
+        const isEncrypted = div.querySelector('strong')?.textContent?.includes('🔒');
+
+        // If this is an encrypted message but lock icon is missing, add it
+        if (!isEncrypted && signalProtocol.sessions) {
+          const senderElement = div.querySelector('strong');
+          if (senderElement) {
+            const senderName = senderElement.textContent.replace('🔒', '').trim();
+            const isMe = senderName === currentName || senderName.includes('(Me)');
+
+            // Check if we have a session with this sender (indicating encrypted message)
+            if (senderName !== currentName && signalProtocol.sessions[senderName]) {
+              senderElement.textContent = isMe ?
+                `${currentName} 🔒` :
+                `${senderName} 🔒`;
+            }
+          }
+        }
+      });
+
+      console.log("🔒 Updated encryption status for existing messages");
     }
 
     // Add this debug function
