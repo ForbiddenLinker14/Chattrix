@@ -9,10 +9,6 @@
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7006477250957433"
     crossorigin="anonymous"></script>
 
-  <!-- E2EE dependencies -->
-  <script src="https://unpkg.com/libsodium-wrappers/dist/libsodium-wrappers.js"></script>
-  <script src="https://unpkg.com/idb-keyval@6/dist/idb-keyval.iife.js"></script>
-
   <link href="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.css" rel="stylesheet" />
   <script src="https://unpkg.com/cropperjs@1.5.13/dist/cropper.min.js"></script>
 
@@ -1042,6 +1038,10 @@
     </div>
   </div>
 
+  <!-- E2EE dependencies -->
+  <script src="https://unpkg.com/libsodium-wrappers/dist/libsodium-wrappers.js"></script>
+  <script src="https://unpkg.com/idb-keyval@6/dist/idb-keyval.iife.js"></script>
+  
   <script>
     // ======================================================
     // =============== Fresh Install / Version Reset =========
@@ -1244,12 +1244,18 @@
     const ROOM_PUBKEYS = {}; // { room: { username: pubkey_b64 } }
     const STORE = window.idbKeyval; // safer storage backend
 
-    (async () => {
+    (async function initSodium() {
       try {
+        // Wait until the libsodium global exists
+        while (typeof window.libsodium === "undefined") {
+          console.warn("⚠️ Waiting for libsodium to load...");
+          await new Promise(r => setTimeout(r, 100));
+        }
+
         const start = performance.now();
-        await libsodium.ready;
-        sodium = libsodium;
-        SODIUM_READY = true;
+        await window.libsodium.ready;
+        window.sodium = window.libsodium;
+        window.SODIUM_READY = true;
         console.log(`🔐 libsodium ready in ${(performance.now() - start).toFixed(0)} ms`);
       } catch (e) {
         console.error("❌ libsodium init failed", e);
