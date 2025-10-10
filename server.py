@@ -41,7 +41,8 @@ PUSH_RECENT_MAX = 100
 PUSH_RECENT_WINDOW = timedelta(seconds=30)
 ROOM_HISTORY = {}  # { room: set([usernames...]) }
 USER_LAST_SEEN = {}  # { (user, room): last_seen_timestamp }
-USER_PUBLIC_KEYS = {}  # { room: { username: public_key } }
+# ---------------- E2EE support ----------------
+ROOM_PUBKEYS: dict[str, dict[str, str]] = {}
 
 # ---------------- Push subscriptions ----------------
 # { room: { user: [subscription objects] } }
@@ -77,6 +78,14 @@ if not firebase_admin._apps:  # <-- check before init
 
 
 # ---------------- Helpers for FCM tokens ----------------
+def is_e2e_payload(text: str) -> bool:
+    try:
+        j = json.loads(text)
+        return isinstance(j, dict) and j.get("__e2e")
+    except Exception:
+        return False
+
+
 async def notify_admin_about_join_request(room: str, username: str, user_sid: str):
     """Notify admin about a join request, even if admin is offline"""
     if room not in ROOM_ADMINS:
@@ -1190,87 +1199,6 @@ async def status(sid, data):
 
 
 @sio.event
-async def exchange_keys(sid, data):
-    """Handle public key exchange"""
-    room = data.get("room")
-    username = data.get("username")
-    public_key = data.get("publicKey")
-
-    if not room or not username or not public_key:
-        return
-
-    # Store user's public key
-    if room not in USER_PUBLIC_KEYS:
-        USER_PUBLIC_KEYS[room] = {}
-
-    USER_PUBLIC_KEYS[room][username] = public_key
-
-    # Send current room keys to the new user
-    await sio.emit(
-        "room_keys",
-        {"room": room, "publicKeys": USER_PUBLIC_KEYS.get(room, {})},
-        to=sid,
-    )
-
-    # Notify other users about the new key
-    await sio.emit(
-        "user_joined_keys",
-        {"room": room, "username": username, "publicKey": public_key},
-        room=room,
-        skip_sid=sid,
-    )
-
-    print(f"🔑 Keys exchanged for {username} in room {room}")
-
-
-@sio.event
-async def encrypted_message(sid, data):
-    """Handle encrypted messages"""
-    room = data.get("room")
-    sender = data.get("sender")
-    encrypted_data = data.get("encryptedData")
-
-    if not room or not sender or not encrypted_data:
-        return
-
-    # Store encrypted message in database
-    save_message(
-        room, sender, text=json.dumps({"type": "encrypted", "data": encrypted_data})
-    )
-
-    # Broadcast the encrypted message to the room
-    await sio.emit(
-        "encrypted_message",
-        {
-            "sender": sender,
-            "encryptedData": encrypted_data,
-            "ts": datetime.now(timezone.utc).isoformat(),
-        },
-        room=room,
-    )
-
-    # Also emit for unread counts and push notifications
-    try:
-        await sio.emit(
-            "room_message_meta",
-            {
-                "room": room,
-                "sender": sender,
-                "text": "🔒 Encrypted message",
-                "ts": datetime.now(timezone.utc).isoformat(),
-            },
-        )
-    except Exception as e:
-        print("Failed to emit room_message_meta for encrypted message:", e)
-
-    # Web push for encrypted message
-    await send_push_to_room(room, sender, "🔒 Encrypted message")
-
-    # Android push (FCM) for encrypted message
-    await send_fcm_to_room(room, sender, "🔒 Encrypted message")
-
-
-@sio.event
 async def message(sid, data):
     room = data.get("room")
     sender = data.get("sender")
@@ -1301,10 +1229,12 @@ async def message(sid, data):
             USER_LAST_SEEN[key] = now.isoformat()
 
     try:
+        meta_text = "(encrypted message)" if is_e2e_payload(text) else text
         await sio.emit(
             "room_message_meta",
-            {"room": room, "sender": sender, "text": text, "ts": now.isoformat()},
+            {"room": room, "sender": sender, "text": meta_text, "ts": now.isoformat()},
         )
+
     except Exception as e:
         print("Failed to emit room_message_meta:", e)
     # Web push
@@ -1312,6 +1242,19 @@ async def message(sid, data):
 
     # Android push (FCM)
     await send_fcm_to_room(room, sender, text)
+
+
+@sio.event
+async def set_pubkey(sid, data):
+    room = data.get("room")
+    user = data.get("user")
+    pubkey = data.get("pubkey")
+    if not room or not user or not pubkey:
+        return
+    ROOM_PUBKEYS.setdefault(room, {})[user] = pubkey
+    await sio.emit(
+        "pubkey_update", {"room": room, "user": user, "pubkey": pubkey}, room=room
+    )
 
 
 @sio.event
@@ -1362,15 +1305,6 @@ async def leave(sid, data):
     room = data.get("room")
     username = data.get("sender")
     reason = data.get("reason", "leave")  # "leave" | "switch"
-
-    # Remove user's public key
-    if room in USER_PUBLIC_KEYS and username in USER_PUBLIC_KEYS[room]:
-        del USER_PUBLIC_KEYS[room][username]
-
-        # Notify other users
-        await sio.emit(
-            "user_left_keys", {"room": room, "username": username}, room=room
-        )
 
     if room and username and room in ROOM_USERS and username in ROOM_USERS[room]:
         # Check if leaving user is the admin - ONLY for intentional leave (not switch)
@@ -1690,17 +1624,12 @@ from pywebpush import WebPushException
 async def send_push_to_room(room: str, sender: str, text: str):
     if room not in subscriptions:
         return
-
     now = datetime.now(timezone.utc)
+    display_text = "(encrypted message)" if is_e2e_payload(text) else text
     payload = {
         "title": "Chattrix",
         "sender": sender,
-        # 👇 If text looks like a filename, prepend "sent a file:"
-        "text": (
-            f"{sender} sent a file: {text}"
-            if not text.strip().startswith(("http", "www")) and "." in text
-            else text
-        ),
+        "text": display_text,
         "room": room,
         "url": f"/?room={room}",
         "timestamp": now.isoformat(),
@@ -1759,6 +1688,9 @@ async def send_push_to_room(room: str, sender: str, text: str):
 
 
 async def send_fcm_to_room(room: str, sender: str, text: str):
+    if is_e2e_payload(text):
+        text = "(encrypted message)"
+
     if room in DESTROYED_ROOMS:
         print(f"⛔ Skipping FCM: Room {room} is destroyed.")
         return
@@ -2064,6 +1996,11 @@ async def get_app_version():
             "name": "7.5",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
         },
     }
+
+
+@app.get("/room-pubkeys/{room}")
+async def get_room_pubkeys(room: str):
+    return {"pubkeys": ROOM_PUBKEYS.get(room, {})}
 
 
 # @app.post("/revive-room/{room}")
