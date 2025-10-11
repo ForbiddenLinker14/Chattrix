@@ -1048,6 +1048,7 @@ async def join(sid, data):
         }
 
     # ✅ Set first user as admin
+
     if room not in ROOM_ADMINS and not room_users:
         ROOM_ADMINS[room] = username
         print(f"👑 {username} set as admin for room {room}")
@@ -1096,26 +1097,8 @@ async def join(sid, data):
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # 🆕 FIX: Load messages based on connection type
-    is_reconnecting_user = old_sid is not None or last_ts is not None
-    messages_to_send = []
-
-    if is_reconnecting_user:
-        # For reconnecting users: only load messages from the last 5 minutes
-        five_minutes_ago = (
-            datetime.now(timezone.utc) - timedelta(minutes=5)
-        ).isoformat()
-        for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
-            if ts >= five_minutes_ago:
-                messages_to_send.append(
-                    (sender_, text, filename, mimetype, filedata, ts)
-                )
-    else:
-        # For new users: load all messages (maintain existing behavior)
-        messages_to_send = load_messages(room)
-
-    # Send the filtered messages
-    for sender_, text, filename, mimetype, filedata, ts in messages_to_send:
+    # send missed messages
+    for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
         if filename:
@@ -1160,24 +1143,6 @@ async def join(sid, data):
 
     print(f"🎉 User successfully joined: {username} -> {room}")
     return {"success": True}
-
-
-def load_recent_messages(room, minutes=5):
-    """Load only recent messages from the last N minutes"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-
-    # Calculate the timestamp for X minutes ago
-    cutoff_time = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
-
-    c.execute(
-        "SELECT sender, text, filename, mimetype, filedata, ts "
-        "FROM messages WHERE room=? AND ts >= ? ORDER BY id ASC",
-        (room, cutoff_time),
-    )
-    rows = c.fetchall()
-    conn.close()
-    return rows
 
 
 @sio.event

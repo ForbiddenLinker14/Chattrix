@@ -816,6 +816,31 @@
         transform: translateY(-20px);
       }
     }
+
+    .msg.system.offline {
+      background: #e74c3c !important;
+      color: white !important;
+      animation: pulse-offline 2s infinite;
+    }
+
+    .msg.system.online {
+      background: #27ae60 !important;
+      color: white !important;
+    }
+
+    @keyframes pulse-offline {
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.7;
+      }
+
+      100% {
+        opacity: 1;
+      }
+    }
   </style>
 </head>
 
@@ -1603,6 +1628,11 @@
       socket = io("https://realtime-chat-1mv3.onrender.com", {
         path: "/socket.io",
         transports: ["websocket"],
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 6000
       });
 
       // Setup all socket event handlers
@@ -1648,40 +1678,102 @@
       }
 
       socket.on("connect", () => {
-        if (room && username) {
+        console.log("🔗 Reconnected to server");
+
+        // Clear existing messages to prevent duplicates
+        const messagesEl = document.getElementById("messages");
+        if (messagesEl) {
+          messagesEl.innerHTML = "";
+        }
+
+        lastPersistedTs = null; // Reset timestamp to get full history
+        alreadyFetchingHistory = false;
+
+        if (currentRoom && currentName) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
           socket.emit(
             "join",
             {
-              room: room,
-              sender: username,
-              lastTs: lastPersistedTs || null,
+              room: currentRoom,
+              sender: currentName,
+              lastTs: null, // Get full history
               fcmToken: fcmToken,
             },
             (ack) => {
               if (ack && ack.success) {
-                joinedRooms.add(room);
+                joinedRooms.add(currentRoom);
                 sendActive(!document.hidden);
                 fetchUnreadCounts();
 
                 // Check if we became admin and load pending requests
                 if (currentName === currentAdmin) {
-                  // Load any pending join requests for this room
                   socket.emit("get_pending_requests", {
-                    room: room,
+                    room: currentRoom,
                     user: currentName
                   });
                 }
               } else {
+                console.error("❌ Rejoin failed:", ack);
+                // Retry after delay
                 setTimeout(() => {
-                  socket.disconnect();
-                  socket.connect();
-                }, 500);
+                  if (socket && socket.connected) {
+                    socket.disconnect();
+                    socket.connect();
+                  }
+                }, 1000);
               }
             }
           );
         } else {
           restoreChatState(socket);
+        }
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.log("🔌 Socket disconnected:", reason);
+
+        // Disable input when offline
+        document.getElementById("input").disabled = true;
+        document.getElementById("send").disabled = true;
+        document.getElementById("attach").disabled = true;
+
+        // Show offline indicator
+        const messages = document.getElementById("messages");
+        if (messages) {
+          const offlineDiv = document.createElement("div");
+          offlineDiv.className = "msg system";
+          offlineDiv.style.background = "#e74c3c";
+          offlineDiv.style.color = "white";
+          offlineDiv.innerHTML = `
+      <strong>🔌 Connection Lost</strong><br>
+      Attempting to reconnect...<br>
+      <small>${new Date().toLocaleString()}</small>
+    `;
+          messages.appendChild(offlineDiv);
+          messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+        }
+      });
+
+      socket.on("reconnect_attempt", (attemptNumber) => {
+        console.log(`🔄 Reconnect attempt ${attemptNumber}`);
+      });
+
+      socket.on("reconnect_failed", () => {
+        console.log("❌ Reconnect failed");
+        // Show permanent offline message
+        const messages = document.getElementById("messages");
+        if (messages) {
+          const failedDiv = document.createElement("div");
+          failedDiv.className = "msg system";
+          failedDiv.style.background = "#c0392b";
+          failedDiv.style.color = "white";
+          failedDiv.innerHTML = `
+      <strong>❌ Connection Failed</strong><br>
+      Please check your internet connection and refresh the page.<br>
+      <small>${new Date().toLocaleString()}</small>
+    `;
+          messages.appendChild(failedDiv);
+          messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
         }
       });
 
@@ -2175,11 +2267,19 @@
     async function restoreChatState(socket) {
       const state = await loadChatState();
       if (state) {
+        // Clear existing messages
+        const messagesEl = document.getElementById("messages");
+        if (messagesEl) {
+          messagesEl.innerHTML = "";
+        }
+
+        lastPersistedTs = null; // Reset to get full history
+
         const fcmToken = localStorage.getItem("fcm_token") || null;
         socket.emit("join", {
           room: state.room,
           sender: state.username,
-          lastTs: state.lastTs,
+          lastTs: null, // Get full history instead of partial
           fcmToken: fcmToken,
         });
       }
