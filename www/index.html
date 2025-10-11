@@ -841,10 +841,56 @@
         opacity: 1;
       }
     }
+
+    .connection-status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 1000;
+      transition: all 0.3s ease;
+    }
+
+    .connection-status.online {
+      background: #27ae60;
+      color: white;
+    }
+
+    .connection-status.offline {
+      background: #e74c3c;
+      color: white;
+      animation: pulse 2s infinite;
+    }
+
+    .connection-status.reconnecting {
+      background: #f39c12;
+      color: white;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.6;
+      }
+
+      100% {
+        opacity: 1;
+      }
+    }
   </style>
 </head>
 
 <body>
+  <div id="connection-status" class="connection-status online" style="display: none;">
+    ● Online
+  </div>
   <div id="show-arrow" onclick="toggleSidebar()">»</div>
 
   <div id="sidebar">
@@ -1393,6 +1439,7 @@
 
       // Enhanced connection status handling
       socket.on("connect", () => {
+        updateConnectionStatus('online');
         console.log("🔗 Connected to server (waiting for admin)");
         clearTimeout(connectionTimeout);
         showAlert("Connected to server. Sending join request...", "info");
@@ -1579,6 +1626,7 @@
 
       // Handle unexpected disconnections
       socket.on("disconnect", (reason) => {
+        updateConnectionStatus('online');
         console.log("🔌 Socket disconnected:", reason);
 
         // Only attempt reconnect for unexpected server disconnects
@@ -1689,6 +1737,11 @@
         lastPersistedTs = null; // Reset timestamp to get full history
         alreadyFetchingHistory = false;
 
+        // Re-enable input fields immediately when reconnected
+        document.getElementById("input").disabled = false;
+        document.getElementById("send").disabled = false;
+        document.getElementById("attach").disabled = false;
+
         if (currentRoom && currentName) {
           const fcmToken = localStorage.getItem("fcm_token") || null;
           socket.emit(
@@ -1711,6 +1764,27 @@
                     room: currentRoom,
                     user: currentName
                   });
+                }
+
+                // Show reconnected message
+                const messages = document.getElementById("messages");
+                if (messages) {
+                  const onlineDiv = document.createElement("div");
+                  onlineDiv.className = "msg system online";
+                  onlineDiv.innerHTML = `
+              <strong>✅ Reconnected</strong><br>
+              You're back online!<br>
+              <small>${new Date().toLocaleString()}</small>
+            `;
+                  messages.appendChild(onlineDiv);
+                  messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+                  // Remove after 3 seconds
+                  setTimeout(() => {
+                    if (onlineDiv.parentNode) {
+                      onlineDiv.remove();
+                    }
+                  }, 3000);
                 }
               } else {
                 console.error("❌ Rejoin failed:", ack);
@@ -1755,6 +1829,7 @@
       });
 
       socket.on("reconnect_attempt", (attemptNumber) => {
+        updateConnectionStatus('online');
         console.log(`🔄 Reconnect attempt ${attemptNumber}`);
       });
 
@@ -1808,6 +1883,33 @@
       renderJoinedRooms();
     }
 
+    // Add connection status indicator
+    function updateConnectionStatus(status) {
+      const statusEl = document.getElementById('connection-status');
+      if (statusEl) {
+        statusEl.className = `connection-status ${status}`;
+        statusEl.style.display = 'block';
+
+        switch (status) {
+          case 'online':
+            statusEl.innerHTML = '● Online';
+            break;
+          case 'offline':
+            statusEl.innerHTML = '● Offline';
+            break;
+          case 'reconnecting':
+            statusEl.innerHTML = '● Reconnecting...';
+            break;
+        }
+
+        // Hide online status after 3 seconds
+        if (status === 'online') {
+          setTimeout(() => {
+            statusEl.style.display = 'none';
+          }, 3000);
+        }
+      }
+    }
     function setupSocketEventHandlers() {
       if (!socket) return;
 
@@ -2274,6 +2376,11 @@
         }
 
         lastPersistedTs = null; // Reset to get full history
+
+        // Ensure inputs are enabled
+        document.getElementById("input").disabled = false;
+        document.getElementById("send").disabled = false;
+        document.getElementById("attach").disabled = false;
 
         const fcmToken = localStorage.getItem("fcm_token") || null;
         socket.emit("join", {
