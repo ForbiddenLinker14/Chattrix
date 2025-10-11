@@ -2067,12 +2067,12 @@ async def get_app_version():
     """Return current and minimum required versions"""
     return {
         "current_version": {
-            "code": 13,  # Latest available version code
-            "name": "7.5",  # Latest available version name
+            "code": 15,  # Latest available version code
+            "name": "9.0",  # Latest available version name
         },
         "min_required_version": {
-            "code": 13,  # Minimum allowed version code - CHANGE THIS TO CONTROL UPDATES
-            "name": "7.5",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
+            "code": 15,  # Minimum allowed version code - CHANGE THIS TO CONTROL UPDATES
+            "name": "9.0",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
         },
     }
 
