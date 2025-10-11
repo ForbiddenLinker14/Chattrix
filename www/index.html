@@ -1966,22 +1966,17 @@
     function restoreEncryptionStatusForMessages() {
       const messages = document.getElementById("messages");
       if (!messages) return;
-
       const messageDivs = messages.querySelectorAll('.msg:not(.system)');
       messageDivs.forEach(div => {
         const senderElement = div.querySelector('strong');
         if (!senderElement) return;
-
         // Extract sender name (remove lock icon if present)
         let senderName = senderElement.textContent.replace('🔒', '').trim();
-
         // Remove "(Me)" suffix if present
         if (senderName.endsWith('(Me)')) {
           senderName = senderName.slice(0, -4).trim();
         }
-
         const isMe = senderName === currentName;
-
         // Check if we have an encryption session with this sender
         if (!isMe && signalProtocol.sessions && signalProtocol.sessions[senderName]) {
           // Add encryption indicator if not already present
@@ -1991,7 +1986,6 @@
           }
         }
       });
-
       console.log("🔒 Restored encryption status for existing messages");
     }
 
@@ -2239,9 +2233,7 @@
               if (currentName === currentAdmin) {
                 socket.emit("get_pending_requests", { room: currentRoom, user: currentName });
               }// Restore encryption status after messages are loaded
-              setTimeout(() => {
-                restoreEncryptionStatusForMessages();
-              }, 1000);
+              setTimeout(() => { restoreEncryptionStatusForMessages(); }, 1000);
               if (!isInitialConnection) {
                 const messages = document.getElementById("messages");
                 if (messages) {
