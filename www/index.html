@@ -1385,18 +1385,39 @@
       });
     }
 
+    // function linkifyWithFavicon(text) {
+    //   const urlRegex = /(https?:\/\/[^\s]+)/g;
+    //   return text.replace(urlRegex, (url) => {
+    //     try {
+    //       const u = new URL(url);
+    //       const favicon = `${u.origin}/favicon.ico`;
+    //       return `<span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
+    //     <img src="${favicon}" alt="icon" style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
+    //     <a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>
+    //   </span>`;
+    //     } catch {
+    //       return `<a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>`;
+    //     }
+    //   });
+    // }
+    // ✅ SECURE URL LINKIFY FUNCTION
     function linkifyWithFavicon(text) {
       const urlRegex = /(https?:\/\/[^\s]+)/g;
       return text.replace(urlRegex, (url) => {
         try {
           const u = new URL(url);
+          // Only allow HTTP/HTTPS - CRITICAL SECURITY FIX
+          if (!['http:', 'https:'].includes(u.protocol)) {
+            return escapeHtml(url); // Block javascript:, data:, file: etc.
+          }
+
           const favicon = `${u.origin}/favicon.ico`;
           return `<span style="display:inline-flex;align-items:center;gap:4px;user-select:none;">
-        <img src="${favicon}" alt="icon" style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
-        <a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>
+        <img src="${escapeAttr(favicon)}" alt="icon" style="width:16px;height:16px;vertical-align:middle;border-radius:3px;user-select:none;">
+        <a href="${escapeAttr(url)}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${escapeHtml(url)}</a>
       </span>`;
         } catch {
-          return `<a href="${url}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${url}</a>`;
+          return `<a href="${escapeAttr(url)}" target="_blank" style="color:#4da6ff; text-decoration:underline; word-break:break-all; user-select:none;">${escapeHtml(url)}</a>`;
         }
       });
     }
