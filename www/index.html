@@ -1902,12 +1902,6 @@
         updateConnectionStatus('offline');
         console.log("🔌 Socket disconnected:", reason);
 
-        // Don't show connection lost message if this was an intentional leave
-        if (window.isIntentionalLeave) {
-          console.log("🔌 Intentional leave - skipping connection lost message");
-          return;
-        }
-
         // Disable input when offline
         document.getElementById("input").disabled = true;
         document.getElementById("send").disabled = true;
