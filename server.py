@@ -1042,16 +1042,14 @@ async def join(sid, data):
         if not PENDING_JOIN_REQUESTS[room]:
             del PENDING_JOIN_REQUESTS[room]
 
+    # ✅ Handle locked-room join request
     if is_locked and not is_existing_user:
         print(f"⏳ Join request QUEUED (locked room): {username} -> {room}")
-        # New user trying to join locked room - send join request
         await notify_admin_about_join_request(room, username, sid)
 
-        # Store user's socket ID for later approval
         if room not in PENDING_JOIN_REQUESTS:
             PENDING_JOIN_REQUESTS[room] = []
 
-        # Check if request already exists
         existing_request = next(
             (r for r in PENDING_JOIN_REQUESTS[room] if r["user"] == username), None
         )
@@ -1068,7 +1066,7 @@ async def join(sid, data):
             "join_request_sent",
             {
                 "room": room,
-                "message": f"Match join request awaiting administrator approval...",
+                "message": "Match join request awaiting administrator approval...",
             },
             to=sid,
         )
@@ -1080,32 +1078,21 @@ async def join(sid, data):
         }
 
     # ✅ Set first user as admin
-
     if room not in ROOM_ADMINS and not room_users:
         ROOM_ADMINS[room] = username
         print(f"👑 {username} set as admin for room {room}")
 
     print(f"✅ Immediate join: {username} -> {room}")
 
-    # Continue with existing join logic...
+    # ✅ Ensure history exists and add user
     ROOM_HISTORY.setdefault(room, set()).add(username)
-
     if room not in ROOM_USERS:
         ROOM_USERS[room] = {}
 
     if room in WAS_DESTROYED_ROOMS:
         mark_user_revived(room, username)
 
-    # ✅ Simply ensure history exists and add user (no aggressive cleanup)
-    ROOM_HISTORY.setdefault(room, set()).add(username)
-
-    if room not in ROOM_USERS:
-        ROOM_USERS[room] = {}
-
-    if room in WAS_DESTROYED_ROOMS:
-        mark_user_revived(room, username)
-
-    # handle duplicate sessions
+    # Handle duplicate sessions
     old_sid = ROOM_USERS[room].get(username)
     if old_sid == sid:
         print(f"ℹ️  User already in room: {username} -> {room}")
@@ -1117,22 +1104,32 @@ async def join(sid, data):
         except Exception:
             pass
 
-    # map user → sid and mark active immediately
+    # Map user → sid and mark active
     ROOM_USERS[room][username] = sid
     USER_STATUS[sid] = {"user": username, "active": True}
 
     await sio.enter_room(sid, room)
     await broadcast_users(room)
 
-    # 🔑 register token in memory + DB
+    # 🔑 Register FCM token
     if token:
         register_fcm_token(username, room, token)
         save_fcm_token(username, room, token)
 
-    # send missed messages
-    for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
+    # ✅ Send missed messages (including encrypted)
+    for (
+        sender_,
+        text,
+        filename,
+        mimetype,
+        filedata,
+        encrypted,
+        enc_ver,
+        ts,
+    ) in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
+
         if filename:
             await sio.emit(
                 "file",
@@ -1146,13 +1143,15 @@ async def join(sid, data):
                 to=sid,
             )
         else:
-            await sio.emit(
-                "message",
-                {"sender": sender_, "text": text, "ts": ts},
-                to=sid,
-            )
+            payload = {"sender": sender_, "text": text, "ts": ts}
+            # 🟢 Include encryption metadata if present
+            if encrypted:
+                payload["encrypted"] = encrypted
+                if enc_ver:
+                    payload["encryptionVersion"] = enc_ver
+            await sio.emit("message", payload, to=sid)
 
-    # broadcast system join
+    # ✅ Broadcast system join message (only for new sessions)
     if not old_sid:
         await sio.emit(
             "message",
@@ -1164,6 +1163,7 @@ async def join(sid, data):
             room=room,
         )
 
+    # ✅ Send current admin and lock state to joined user
     current_admin = ROOM_ADMINS.get(room)
     current_lock_state = ROOM_LOCK_STATES.get(room, False)
 
