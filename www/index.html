@@ -1789,19 +1789,22 @@
         signalProtocol.saveSessions();
 
         // Re-initiate key exchange with users we don't have sessions with
-        for (const user of users) {
-          if (user !== currentName && !signalProtocol.sessions[user]) {
-            console.log(`🔑 Re-initiating key exchange with ${user}`);
-            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-            try {
-              await initiateKeyExchange(user);
-            } catch (error) {
-              console.warn(`⚠️ Key exchange with ${user} failed:`, error);
+        // But only if we're actually in a room with other users
+        if (users.length > 1) {
+          for (const user of users) {
+            if (user !== currentName && !signalProtocol.sessions[user]) {
+              console.log(`🔑 Re-initiating key exchange with ${user}`);
+              await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+              try {
+                await initiateKeyExchange(user);
+              } catch (error) {
+                console.warn(`⚠️ Key exchange with ${user} failed:`, error);
+              }
             }
           }
         }
 
-        // Update encryption status for existing messages - FIXED VERSION
+        // Update encryption status for existing messages
         updateEncryptionStatusOnReload();
 
         // Clear any "decryption failed" messages for our own messages
@@ -1962,32 +1965,47 @@
     }
 
     // Add this function to handle reconnection events
+    // Replace the existing handleReconnection function with this improved version
     function handleReconnection() {
       console.log("🔗 Reconnection detected, restoring encryption state...");
 
-      // Wait a bit for user list to populate
-      setTimeout(() => {
-        reestablishEncryptionSessions();
+      // Clear any existing failed messages first
+      const messages = document.getElementById("messages");
+      const failedMessages = messages.querySelectorAll('.msg.other .encrypted');
 
-        // Retry decryption of any failed messages
-        const messages = document.getElementById("messages");
-        const failedMessages = messages.querySelectorAll('.msg.other .encrypted');
+      failedMessages.forEach(div => {
+        const messageText = div.textContent;
+        if (messageText.includes('decryption failed') || messageText.includes('waiting for session')) {
+          div.remove();
+        }
+      });
 
-        failedMessages.forEach(div => {
-          const messageText = div.textContent;
-          if (messageText.includes('decryption failed') || messageText.includes('waiting for session')) {
-            const senderElement = div.querySelector('strong');
-            if (senderElement) {
-              const senderName = senderElement.textContent.replace('🔒', '').trim();
-              if (signalProtocol.sessions[senderName]) {
-                // We now have a session - remove and re-add the message to trigger proper decryption
-                console.log(`🔄 Retrying decryption for message from ${senderName}`);
-                div.remove();
+      // Wait a bit for user list to populate and then restore sessions
+      setTimeout(async () => {
+        await reestablishEncryptionSessions();
+
+        // Additional delay to ensure sessions are fully established
+        setTimeout(() => {
+          // Retry decryption of any remaining failed messages
+          const remainingFailed = messages.querySelectorAll('.msg.other .encrypted');
+          remainingFailed.forEach(div => {
+            const messageText = div.textContent;
+            if (messageText.includes('decryption failed') || messageText.includes('waiting for session')) {
+              const senderElement = div.querySelector('strong');
+              if (senderElement) {
+                const senderName = senderElement.textContent.replace('🔒', '').trim();
+                if (signalProtocol.sessions[senderName]) {
+                  console.log(`🔄 Removing failed message from ${senderName} for retry`);
+                  div.remove();
+                }
               }
             }
-          }
-        });
-      }, 2000);
+          });
+
+          // Force refresh of encryption status
+          updateEncryptionStatusOnReload();
+        }, 2000);
+      }, 3000);
     }
 
     async function initiateKeyExchange(userId) {
@@ -2347,6 +2365,24 @@
           });
         } else restoreChatState(socket);
       });
+      // In the socket connection setup within proceedWithJoin, modify the message handler:
+      socket.on("message", (data) => {
+        // Check if this is a duplicate message we already have
+        const messages = document.getElementById("messages");
+        const existingMessages = messages.querySelectorAll('.msg[data-ts]');
+        let isDuplicate = false;
+
+        for (const msg of existingMessages) {
+          if (msg.dataset.ts === data.ts && msg.querySelector('strong')?.textContent === data.sender) {
+            isDuplicate = true;
+            break;
+          }
+        }
+
+        if (!isDuplicate) {
+          handleEncryptedMessage(data);
+        }
+      });
       socket.on("disconnect", (reason) => {
         console.log("🔌 Socket disconnected:", reason);
         if (!intentionalLeave) {
@@ -2398,6 +2434,27 @@
       renderJoinedRooms();
       setTimeout(() => reestablishEncryptionSessions(), 4000);
     }
+    function isDuplicateMessage(data) {
+      const messages = document.getElementById("messages");
+      const existingMessages = messages.querySelectorAll('.msg[data-ts]');
+
+      for (const msg of existingMessages) {
+        const msgTs = msg.dataset.ts;
+        const msgSender = msg.querySelector('strong')?.textContent?.replace('🔒', '').trim();
+
+        if (msgTs === data.ts && msgSender === data.sender) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Then update the message handler:
+    socket.on("message", (data) => {
+      if (!isDuplicateMessage(data)) {
+        handleEncryptedMessage(data);
+      }
+    });
 
     function setupSocketEventHandlers() {
       if (!socket) return;
