@@ -1866,6 +1866,10 @@ async function handleEncryptedMessage(data) {
       displayText = "🔒 [Encrypted message - decryption failed]";
       isEncrypted = true;
     }
+  }else if (data.encrypted) {
+    // Message has encryption but not for current user - show as encrypted
+    displayText = "🔒 [Encrypted message for other users]";
+    isEncrypted = true;
   }
   const messages = document.getElementById("messages");
   const div = document.createElement("div");
@@ -1875,6 +1879,9 @@ async function handleEncryptedMessage(data) {
   } else {
     const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
     div.className = "msg " + (isMe ? "me" : "other");
+    if (isEncrypted) {
+      div.classList.add("encrypted");
+    }
     const safeText = escapeHtml(displayText);
     const formattedText = linkifyWithFavicon(safeText);
     let lockIcon = "";
