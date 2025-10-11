@@ -1773,22 +1773,28 @@ async function reestablishEncryptionSessions() {
     const users = getUsersFromUserList();
     const existingSessions = Object.keys(signalProtocol.sessions);
     console.log(`📋 Found ${users.length} users, ${existingSessions.length} existing sessions`);
+    // Remove stale sessions
     for (const userId of existingSessions) {
-      if (users.includes(userId) && userId !== currentName) {
-        console.log(`✅ Session with ${userId} is still valid`);
-      } else {
+      if (!users.includes(userId) && userId !== currentName) {
         console.log(`🗑️ Removing stale session with ${userId}`);
         delete signalProtocol.sessions[userId];
       }
     }
     signalProtocol.saveSessions();
+    // Re-initiate key exchange with users we don't have sessions with
     for (const user of users) {
       if (user !== currentName && !signalProtocol.sessions[user]) {
         console.log(`🔑 Re-initiating key exchange with ${user}`);
         await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-        try { await initiateKeyExchange(user); } catch (error) { console.warn(`⚠️ Key exchange with ${user} failed:`, error); }
+        try { 
+          await initiateKeyExchange(user); 
+        } catch (error) { 
+          console.warn(`⚠️ Key exchange with ${user} failed:`, error); 
+        }
       }
     }
+    // Update encryption status for existing messages
+    updateEncryptionStatusOnReload();
   }, 3000);
 }
 
@@ -1947,16 +1953,22 @@ function getUsersFromUserList() {
 function updateEncryptionStatusOnReload() {
   const messages = document.getElementById("messages");
   const messageDivs = messages.querySelectorAll('.msg:not(.system)');
+  
   messageDivs.forEach(div => {
-    const isEncrypted = div.querySelector('strong')?.textContent?.includes('🔒');
-    if (!isEncrypted && signalProtocol.sessions) {
-      const senderElement = div.querySelector('strong');
-      if (senderElement) {
-        const senderName = senderElement.textContent.replace('🔒', '').trim();
-        const isMe = senderName === currentName || senderName.includes('(Me)');
-        if (senderName !== currentName && signalProtocol.sessions[senderName]) {
-          senderElement.textContent = isMe ? `${currentName} 🔒` : `${senderName} 🔒`;
-        }
+    const senderElement = div.querySelector('strong');
+    if (senderElement) {
+      const senderText = senderElement.textContent;
+      const isEncrypted = senderText.includes('🔒');
+      const senderName = senderText.replace('🔒', '').trim();
+      // If we have an encryption session with this sender but no lock icon, add it
+      if (!isEncrypted && signalProtocol.sessions[senderName] && senderName !== currentName) {
+        senderElement.textContent = `${senderName} 🔒`;
+        div.classList.add("encrypted");
+      }
+      // If we don't have a session but there's a lock icon, remove it
+      else if (isEncrypted && !signalProtocol.sessions[senderName] && senderName !== currentName) {
+        senderElement.textContent = senderName;
+        div.classList.remove("encrypted");
       }
     }
   });
