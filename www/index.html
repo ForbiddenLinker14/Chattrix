@@ -1135,7 +1135,7 @@
     </div>
   </div>
 
-  <script>
+<script>
     // ======================================================
     // =============== Fresh Install / Version Reset =========
     // ======================================================
@@ -1757,7 +1757,6 @@
         }
       }
 
-
       // Get user's public key bundle for key exchange
       getPublicKeyBundle() {
         return {
@@ -2164,10 +2163,6 @@
       console.groupEnd();
     }
 
-    // Call this in console to check encryption status: debugEncryption()
-
-    // Call this in console to check status
-    // debugEncryption()
     // ======================================================
     // =============== Room Management ======================
     // ======================================================
@@ -4409,9 +4404,9 @@
         }
       };
     });
-  </script>
+</script>
 
-  <script>
+<script>
     // =============================
     // 🔔 Auto Update Alert (Manifest-based with Auto Fade-Out)
     // =============================
@@ -4894,29 +4889,26 @@
       notificationDiv.id = notificationId;
       notificationDiv.className = "msg system join-request";
       notificationDiv.style.background = "#2c3e50";
-      notificationDiv.style.border = "2px solid #e67e22";
-      notificationDiv.style.padding = "15px";
-      notificationDiv.style.textAlign = "center";
+      notificationDiv.style.color = "white";
+      notificationDiv.style.borderLeft = "4px solid #f39c12";
 
       notificationDiv.innerHTML = `
-        <div style="margin-bottom: 10px;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
             <strong>🔔 Join Request</strong>
-        </div>
-        <div style="margin-bottom: 15px;">
-            <strong>${request.user}</strong> wants to join room <strong>"${request.room}"</strong>
-        </div>
-        <div style="display: flex; gap: 10px; justify-content: center;">
-            <button onclick="approveJoinRequest('${request.room}', '${request.user}')" 
-                    style="background: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
-                ✅ Approve
-            </button>
-            <button onclick="rejectJoinRequest('${request.room}', '${request.user}')" 
-                    style="background: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
-                ❌ Reject
-            </button>
-        </div>
-        <div style="margin-top: 10px; font-size: 12px; color: #ccc;">
-            ${new Date(request.timestamp).toLocaleString()}
+            <div style="font-size: 14px;">
+                User <strong>"${request.user}"</strong> wants to join room <strong>"${request.room}"</strong>
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 5px;">
+                <button onclick="handleJoinRequest('${request.user}', '${request.room}', true, '${notificationId}')" 
+                        style="background: #27ae60; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                    ✅ Approve
+                </button>
+                <button onclick="handleJoinRequest('${request.user}', '${request.room}', false, '${notificationId}')" 
+                        style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                    ❌ Reject
+                </button>
+            </div>
+            <small>${new Date().toLocaleString()}</small>
         </div>
     `;
 
@@ -4924,150 +4916,194 @@
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
     }
 
-    // Admin functions to handle join requests
-    window.approveJoinRequest = function (room, user) {
-      if (!socket) return;
-
-      socket.emit("approve_join_request", {
-        room: room,
-        user: user,
-        admin: currentName
-      }, (response) => {
-        if (response && response.success) {
-          // Remove the notification
-          const notifications = document.querySelectorAll(`[id^="join-request-${user}"]`);
-          notifications.forEach(notification => notification.remove());
-
-          addMessage({
-            sender: "System",
-            text: response.message,
-            ts: new Date().toISOString(),
-          });
-        } else {
-          alert(response?.error || "Failed to approve request");
-        }
-      });
-    };
-
-    window.rejectJoinRequest = function (room, user) {
-      if (!socket) return;
-
-      socket.emit("reject_join_request", {
-        room: room,
-        user: user,
-        admin: currentName
-      }, (response) => {
-        if (response && response.success) {
-          // Remove the notification
-          const notifications = document.querySelectorAll(`[id^="join-request-${user}"]`);
-          notifications.forEach(notification => notification.remove());
-
-          addMessage({
-            sender: "System",
-            text: response.message,
-            ts: new Date().toISOString(),
-          });
-        } else {
-          alert(response?.error || "Failed to reject request");
-        }
-      });
-    };
-
-    // ======================================================
-    // =============== Alert System ========================
-    // ======================================================
-    function showAlert(message, type = 'info') {
-      let alertOverlay = document.getElementById('alert-overlay');
-      if (!alertOverlay) {
-        alertOverlay = document.createElement('div');
-        alertOverlay.id = 'alert-overlay';
-        alertOverlay.className = 'alert-overlay';
-        document.body.appendChild(alertOverlay);
-      }
-
-      const alert = document.createElement('div');
-      alert.className = `alert ${type}`;
-      alert.textContent = message;
-
-      alertOverlay.appendChild(alert);
-
-      // Remove alert after animation completes
-      setTimeout(() => {
-        if (alert.parentNode) {
-          alert.parentNode.removeChild(alert);
-        }
-      }, 5000);
-    }
-  </script>
-
-  <script>
-    // Add this to your existing JavaScript, preferably in the initialization section
-    document.addEventListener('DOMContentLoaded', function () {
-      // Get the chat title element
-      const chatTitle = document.getElementById('chat-title');
-
-      if (chatTitle) {
-        chatTitle.addEventListener('click', function () {
-          console.log('💬 Chattrix title clicked - reloading page...');
-
-          // Simple and reliable reload that works in both web and Capacitor
-          window.location.reload();
-        });
-
-        // Add visual feedback for the click
-        chatTitle.style.cursor = 'pointer';
-        chatTitle.title = 'Click to reload the app';
-
-        console.log('💬 Chattrix reload handler initialized');
-      }
-    });
-  </script>
-
-  <!-- Capacitor Storage Module -->
-  <script type="module">
-    import { Storage } from "@capacitor/storage";
-    import {
-      PushNotifications,
-      LocalNotifications,
-    } from "@capacitor/push-notifications";
-
-    async function saveChatState(username, room, lastTs) {
-      await Storage.set({
-        key: "chatState",
-        value: JSON.stringify({ username, room, lastTs }),
-      });
-    }
-
-    async function loadChatState() {
-      const { value } = await Storage.get({ key: "chatState" });
-      return value ? JSON.parse(value) : null;
-    }
-
-    const API_BASE_CAP = "https://realtime-chat-1mv3.onrender.com";
-    const state = await loadChatState();
-    if (state) {
+    // Handle join request (approve/reject)
+    window.handleJoinRequest = async function (user, room, approve, notificationId) {
       try {
-        const res = await fetch(`${API_BASE}/destroyed_rooms`, {
-          cache: "no-store",
-        });
-        const json = await res.json();
-        const destroyed = json.destroyed || [];
-        if (!destroyed.includes(state.room)) {
-          const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit("join", {
-            room: state.room,
-            sender: state.username,
-            lastTs: state.lastTs,
-            fcmToken,
-          });
-        } else {
-          await Storage.remove({ key: "chatState" });
+        const response = await fetch(
+          `${API_BASE}/join-request/${encodeURIComponent(room)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              user: user,
+              room: room,
+              approve: approve,
+              admin: currentName
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          alert(errorData.error || "Failed to process join request");
+          return;
         }
+
+        const data = await response.json();
+
+        // Update notification to show result
+        const notificationDiv = document.getElementById(notificationId);
+        if (notificationDiv) {
+          if (approve) {
+            notificationDiv.style.background = "#27ae60";
+            notificationDiv.style.borderLeft = "4px solid #2ecc71";
+            notificationDiv.innerHTML = `
+                            <strong>✅ Request Approved</strong>
+                            <div style="font-size: 14px;">
+                                User <strong>"${user}"</strong> has been approved to join the room.
+                            </div>
+                            <small>${new Date().toLocaleString()}</small>
+                        `;
+          } else {
+            notificationDiv.style.background = "#e74c3c";
+            notificationDiv.style.borderLeft = "4px solid #c0392b";
+            notificationDiv.innerHTML = `
+                            <strong>❌ Request Rejected</strong>
+                            <div style="font-size: 14px;">
+                                User <strong>"${user}"</strong> has been rejected from joining the room.
+                            </div>
+                            <small>${new Date().toLocaleString()}</small>
+                        `;
+          }
+
+          // Remove notification after 5 seconds
+          setTimeout(() => {
+            if (notificationDiv.parentNode) {
+              notificationDiv.remove();
+            }
+          }, 5000);
+        }
+
+        // Show success message in chat
+        addMessage({
+          sender: "System",
+          text: `Join request for user "${user}" has been ${approve ? "approved" : "rejected"}`,
+          ts: new Date().toISOString(),
+        });
+
       } catch (err) {
-        console.warn("Failed to check destroyed rooms on startup:", err);
+        console.error("❌ handleJoinRequest error:", err);
+        alert("Failed to process join request");
+      }
+    };
+
+    // Show alert function
+    function showAlert(message, type = "info") {
+      const alertDiv = document.createElement("div");
+      alertDiv.className = `alert alert-${type}`;
+      alertDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 8px;
+        color: white;
+        z-index: 10000;
+        max-width: 300px;
+        word-wrap: break-word;
+        animation: slideIn 0.3s ease;
+    `;
+
+      // Set colors based on type
+      switch (type) {
+        case "success":
+          alertDiv.style.background = "#27ae60";
+          break;
+        case "error":
+          alertDiv.style.background = "#e74c3c";
+          break;
+        case "info":
+          alertDiv.style.background = "#3498db";
+          break;
+        case "warning":
+          alertDiv.style.background = "#f39c12";
+          break;
+      }
+
+      alertDiv.textContent = message;
+      document.body.appendChild(alertDiv);
+
+      // Auto remove after 3 seconds
+      setTimeout(() => {
+        if (alertDiv.parentNode) {
+          alertDiv.style.animation = "slideOut 0.3s ease";
+          setTimeout(() => alertDiv.remove(), 300);
+        }
+      }, 3000);
+    }
+
+    // Add CSS for animations
+    if (!document.querySelector("#alert-animations")) {
+      const style = document.createElement("style");
+      style.id = "alert-animations";
+      style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+    `;
+      document.head.appendChild(style);
+    }
+
+    // Add this function to load chat state
+    async function loadChatState() {
+      try {
+        const savedState = localStorage.getItem("chatState");
+        if (savedState) {
+          const state = JSON.parse(savedState);
+          return {
+            username: state.username,
+            room: state.room,
+            lastTs: state.lastTs
+          };
+        }
+      } catch (e) {
+        console.warn("Failed to load chat state:", e);
+      }
+      return null;
+    }
+
+    // Add this function to save chat state
+    function saveChatState(username, room, lastTs) {
+      try {
+        localStorage.setItem("chatState", JSON.stringify({
+          username: username,
+          room: room,
+          lastTs: lastTs
+        }));
+      } catch (e) {
+        console.warn("Failed to save chat state:", e);
       }
     }
-  </script>
+
+    // Add debug encryption button to UI
+    function addDebugEncryptionButton() {
+      const debugBtn = document.createElement('button');
+      debugBtn.textContent = '🔐 Debug Encryption';
+      debugBtn.style.cssText = `
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        background: #2c3e50;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        z-index: 1000;
+        font-size: 12px;
+    `;
+      debugBtn.onclick = debugEncryption;
+      document.body.appendChild(debugBtn);
+    }
+
+    // Initialize debug button when page loads
+    document.addEventListener('DOMContentLoaded', addDebugEncryptionButton);
+</script>
 </body>
 
 </html>
