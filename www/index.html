@@ -1587,17 +1587,8 @@
       document.getElementById("input-area").style.display = "flex";
       document.getElementById("intro").style.display = "none";
       document.getElementById("messages").style.display = "block";
-
-      // Don't clear messages if we're reconnecting to the same room
-      if (currentRoom !== room) {
-        document.getElementById("messages").innerHTML = "";
-      }
       document.getElementById("messages").innerHTML = "";
-
-      if (currentRoom !== room) {
-        lastPersistedTs = null;
-      }
-
+      lastPersistedTs = null;
       alreadyFetchingHistory = false;
       document.getElementById("input").disabled = false;
       document.getElementById("send").disabled = false;
@@ -1657,17 +1648,14 @@
       }
 
       socket.on("connect", () => {
-        console.log("🔗 Connected to server");
         if (room && username) {
-          // Use the current lastPersistedTs if we're reconnecting to same room
-          const joinLastTs = (currentRoom === room && lastPersistedTs) ? lastPersistedTs : null;
           const fcmToken = localStorage.getItem("fcm_token") || null;
           socket.emit(
             "join",
             {
               room: room,
               sender: username,
-              lastTs: lastPersistedTs,
+              lastTs: lastPersistedTs || null,
               fcmToken: fcmToken,
             },
             (ack) => {
@@ -1696,9 +1684,6 @@
           restoreChatState(socket);
         }
       });
-
-      // Update current room
-      currentRoom = room;
 
       // Add room to joined rooms list
       const joinedList = document.getElementById("joined-rooms");
@@ -1733,25 +1718,6 @@
 
     function setupSocketEventHandlers() {
       if (!socket) return;
-      // Handle reconnection events
-      socket.on("reconnect", (attemptNumber) => {
-        console.log(`🔗 Reconnected after ${attemptNumber} attempts`);
-
-        // Don't refetch history on reconnection - the server will send any missed messages
-        // based on the lastTs we sent during the initial join
-      });
-
-      socket.on("reconnect_attempt", (attemptNumber) => {
-        console.log(`🔄 Reconnection attempt ${attemptNumber}`);
-      });
-
-      socket.on("reconnect_error", (error) => {
-        console.error("❌ Reconnection error:", error);
-      });
-
-      socket.on("reconnect_failed", () => {
-        console.error("❌ Reconnection failed");
-      });
 
       // Existing socket event handlers
       socket.on("room_permanently_destroyed", (data) => {
