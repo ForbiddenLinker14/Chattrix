@@ -1313,6 +1313,7 @@
     let unreadCounts = {};
     let currentAdmin = null;
     let isFirstConnection = true;
+    let isIntentionalLeave = false;
 
     // ======================================================
     // =============== Utility Functions ====================
@@ -1643,6 +1644,7 @@
     // Extract the main join logic into a separate function
     async function proceedWithJoin(room, username) {
       isFirstConnection = true;
+      isIntentionalLeave = false;
       const roomStatus = await checkRoomStatus(room, username);
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
@@ -1901,6 +1903,12 @@
       socket.on("disconnect", (reason) => {
         updateConnectionStatus('offline');
         console.log("🔌 Socket disconnected:", reason);
+
+        // Don't show connection lost message if this was an intentional leave
+        if (window.isIntentionalLeave) {
+          console.log("🔌 Intentional leave - skipping connection lost message");
+          return;
+        }
 
         // Disable input when offline
         document.getElementById("input").disabled = true;
@@ -3442,6 +3450,12 @@
       // Reset lock UI
       document.getElementById("roomLockToggle").checked = false;
       updateLockUI(false);
+
+      // Reset the intentional leave flag after a short delay
+      setTimeout(() => {
+        isIntentionalLeave = false;
+        console.log("🔄 Intentional leave flag reset");
+      }, 2000);
 
       // IMPORTANT: Don't disconnect the socket here if you want to keep the connection
       // for potential reconnection to other rooms. Only disconnect if you're sure
