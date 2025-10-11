@@ -588,18 +588,18 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or your domain
-    allow_credentials=True,
-    allow_methods=["*"],  # important: includes DELETE
-    allow_headers=["*"],
+    allow_origins=["https://realtime-chat-1mv3.onrender.com"],  # only your domain
+    allow_credentials=True,                                    # only if using cookies
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],        # no wildcard
+    allow_headers=["Authorization", "Content-Type"],           # minimal safe list
 )
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
-    max_http_buffer_size=10 * 1024 * 1024,
-    ping_interval=3,
-    ping_timeout=5,
+    cors_allowed_origins=["https://realtime-chat-1mv3.onrender.com"],  # ✅ restrict to your domain
+    max_http_buffer_size=10 * 1024 * 1024,  # 10 MB, still okay
+    ping_interval=10,                       # slightly longer = less load
+    ping_timeout=20,                        # gives clients more tolerance on bad networks
 )
 
 # Important: use socketio_path="socket.io"
