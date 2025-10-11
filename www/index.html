@@ -1312,6 +1312,7 @@
     let joinedRoomsByUser = {};
     let unreadCounts = {};
     let currentAdmin = null;
+    let isFirstConnection = true;
 
     // ======================================================
     // =============== Utility Functions ====================
@@ -1439,7 +1440,6 @@
 
       // Enhanced connection status handling
       socket.on("connect", () => {
-        updateConnectionStatus('online');
         console.log("🔗 Connected to server (waiting for admin)");
         clearTimeout(connectionTimeout);
         showAlert("Connected to server. Sending join request...", "info");
@@ -1642,6 +1642,7 @@
 
     // Extract the main join logic into a separate function
     async function proceedWithJoin(room, username) {
+      isFirstConnection = true;
       const roomStatus = await checkRoomStatus(room, username);
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
@@ -1725,111 +1726,10 @@
         );
       }
 
-      socket.on("connect", () => {
-        console.log("🔗 Reconnected to server");
 
-        // Clear existing messages to prevent duplicates
-        const messagesEl = document.getElementById("messages");
-        if (messagesEl) {
-          messagesEl.innerHTML = "";
-        }
-
-        lastPersistedTs = null; // Reset timestamp to get full history
-        alreadyFetchingHistory = false;
-
-        // Re-enable input fields immediately when reconnected
-        document.getElementById("input").disabled = false;
-        document.getElementById("send").disabled = false;
-        document.getElementById("attach").disabled = false;
-
-        if (currentRoom && currentName) {
-          const fcmToken = localStorage.getItem("fcm_token") || null;
-          socket.emit(
-            "join",
-            {
-              room: currentRoom,
-              sender: currentName,
-              lastTs: null, // Get full history
-              fcmToken: fcmToken,
-            },
-            (ack) => {
-              if (ack && ack.success) {
-                joinedRooms.add(currentRoom);
-                sendActive(!document.hidden);
-                fetchUnreadCounts();
-
-                // Check if we became admin and load pending requests
-                if (currentName === currentAdmin) {
-                  socket.emit("get_pending_requests", {
-                    room: currentRoom,
-                    user: currentName
-                  });
-                }
-
-                // Show reconnected message
-                const messages = document.getElementById("messages");
-                if (messages) {
-                  const onlineDiv = document.createElement("div");
-                  onlineDiv.className = "msg system online";
-                  onlineDiv.innerHTML = `
-              <strong>✅ Reconnected</strong><br>
-              You're back online!<br>
-              <small>${new Date().toLocaleString()}</small>
-            `;
-                  messages.appendChild(onlineDiv);
-                  messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-
-                  // Remove after 3 seconds
-                  setTimeout(() => {
-                    if (onlineDiv.parentNode) {
-                      onlineDiv.remove();
-                    }
-                  }, 3000);
-                }
-              } else {
-                console.error("❌ Rejoin failed:", ack);
-                // Retry after delay
-                setTimeout(() => {
-                  if (socket && socket.connected) {
-                    socket.disconnect();
-                    socket.connect();
-                  }
-                }, 1000);
-              }
-            }
-          );
-        } else {
-          restoreChatState(socket);
-        }
-      });
-
-      socket.on("disconnect", (reason) => {
-        console.log("🔌 Socket disconnected:", reason);
-
-        // Disable input when offline
-        document.getElementById("input").disabled = true;
-        document.getElementById("send").disabled = true;
-        document.getElementById("attach").disabled = true;
-
-        // Show offline indicator
-        const messages = document.getElementById("messages");
-        if (messages) {
-          const offlineDiv = document.createElement("div");
-          offlineDiv.className = "msg system";
-          offlineDiv.style.background = "#e74c3c";
-          offlineDiv.style.color = "white";
-          offlineDiv.innerHTML = `
-      <strong>🔌 Connection Lost</strong><br>
-      Attempting to reconnect...<br>
-      <small>${new Date().toLocaleString()}</small>
-    `;
-          messages.appendChild(offlineDiv);
-          messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-        }
-      });
 
       socket.on("reconnect_attempt", (attemptNumber) => {
-        updateConnectionStatus('online');
+        updateConnectionStatus('reconnecting');
         console.log(`🔄 Reconnect attempt ${attemptNumber}`);
       });
 
@@ -1912,6 +1812,123 @@
     }
     function setupSocketEventHandlers() {
       if (!socket) return;
+
+      socket.on("connect", () => {
+        updateConnectionStatus('online');
+        console.log("🔗 Reconnected to server");
+
+        // Clear existing messages to prevent duplicates
+        const messagesEl = document.getElementById("messages");
+        if (messagesEl) {
+          messagesEl.innerHTML = "";
+        }
+
+        lastPersistedTs = null; // Reset timestamp to get full history
+        alreadyFetchingHistory = false;
+
+        // Re-enable input fields immediately when reconnected
+        document.getElementById("input").disabled = false;
+        document.getElementById("send").disabled = false;
+        document.getElementById("attach").disabled = false;
+
+        if (currentRoom && currentName) {
+          const fcmToken = localStorage.getItem("fcm_token") || null;
+          socket.emit(
+            "join",
+            {
+              room: currentRoom,
+              sender: currentName,
+              lastTs: null, // Get full history
+              fcmToken: fcmToken,
+            },
+            (ack) => {
+              if (ack && ack.success) {
+                joinedRooms.add(currentRoom);
+                sendActive(!document.hidden);
+                fetchUnreadCounts();
+
+                // Check if we became admin and load pending requests
+                if (currentName === currentAdmin) {
+                  socket.emit("get_pending_requests", {
+                    room: currentRoom,
+                    user: currentName
+                  });
+                }
+
+                // Only show reconnected message if this is NOT the first connection
+                // AND it's NOT an intentional leave scenario
+                if (!isFirstConnection && !window.isIntentionalLeave) {
+                  const messages = document.getElementById("messages");
+                  if (messages) {
+                    const onlineDiv = document.createElement("div");
+                    onlineDiv.className = "msg system online";
+                    onlineDiv.innerHTML = `
+                <strong>✅ Reconnected</strong><br>
+                You're back online!<br>
+                <small>${new Date().toLocaleString()}</small>
+              `;
+                    messages.appendChild(onlineDiv);
+                    messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+
+                    // Remove after 3 seconds
+                    setTimeout(() => {
+                      if (onlineDiv.parentNode) {
+                        onlineDiv.remove();
+                      }
+                    }, 3000);
+                  }
+                }
+
+                // Mark that we've had at least one successful connection
+                isFirstConnection = false;
+              } else {
+                console.error("❌ Rejoin failed:", ack);
+                // Retry after delay
+                setTimeout(() => {
+                  if (socket && socket.connected) {
+                    socket.disconnect();
+                    socket.connect();
+                  }
+                }, 1000);
+              }
+            }
+          );
+        } else {
+          restoreChatState(socket);
+        }
+      });
+
+      socket.on("disconnect", (reason) => {
+        updateConnectionStatus('offline');
+        console.log("🔌 Socket disconnected:", reason);
+
+        // Don't show connection lost message if this was an intentional leave
+        if (window.isIntentionalLeave) {
+          console.log("🔌 Intentional leave - skipping connection lost message");
+          return;
+        }
+
+        // Disable input when offline
+        document.getElementById("input").disabled = true;
+        document.getElementById("send").disabled = true;
+        document.getElementById("attach").disabled = true;
+
+        // Show offline indicator
+        const messages = document.getElementById("messages");
+        if (messages) {
+          const offlineDiv = document.createElement("div");
+          offlineDiv.className = "msg system";
+          offlineDiv.style.background = "#e74c3c";
+          offlineDiv.style.color = "white";
+          offlineDiv.innerHTML = `
+      <strong>🔌 Connection Lost</strong><br>
+      Attempting to reconnect...<br>
+      <small>${new Date().toLocaleString()}</small>
+    `;
+          messages.appendChild(offlineDiv);
+          messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+        }
+      });
 
       // Existing socket event handlers
       socket.on("room_permanently_destroyed", (data) => {
@@ -2381,6 +2398,9 @@
         document.getElementById("input").disabled = false;
         document.getElementById("send").disabled = false;
         document.getElementById("attach").disabled = false;
+
+        // Set first connection flag for restored state
+        isFirstConnection = true;
 
         const fcmToken = localStorage.getItem("fcm_token") || null;
         socket.emit("join", {
@@ -3338,6 +3358,9 @@
         alert("You are not in a room!");
         return;
       }
+
+      // Set flag to prevent connection status messages during intentional leave
+      window.isIntentionalLeave = true;
 
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
