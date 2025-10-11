@@ -1312,6 +1312,8 @@
     let joinedRoomsByUser = {};
     let unreadCounts = {};
     let currentAdmin = null;
+    let intentionalLeave = false;
+    let isInitialConnection = true;
 
     // ======================================================
     // =============== Utility Functions ====================
@@ -1640,6 +1642,8 @@
 
     // Extract the main join logic into a separate function
     async function proceedWithJoin(room, username) {
+      // Reset the initial connection flag for new room joins
+      isInitialConnection = true;
       const roomStatus = await checkRoomStatus(room, username);
       if (roomStatus.destroyed) {
         if (roomStatus.time_remaining <= 0) {
@@ -1724,7 +1728,7 @@
       }
 
       socket.on("connect", () => {
-        console.log("🔗 Reconnected to server");
+        console.log("🔗 Connected to server");
 
         // Clear existing messages to prevent duplicates
         const messagesEl = document.getElementById("messages");
@@ -1764,26 +1768,31 @@
                   });
                 }
 
-                // Show reconnected message
-                const messages = document.getElementById("messages");
-                if (messages) {
-                  const onlineDiv = document.createElement("div");
-                  onlineDiv.className = "msg system online";
-                  onlineDiv.innerHTML = `
-              <strong>✅ Reconnected</strong><br>
-              You're back online!<br>
-              <small>${new Date().toLocaleString()}</small>
-            `;
-                  messages.appendChild(onlineDiv);
-                  messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+                // Only show reconnected message if it's NOT the initial connection
+                if (!isInitialConnection) {
+                  const messages = document.getElementById("messages");
+                  if (messages) {
+                    const onlineDiv = document.createElement("div");
+                    onlineDiv.className = "msg system online";
+                    onlineDiv.innerHTML = `
+                <strong>✅ Reconnected</strong><br>
+                You're back online!<br>
+                <small>${new Date().toLocaleString()}</small>
+              `;
+                    messages.appendChild(onlineDiv);
+                    messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
 
-                  // Remove after 3 seconds
-                  setTimeout(() => {
-                    if (onlineDiv.parentNode) {
-                      onlineDiv.remove();
-                    }
-                  }, 3000);
+                    // Remove after 3 seconds
+                    setTimeout(() => {
+                      if (onlineDiv.parentNode) {
+                        onlineDiv.remove();
+                      }
+                    }, 3000);
+                  }
                 }
+
+                // Set flag to false after first successful connection
+                isInitialConnection = false;
               } else {
                 console.error("❌ Rejoin failed:", ack);
                 // Retry after delay
@@ -1804,25 +1813,28 @@
       socket.on("disconnect", (reason) => {
         console.log("🔌 Socket disconnected:", reason);
 
-        // Disable input when offline
-        document.getElementById("input").disabled = true;
-        document.getElementById("send").disabled = true;
-        document.getElementById("attach").disabled = true;
+        // Only show disconnect message if it wasn't an intentional leave
+        if (!intentionalLeave) {
+          // Disable input when offline
+          document.getElementById("input").disabled = true;
+          document.getElementById("send").disabled = true;
+          document.getElementById("attach").disabled = true;
 
-        // Show offline indicator
-        const messages = document.getElementById("messages");
-        if (messages) {
-          const offlineDiv = document.createElement("div");
-          offlineDiv.className = "msg system";
-          offlineDiv.style.background = "#e74c3c";
-          offlineDiv.style.color = "white";
-          offlineDiv.innerHTML = `
-      <strong>🔌 Connection Lost</strong><br>
-      Attempting to reconnect...<br>
-      <small>${new Date().toLocaleString()}</small>
-    `;
-          messages.appendChild(offlineDiv);
-          messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+          // Show offline indicator
+          const messages = document.getElementById("messages");
+          if (messages) {
+            const offlineDiv = document.createElement("div");
+            offlineDiv.className = "msg system";
+            offlineDiv.style.background = "#e74c3c";
+            offlineDiv.style.color = "white";
+            offlineDiv.innerHTML = `
+        <strong>🔌 Connection Lost</strong><br>
+        Attempting to reconnect...<br>
+        <small>${new Date().toLocaleString()}</small>
+      `;
+            messages.appendChild(offlineDiv);
+            messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+          }
         }
       });
 
@@ -3309,6 +3321,9 @@
         return;
       }
 
+      // Set flag to prevent disconnect message
+      intentionalLeave = true;
+
       const leftRoom = currentRoom;
       const savedToken = localStorage.getItem("fcm_token");
 
@@ -3402,12 +3417,14 @@
 
       // If you want to allow quick rejoining to other rooms, keep the socket connected.
       // If you want to completely reset the connection, you can disconnect after a delay:
+      // Disconnect socket after a short delay if no rooms are joined
       setTimeout(() => {
         if (socket && joinedRooms.size === 0) {
-          // Only disconnect if no rooms are joined
           socket.disconnect();
           socket = null;
         }
+        // Reset the flag after disconnect
+        intentionalLeave = false;
       }, 1000);
     }
 
