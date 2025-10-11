@@ -1758,7 +1758,10 @@
         await signalProtocol.initialize();
         await signalProtocol.loadSessions();
         console.log("🔐 End-to-end encryption initialized with persisted sessions");
-        setTimeout(() => updateEncryptionStatusOnReload(), 1000);
+        setTimeout(() => {
+          restoreEncryptionStatusForMessages();
+          updateEncryptionStatusOnReload();
+        }, 1500);
         const sessionCount = Object.keys(signalProtocol.sessions).length;
         console.log(`📊 Loaded ${sessionCount} encryption sessions`);
       } catch (error) {
@@ -1769,74 +1772,27 @@
     async function reestablishEncryptionSessions() {
       if (!currentRoom || !currentName) return;
       console.log("🔄 Re-establishing encryption sessions...");
-
-      // First, ensure encryption is fully initialized
-      await initializeEncryption();
-
       setTimeout(async () => {
         const users = getUsersFromUserList();
         const existingSessions = Object.keys(signalProtocol.sessions);
         console.log(`📋 Found ${users.length} users, ${existingSessions.length} existing sessions`);
-
-        // Remove stale sessions for users no longer in the room
         for (const userId of existingSessions) {
-          if (!users.includes(userId) && userId !== currentName) {
+          if (users.includes(userId) && userId !== currentName) {
+            console.log(`✅ Session with ${userId} is still valid`);
+          } else {
             console.log(`🗑️ Removing stale session with ${userId}`);
             delete signalProtocol.sessions[userId];
           }
         }
-
         signalProtocol.saveSessions();
-
-        // Re-initiate key exchange with users we don't have sessions with
-        // But only if we're actually in a room with other users
-        if (users.length > 1) {
-          for (const user of users) {
-            if (user !== currentName && !signalProtocol.sessions[user]) {
-              console.log(`🔑 Re-initiating key exchange with ${user}`);
-              await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-              try {
-                await initiateKeyExchange(user);
-              } catch (error) {
-                console.warn(`⚠️ Key exchange with ${user} failed:`, error);
-              }
-            }
+        for (const user of users) {
+          if (user !== currentName && !signalProtocol.sessions[user]) {
+            console.log(`🔑 Re-initiating key exchange with ${user}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+            try { await initiateKeyExchange(user); } catch (error) { console.warn(`⚠️ Key exchange with ${user} failed:`, error); }
           }
         }
-
-        // Update encryption status for existing messages
-        updateEncryptionStatusOnReload();
-
-        // Clear any "decryption failed" messages for our own messages
-        cleanupOwnMessages();
       }, 3000);
-    }
-
-    // Add this new helper function
-    function cleanupOwnMessages() {
-      const messages = document.getElementById("messages");
-      const messageDivs = messages.querySelectorAll('.msg:not(.system)');
-
-      messageDivs.forEach(div => {
-        const senderElement = div.querySelector('strong');
-        if (senderElement) {
-          const senderText = senderElement.textContent;
-          const messageContent = div.textContent || '';
-
-          // If this is our own message showing as "decryption failed", fix it
-          if (senderText.includes(currentName) && messageContent.includes('decryption failed')) {
-            const originalText = div.querySelector('br + br')?.previousSibling?.textContent;
-            if (originalText) {
-              // Replace with proper display
-              const safeText = escapeHtml(originalText);
-              const formattedText = linkifyWithFavicon(safeText);
-              div.innerHTML = `<strong>${currentName}</strong><br>${formattedText}<br><small>${div.querySelector('small')?.textContent || ''}</small>`;
-              enableCopyOnMessage(div, originalText);
-              div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
-            }
-          }
-        }
-      });
     }
 
     function cleanupEncryptionSessions() {
@@ -1903,42 +1859,20 @@
     async function handleEncryptedMessage(data) {
       let displayText = data.text;
       let isEncrypted = false;
-
-      // Always show our own messages as plaintext
-      if (data.sender === currentName) {
-        displayText = data.text;
-        isEncrypted = false;
-      }
-      else if (data.encrypted && data.encrypted[currentName]) {
+      if (data.encrypted && data.encrypted[currentName]) {
         try {
           const encryptedData = data.encrypted[currentName];
           displayText = await signalProtocol.decryptMessage(data.sender, encryptedData);
           isEncrypted = true;
         } catch (error) {
           console.error("❌ Failed to decrypt message:", error);
-          // On decryption failure, queue for retry after session restoration
-          if (signalProtocol.sessions[data.sender]) {
-            // We have a session but decryption failed - this is bad
-            displayText = "🔒 [Encrypted message - decryption failed]";
-          } else {
-            // No session yet - message might decrypt later
-            displayText = "🔒 [Encrypted message - waiting for session]";
-
-            // Try to initiate key exchange and retry decryption later
-            setTimeout(async () => {
-              if (!signalProtocol.sessions[data.sender]) {
-                await initiateKeyExchange(data.sender);
-              }
-            }, 2000);
-          }
+          displayText = "🔒 [Encrypted message - decryption failed]";
           isEncrypted = true;
         }
-      } else if (data.encrypted) {
-        // Message has encryption but not for current user - show as encrypted
-        displayText = "🔒 [Encrypted message for other users]";
+      } else if (signalProtocol.sessions && signalProtocol.sessions[data.sender]) {
+        // Message might not have encrypted field but we have a session with sender
         isEncrypted = true;
       }
-
       const messages = document.getElementById("messages");
       const div = document.createElement("div");
       if (data.sender === "System") {
@@ -1947,65 +1881,17 @@
       } else {
         const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
         div.className = "msg " + (isMe ? "me" : "other");
-        if (isEncrypted && !isMe) { // Don't mark our own messages as encrypted
-          div.classList.add("encrypted");
-        }
+        if (isEncrypted) div.classList.add("encrypted");
         const safeText = escapeHtml(displayText);
         const formattedText = linkifyWithFavicon(safeText);
         let lockIcon = "";
-        if (isEncrypted && !isMe) { // Don't show lock icon for our own messages
-          lockIcon = " 🔒";
-        }
+        if (isEncrypted) lockIcon = " 🔒";
         div.innerHTML = `<strong>${data.sender}${lockIcon}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
         enableCopyOnMessage(div, displayText);
         div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
       }
       messages.appendChild(div);
       messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
-    }
-
-    // Add this function to handle reconnection events
-    // Replace the existing handleReconnection function with this improved version
-    function handleReconnection() {
-      console.log("🔗 Reconnection detected, restoring encryption state...");
-
-      // Clear any existing failed messages first
-      const messages = document.getElementById("messages");
-      const failedMessages = messages.querySelectorAll('.msg.other .encrypted');
-
-      failedMessages.forEach(div => {
-        const messageText = div.textContent;
-        if (messageText.includes('decryption failed') || messageText.includes('waiting for session')) {
-          div.remove();
-        }
-      });
-
-      // Wait a bit for user list to populate and then restore sessions
-      setTimeout(async () => {
-        await reestablishEncryptionSessions();
-
-        // Additional delay to ensure sessions are fully established
-        setTimeout(() => {
-          // Retry decryption of any remaining failed messages
-          const remainingFailed = messages.querySelectorAll('.msg.other .encrypted');
-          remainingFailed.forEach(div => {
-            const messageText = div.textContent;
-            if (messageText.includes('decryption failed') || messageText.includes('waiting for session')) {
-              const senderElement = div.querySelector('strong');
-              if (senderElement) {
-                const senderName = senderElement.textContent.replace('🔒', '').trim();
-                if (signalProtocol.sessions[senderName]) {
-                  console.log(`🔄 Removing failed message from ${senderName} for retry`);
-                  div.remove();
-                }
-              }
-            }
-          });
-
-          // Force refresh of encryption status
-          updateEncryptionStatusOnReload();
-        }, 2000);
-      }, 3000);
     }
 
     async function initiateKeyExchange(userId) {
@@ -2061,36 +1947,52 @@
     function updateEncryptionStatusOnReload() {
       const messages = document.getElementById("messages");
       const messageDivs = messages.querySelectorAll('.msg:not(.system)');
-
       messageDivs.forEach(div => {
-        const senderElement = div.querySelector('strong');
-        if (senderElement) {
-          const senderText = senderElement.textContent;
-          const isEncrypted = senderText.includes('🔒');
-          const senderName = senderText.replace('🔒', '').trim();
-
-          // If this is our own message, ensure it never shows as encrypted
-          if (senderName === currentName) {
-            if (isEncrypted) {
-              senderElement.textContent = senderName;
-              div.classList.remove("encrypted");
+        const isEncrypted = div.querySelector('strong')?.textContent?.includes('🔒');
+        if (!isEncrypted && signalProtocol.sessions) {
+          const senderElement = div.querySelector('strong');
+          if (senderElement) {
+            const senderName = senderElement.textContent.replace('🔒', '').trim();
+            const isMe = senderName === currentName || senderName.includes('(Me)');
+            if (senderName !== currentName && signalProtocol.sessions[senderName]) {
+              senderElement.textContent = isMe ? `${currentName} 🔒` : `${senderName} 🔒`;
             }
-            return; // Skip further processing for our own messages
-          }
-
-          // If we have an encryption session with this sender but no lock icon, add it
-          if (!isEncrypted && signalProtocol.sessions[senderName] && senderName !== currentName) {
-            senderElement.textContent = `${senderName} 🔒`;
-            div.classList.add("encrypted");
-          }
-          // If we don't have a session but there's a lock icon, remove it
-          else if (isEncrypted && !signalProtocol.sessions[senderName] && senderName !== currentName) {
-            senderElement.textContent = senderName;
-            div.classList.remove("encrypted");
           }
         }
       });
       console.log("🔒 Updated encryption status for existing messages");
+    }
+
+    function restoreEncryptionStatusForMessages() {
+      const messages = document.getElementById("messages");
+      if (!messages) return;
+
+      const messageDivs = messages.querySelectorAll('.msg:not(.system)');
+      messageDivs.forEach(div => {
+        const senderElement = div.querySelector('strong');
+        if (!senderElement) return;
+
+        // Extract sender name (remove lock icon if present)
+        let senderName = senderElement.textContent.replace('🔒', '').trim();
+
+        // Remove "(Me)" suffix if present
+        if (senderName.endsWith('(Me)')) {
+          senderName = senderName.slice(0, -4).trim();
+        }
+
+        const isMe = senderName === currentName;
+
+        // Check if we have an encryption session with this sender
+        if (!isMe && signalProtocol.sessions && signalProtocol.sessions[senderName]) {
+          // Add encryption indicator if not already present
+          if (!senderElement.textContent.includes('🔒')) {
+            senderElement.textContent = isMe ? `${currentName} 🔒` : `${senderName} 🔒`;
+            div.classList.add('encrypted');
+          }
+        }
+      });
+
+      console.log("🔒 Restored encryption status for existing messages");
     }
 
     function debugEncryption() {
@@ -2336,7 +2238,10 @@
               fetchUnreadCounts();
               if (currentName === currentAdmin) {
                 socket.emit("get_pending_requests", { room: currentRoom, user: currentName });
-              }
+              }// Restore encryption status after messages are loaded
+              setTimeout(() => {
+                restoreEncryptionStatusForMessages();
+              }, 1000);
               if (!isInitialConnection) {
                 const messages = document.getElementById("messages");
                 if (messages) {
@@ -2347,10 +2252,6 @@
                   messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
                   setTimeout(() => { if (onlineDiv.parentNode) onlineDiv.remove(); }, 3000);
                 }
-              }
-              // Add this line to handle reconnection
-              if (!isInitialConnection) {
-                handleReconnection();
               }
               isInitialConnection = false;
             } else {
@@ -2364,24 +2265,6 @@
             }
           });
         } else restoreChatState(socket);
-      });
-      // In the socket connection setup within proceedWithJoin, modify the message handler:
-      socket.on("message", (data) => {
-        // Check if this is a duplicate message we already have
-        const messages = document.getElementById("messages");
-        const existingMessages = messages.querySelectorAll('.msg[data-ts]');
-        let isDuplicate = false;
-
-        for (const msg of existingMessages) {
-          if (msg.dataset.ts === data.ts && msg.querySelector('strong')?.textContent === data.sender) {
-            isDuplicate = true;
-            break;
-          }
-        }
-
-        if (!isDuplicate) {
-          handleEncryptedMessage(data);
-        }
       });
       socket.on("disconnect", (reason) => {
         console.log("🔌 Socket disconnected:", reason);
@@ -2434,27 +2317,6 @@
       renderJoinedRooms();
       setTimeout(() => reestablishEncryptionSessions(), 4000);
     }
-    function isDuplicateMessage(data) {
-      const messages = document.getElementById("messages");
-      const existingMessages = messages.querySelectorAll('.msg[data-ts]');
-
-      for (const msg of existingMessages) {
-        const msgTs = msg.dataset.ts;
-        const msgSender = msg.querySelector('strong')?.textContent?.replace('🔒', '').trim();
-
-        if (msgTs === data.ts && msgSender === data.sender) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // Then update the message handler:
-    socket.on("message", (data) => {
-      if (!isDuplicateMessage(data)) {
-        handleEncryptedMessage(data);
-      }
-    });
 
     function setupSocketEventHandlers() {
       if (!socket) return;
@@ -2814,10 +2676,33 @@
         const isMe = data.sender.toLowerCase() === currentName.toLowerCase();
         div.className = "msg " + (isMe ? "me" : "other");
         div.dataset.ts = data.ts;
+
+        // Check if this message was originally encrypted
+        const wasEncrypted = data.encrypted && data.encrypted[currentName];
+        const isEncrypted = wasEncrypted || (signalProtocol.sessions && signalProtocol.sessions[data.sender]);
+
+        let displayText = data.text;
+
+        // If encrypted and we have the session, try to decrypt
+        if (wasEncrypted && signalProtocol.sessions && signalProtocol.sessions[data.sender]) {
+          try {
+            const encryptedData = data.encrypted[currentName];
+            displayText = signalProtocol.decryptMessage(data.sender, encryptedData);
+          } catch (error) {
+            console.error("❌ Failed to decrypt historical message:", error);
+            displayText = "🔒 [Encrypted message - decryption failed]";
+          }
+        }
+
         const safeText = escapeHtml(data.text);
         const formattedText = linkifyWithFavicon(safeText);
+        let lockIcon = "";
+        if (isEncrypted) {
+          lockIcon = " 🔒";
+          div.classList.add("encrypted");
+        }
         div.innerHTML = `<strong>${data.sender}</strong><br>${formattedText}<br><small>${new Date(data.ts).toLocaleString()}</small>`;
-        enableCopyOnMessage(div, data.text);
+        enableCopyOnMessage(div, displayText);
         div.querySelectorAll("a").forEach((a) => enableCopyOnLink(a));
       }
       messages.appendChild(div);

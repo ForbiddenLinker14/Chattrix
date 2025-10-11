@@ -474,20 +474,12 @@ def cleanup_old_messages():
     return before - after
 
 
-def save_message(
-    room,
-    sender,
-    text=None,
-    filename=None,
-    mimetype=None,
-    filedata=None,
-    encryption_metadata=None,
-):
+def save_message(room, sender, text=None, filename=None, mimetype=None, filedata=None):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, encryption_metadata, ts) "
-        "VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, ts) "
+        "VALUES (?,?,?,?,?,?,?)",
         (
             room,
             sender,
@@ -495,7 +487,6 @@ def save_message(
             filename,
             mimetype,
             filedata,
-            encryption_metadata,  # NEW: store encryption metadata
             datetime.now(timezone.utc).isoformat(),
         ),
     )
@@ -507,7 +498,7 @@ def load_messages(room):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT sender, text, filename, mimetype, filedata, ts, encryption_metadata "  # NEW: include encryption_metadata
+        "SELECT sender, text, filename, mimetype, filedata, ts "
         "FROM messages WHERE room=? ORDER BY id ASC",
         (room,),
     )
@@ -540,7 +531,6 @@ def init_db():
             filename TEXT,
             mimetype TEXT,
             filedata TEXT,
-            encryption_metadata TEXT,  -- NEW: store encryption metadata
             ts TEXT NOT NULL
         )
         """
@@ -1108,39 +1098,9 @@ async def join(sid, data):
         save_fcm_token(username, room, token)
 
     # send missed messages
-    for (
-        sender_,
-        text,
-        filename,
-        mimetype,
-        filedata,
-        ts,
-        encryption_metadata,
-    ) in load_messages(room):
+    for sender_, text, filename, mimetype, filedata, ts in load_messages(room):
         if last_ts and ts <= last_ts:
             continue
-
-        # Handle encryption metadata for history messages
-        if encryption_metadata:
-            try:
-                metadata = json.loads(encryption_metadata)
-                encrypted_data = metadata.get("encrypted")
-                encryption_version = metadata.get("version")
-
-                if encrypted_data and encryption_version:
-                    # Send with encryption metadata
-                    message_payload = {
-                        "sender": sender_,
-                        "text": text,
-                        "ts": ts,
-                        "encrypted": encrypted_data,
-                        "encryptionVersion": encryption_version,
-                    }
-                    await sio.emit("message", message_payload, to=sid)
-                    continue
-            except Exception as e:
-                print(f"Error loading encryption metadata: {e}")
-
         if filename:
             await sio.emit(
                 "file",
@@ -1284,23 +1244,22 @@ async def request_public_keys(sid, data):
     target_user = data.get("targetUser")
     room = data.get("room")
     requester = data.get("requester")
-
+    
     # Forward the request to the target user
     if room in ROOM_USERS and target_user in ROOM_USERS[room]:
         target_sid = ROOM_USERS[room][target_user]
-        await sio.emit(
-            "request_public_keys",
-            {"requester": requester, "room": room},
-            room=target_sid,
-        )
+        await sio.emit("request_public_keys", {
+            "requester": requester,
+            "room": room
+        }, room=target_sid)
         print(f"🔑 Public key request forwarded from {requester} to {target_user}")
     else:
         # Notify requester that user is not available
-        await sio.emit(
-            "key_exchange_error",
-            {"error": "User not available for key exchange", "targetUser": target_user},
-            room=sid,
-        )
+        await sio.emit("key_exchange_error", {
+            "error": "User not available for key exchange",
+            "targetUser": target_user
+        }, room=sid)
+
 
 
 @sio.event
@@ -1309,15 +1268,15 @@ async def send_public_keys(sid, data):
     requester = data.get("requester")
     room = data.get("room")
     key_bundle = data.get("keyBundle")
-
+    
     # Forward the key bundle to the requester
     if room in ROOM_USERS and requester in ROOM_USERS[room]:
         requester_sid = ROOM_USERS[room][requester]
-        await sio.emit(
-            "receive_public_keys",
-            {"sender": data.get("sender"), "keyBundle": key_bundle, "room": room},
-            room=requester_sid,
-        )
+        await sio.emit("receive_public_keys", {
+            "sender": data.get("sender"),
+            "keyBundle": key_bundle,
+            "room": room
+        }, room=requester_sid)
         print(f"🔑 Public keys sent from {data.get('sender')} to {requester}")
 
 
@@ -1343,16 +1302,8 @@ async def message(sid, data):
         return
     LAST_MESSAGE[key] = (text, now)
 
-    # Store the message with encryption metadata
-    # We'll store encryption metadata as JSON in a new field
-    encryption_metadata = None
-    if encrypted_data and encryption_version:
-        encryption_metadata = json.dumps(
-            {"encrypted": encrypted_data, "version": encryption_version}
-        )
-
-    # Update save_message call to include encryption metadata
-    save_message(room, sender, text=text, encryption_metadata=encryption_metadata)
+    # Store the message (server doesn't need to understand encryption)
+    save_message(room, sender, text=text)
 
     # Broadcast the message with encryption data intact
     message_payload = {"sender": sender, "text": text, "ts": now.isoformat()}
