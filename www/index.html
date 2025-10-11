@@ -1751,6 +1751,28 @@ class SignalProtocol {
   }
 }
 
+// ======== SIGNAL SESSION PERSISTENCE HELPERS ========
+async function restoreSignalSessions() {
+  const stored = localStorage.getItem("signal_sessions");
+  if (stored) {
+    try {
+      signalProtocol.sessions = JSON.parse(stored);
+      console.log("🔁 Restored Signal sessions:", Object.keys(signalProtocol.sessions));
+    } catch (e) {
+      console.warn("⚠️ Failed to parse saved sessions", e);
+    }
+  }
+}
+// Save current sessions to localStorage
+function persistSignalSessions() {
+  try {
+    localStorage.setItem("signal_sessions", JSON.stringify(signalProtocol.sessions));
+    console.debug("💾 Sessions persisted:", Object.keys(signalProtocol.sessions));
+  } catch (e) {
+    console.warn("⚠️ Failed to save sessions", e);
+  }
+}
+
 const signalProtocol = new SignalProtocol();
 
 async function initializeEncryption() {
@@ -1854,6 +1876,7 @@ async function sendEncryptedMessage() {
 }
 
 async function handleEncryptedMessage(data) {
+  console.log("🔐 Incoming:", data);
   let displayText = data.text;
   let isEncrypted = false;
   if (data.encrypted && data.encrypted[currentName]) {
@@ -1912,6 +1935,7 @@ async function handleKeyExchange(data) {
 async function initializeRoomEncryption() {
   if (!currentRoom) return;
   console.log("🔑 Initializing room encryption...");
+  await restoreSignalSessions();
   setTimeout(async () => {
     const users = getUsersFromUserList();
     console.log(`🔑 Found ${users.length} users for key exchange`);
@@ -1921,6 +1945,9 @@ async function initializeRoomEncryption() {
         try { await initiateKeyExchange(user); } catch (error) { console.warn(`⚠️ Key exchange with ${user} failed:`, error); }
       }
     }
+    // 💾 Final save after completing all exchanges
+    persistSignalSessions();
+    console.log("✅ Encryption initialization complete and sessions persisted.");
   }, 3000);
 }
 
@@ -2135,6 +2162,7 @@ function setupJoinRequestSocketHandlers() {
 }
 
 async function proceedWithJoin(room, username) {
+  await restoreSignalSessions();
   isInitialConnection = true;
   const roomStatus = await checkRoomStatus(room, username);
   if (roomStatus.destroyed) {
