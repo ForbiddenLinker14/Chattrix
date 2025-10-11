@@ -474,12 +474,21 @@ def cleanup_old_messages():
     return before - after
 
 
-def save_message(room, sender, text=None, filename=None, mimetype=None, filedata=None):
+def save_message(
+    room,
+    sender,
+    text=None,
+    filename=None,
+    mimetype=None,
+    filedata=None,
+    encrypted=None,
+    encryption_version=None,
+):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, ts) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO messages (room, sender, text, filename, mimetype, filedata, encrypted, encryption_version, ts) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         (
             room,
             sender,
@@ -487,6 +496,8 @@ def save_message(room, sender, text=None, filename=None, mimetype=None, filedata
             filename,
             mimetype,
             filedata,
+            json.dumps(encrypted) if encrypted is not None else None,
+            encryption_version,
             datetime.now(timezone.utc).isoformat(),
         ),
     )
@@ -498,11 +509,30 @@ def load_messages(room):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(
-        "SELECT sender, text, filename, mimetype, filedata, ts "
+        "SELECT sender, text, filename, mimetype, filedata, encrypted, encryption_version, ts "
         "FROM messages WHERE room=? ORDER BY id ASC",
         (room,),
     )
-    rows = c.fetchall()
+    rows = []
+    for (
+        sender,
+        text,
+        filename,
+        mimetype,
+        filedata,
+        encrypted_json,
+        enc_ver,
+        ts,
+    ) in c.fetchall():
+        encrypted = None
+        if encrypted_json:
+            try:
+                encrypted = json.loads(encrypted_json)
+            except Exception:
+                encrypted = None
+        rows.append(
+            (sender, text, filename, mimetype, filedata, encrypted, enc_ver, ts)
+        )
     conn.close()
     return rows
 
@@ -531,6 +561,8 @@ def init_db():
             filename TEXT,
             mimetype TEXT,
             filedata TEXT,
+            encrypted TEXT,               -- NEW: JSON text for per-recipient encrypted payload
+            encryption_version TEXT,      -- NEW: e.g. 'signal-v1'
             ts TEXT NOT NULL
         )
         """
@@ -1244,22 +1276,23 @@ async def request_public_keys(sid, data):
     target_user = data.get("targetUser")
     room = data.get("room")
     requester = data.get("requester")
-    
+
     # Forward the request to the target user
     if room in ROOM_USERS and target_user in ROOM_USERS[room]:
         target_sid = ROOM_USERS[room][target_user]
-        await sio.emit("request_public_keys", {
-            "requester": requester,
-            "room": room
-        }, room=target_sid)
+        await sio.emit(
+            "request_public_keys",
+            {"requester": requester, "room": room},
+            room=target_sid,
+        )
         print(f"🔑 Public key request forwarded from {requester} to {target_user}")
     else:
         # Notify requester that user is not available
-        await sio.emit("key_exchange_error", {
-            "error": "User not available for key exchange",
-            "targetUser": target_user
-        }, room=sid)
-
+        await sio.emit(
+            "key_exchange_error",
+            {"error": "User not available for key exchange", "targetUser": target_user},
+            room=sid,
+        )
 
 
 @sio.event
@@ -1268,15 +1301,15 @@ async def send_public_keys(sid, data):
     requester = data.get("requester")
     room = data.get("room")
     key_bundle = data.get("keyBundle")
-    
+
     # Forward the key bundle to the requester
     if room in ROOM_USERS and requester in ROOM_USERS[room]:
         requester_sid = ROOM_USERS[room][requester]
-        await sio.emit("receive_public_keys", {
-            "sender": data.get("sender"),
-            "keyBundle": key_bundle,
-            "room": room
-        }, room=requester_sid)
+        await sio.emit(
+            "receive_public_keys",
+            {"sender": data.get("sender"), "keyBundle": key_bundle, "room": room},
+            room=requester_sid,
+        )
         print(f"🔑 Public keys sent from {data.get('sender')} to {requester}")
 
 
@@ -1286,11 +1319,9 @@ async def message(sid, data):
     room = data.get("room")
     sender = data.get("sender")
     text = (data.get("text") or "").strip()
-    now = datetime.now(timezone.utc)
-
-    # Handle encrypted messages
     encrypted_data = data.get("encrypted")
     encryption_version = data.get("encryptionVersion")
+    now = datetime.now(timezone.utc)
 
     if not text or not room or not sender:
         return
@@ -1303,7 +1334,13 @@ async def message(sid, data):
     LAST_MESSAGE[key] = (text, now)
 
     # Store the message (server doesn't need to understand encryption)
-    save_message(room, sender, text=text)
+    save_message(
+        room,
+        sender,
+        text=text,
+        encrypted=encrypted_data,
+        encryption_version=encryption_version,
+    )
 
     # Broadcast the message with encryption data intact
     message_payload = {"sender": sender, "text": text, "ts": now.isoformat()}
@@ -2067,12 +2104,12 @@ async def get_app_version():
     """Return current and minimum required versions"""
     return {
         "current_version": {
-            "code": 15,  # Latest available version code
-            "name": "9.0",  # Latest available version name
+            "code": 13,  # Latest available version code
+            "name": "7.5",  # Latest available version name
         },
         "min_required_version": {
-            "code": 15,  # Minimum allowed version code - CHANGE THIS TO CONTROL UPDATES
-            "name": "9.0",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
+            "code": 13,  # Minimum allowed version code - CHANGE THIS TO CONTROL UPDATES
+            "name": "7.5",  # Minimum allowed version name - CHANGE THIS TO CONTROL UPDATES
         },
     }
 

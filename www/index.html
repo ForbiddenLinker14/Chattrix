@@ -2165,19 +2165,34 @@ async function proceedWithJoin(room, username) {
   function safeJoinWithRetry(attempt = 1) {
     if (!socket || !socket.connected) return;
     if (joinedRooms.has(room)) return;
+
     const fcmToken = localStorage.getItem("fcm_token") || null;
-    socket.emit("join", { room: room, sender: username, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, (ack) => {
+
+    socket.emit("join", { room: room, sender: username, lastTs: lastPersistedTs || null, fcmToken: fcmToken }, async (ack) => {
       if (ack && ack.success) {
         joinedRooms.add(room);
         sendActive(!document.hidden);
+
         const isLocked = roomLockStates[room];
         if (isLocked !== undefined) {
           document.getElementById("roomLockToggle").checked = isLocked;
           updateLockUI(isLocked);
         }
+        try {
+          await initializeRoomEncryption();
+          setTimeout(() => {
+            try { reestablishEncryptionSessions(); } catch (e) { console.warn("reestablishEncryptionSessions err", e); }
+            try { updateEncryptionStatusOnReload(); } catch (e) { console.warn("updateEncryptionStatusOnReload err", e); }
+          }, 1200);
+        } catch (err) {
+          console.warn("Encryption re-init after join failed:", err);
+        }
       } else {
-        if (ack && ack.error === 'room_locked') console.log("Room is locked during normal join");
-        else setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+        if (ack && ack.error === "room_locked") {
+          console.log("Room is locked during normal join");
+        } else {
+          setTimeout(() => safeJoinWithRetry(attempt + 1), 500);
+        }
       }
     });
   }
